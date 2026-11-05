@@ -1853,6 +1853,8 @@ mod tests {
     fn unreachable_holders_still_fetched() {
         let root = scratch("unreach");
         let mut r = Renderer::new("me", &root.join("work"), PathBuf::new(), PathBuf::new(), 1);
+        // about unreachable holders, not the Windows path check (on by default on Windows; the item has no files)
+        r.win_paths = false;
         let x = root.join("work/export/x1");
         fs::create_dir_all(x.join("Packages/p1")).unwrap();
         let info = HeldInfo { package: "Packages/p1".into(), rig: "rigs/r.json".into(), pose: [0.0; 3] };
