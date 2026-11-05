@@ -1,0 +1,6 @@
+{
+  "token": "same-secret-on-every-node",
+  "listen": "0.0.0.0:47950",
+  "peers": [],
+  "discovery": true
+}

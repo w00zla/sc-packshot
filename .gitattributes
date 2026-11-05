@@ -1,0 +1,5 @@
+# The checkout is shared by Linux and Windows: text files are LF in every working tree (Windows git's
+# autocrlf would otherwise rewrite them to CRLF and Linux sees them as changed); binaries are detected
+* text=auto eol=lf
+# Shell scripts run on Linux (VM, containers): LF even in a Windows checkout
+*.sh text eol=lf

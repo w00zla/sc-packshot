@@ -1,0 +1,3 @@
+# Linux-Build (statisch, musl) unter Windows ohne fremden Linker: Rusts eigenes rust-lld linkt
+[target.x86_64-unknown-linux-musl]
+linker = "rust-lld"
