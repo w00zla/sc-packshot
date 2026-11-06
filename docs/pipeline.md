@@ -331,7 +331,8 @@ Processes are long-lived on every node ([ADR 0008](adr/0008-blender-vulkan-threa
 - A chunk takes an idle process of its kind (a render chunk one with the same `render.py`, by content hash) or starts
   one. An idle process quits after 60 s (`IDLE_STOP`) and when a run ends (its memory goes back); one over the slots
   quits at once; one asked to quit and still there after 10 s is killed.
-- A process that dies at work (Blender's segfault, a panic in export-batch) fails only the job it was on, with its last
+- A panic in an export-batch job is answered as that job's failure (`"error": "panic: …"`, the trace on stderr) and the
+  process goes on (fork `aec2cd7f`). A process that dies at work (Blender's segfault, a crash) fails only the job it was on, with its last
   lines as the trace (`Blender ended while rendering it`, `export-batch ended while exporting it`); the chunk's other
   jobs go to a new process (the export into the same folder). One that dies before it is ready (`ready:`,
   `{"ready": true}`; `{"ready": false, "error": ...}` gives why) or with nothing in it ends its chunk: its open items
@@ -641,7 +642,9 @@ the bundles need nothing extra). Windows exes also build on Linux with mingw (`-
 
 **StarBreaker:** `scripts/starbreaker-build.{sh,ps1} [--platform all|windows|linux]` builds the fork's committed HEAD
 (`git archive`, so the working tree does not matter) into `local/starbreaker-ps/` with one `COMMIT`. Windows natively or
-from Linux with mingw; Linux with cargo-zigbuild against glibc 2.31 (the binary needs glibc 2.30: Ubuntu 20.04 and later;
+from Linux with mingw; Linux with cargo-zigbuild against glibc 2.31 (on Windows too: zig via `winget install zig.zig`, `cargo install
+cargo-zigbuild`, `rustup target add x86_64-unknown-linux-gnu`; a zig run that fails with "unable to load …: Unexpected" passes
+when started again) (the binary needs glibc 2.30: Ubuntu 20.04 and later;
 a build on a current Fedora-based distro needed 2.43, more than Ubuntu 24.04's 2.39). Same export time as a native glibc
 build (20 armour pieces 2.70 s each, identical output). A musl build would run anywhere but exported 58 % slower (4.3
 against 2.7 s, musl's allocator), and the export is the limit.

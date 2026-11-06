@@ -31,7 +31,7 @@ SC_DATA_P4K=<Data.p4k> cargo test --release -- --ignored   # real StarBreaker + 
 P [--render] [--export] [--filter <terms>] [--scope missing|failed|all] [--set <name>] [--name <run>] [--plain|--serve] [--workers n] [--exporters n]
 #   renders the targets: long-lived processes per node: one `starbreaker entity export-batch --stdin` per export slot (the fork, local/starbreaker-ps;
 #   without --stdin in its --help one export-batch per export chunk) and one Blender + add-on (local/blender) + blender/render.py --stdin per render slot
-#   (restarted after 200 jobs or 3 GB, export-batch after 40 chunks or 2 GB; a crash fails only the job in flight), several in parallel, terminal dashboard with render preview
+#   (restarted after 200 jobs or 3 GB, export-batch after 40 chunks or 2 GB; a panic in an export job is answered as its failure, a crash fails only the job in flight), several in parallel, terminal dashboard with render preview
 #   every Blender gets --threads 2; on Linux also the RDSEED shim via LD_PRELOAD (shim/rdseed_shim.rs, built by build.rs with rustc + rust-lld, embedded, written to <work>/rdseed-shim-<hash>.so)
 #   no roles: --render (Blender) and --export (Data.p4k + StarBreaker) say what this node can do now, neither = it only starts runs, stores them, watches; counts change in the TUI (+/-, </>)
 #   --export needs $SC_DATA_P4K (or --p4k) with build_manifest.id next to the Data.p4k; --targets <file> sets the target set's list; --dry-run lists what would be rendered; --size <px> (256); --chunk <n> (50); --cache-limit <GB> (20, 0 = none)
@@ -61,10 +61,11 @@ scripts/packshot-bundle.sh [--platform all|windows|linux] [--out <dir>] [--targe
 #   and linux (static packshot, the Linux StarBreaker (glibc: it prints the version it needs), the official Blender tarball checked by SHA256, portable/ with the add-on, render.py, targets.json, setup.sh, check.sh, run.sh)
 scripts/packshot-bundle.ps1 [-Platform all|windows|linux] [-Out <dir>] [-Targets <file>]   # on Windows, the same two bundles (the Linux StarBreaker must have been built on Linux)
 scripts/starbreaker-build.sh [--platform all|windows|linux]    # (.ps1 on Windows) builds the fork's committed HEAD (git archive) from ../starbreaker-ps into local/starbreaker-ps/ (starbreaker.exe; starbreaker for Linux
-#   via cargo-zigbuild against glibc 2.31, needs zig + cargo-zigbuild; Windows from Linux via mingw) and writes COMMIT; then rebuild the bundles
+#   via cargo-zigbuild against glibc 2.31, needs zig + cargo-zigbuild + rustup target x86_64-unknown-linux-gnu, on Windows too; Windows from Linux via mingw) and writes COMMIT; then rebuild the bundles
 ```
 
-Fork changes (exporter or Blender add-on in `../starbreaker-ps`): commit them there first, then run the build script.
+Fork changes (exporter or Blender add-on in `../starbreaker-ps`) follow its AGENTS.md: branch, pull request, squash merge, no
+trailers. Then run the build script (it builds the fork's `main` HEAD).
 - The add-on in `local/blender` is a junction (Windows) or symlink (Linux, `local/blender/blender-<ver>-linux-x64`) to the fork repo (live at once).
 - Add-on tests: `local/blender/<ver>/5.2/python/bin/python.exe -m unittest discover -s tests -q` in `../starbreaker-ps/blender_addon` (no system Python).
 - Exporter tests with real game data: `SC_DATA_P4K=<Data.p4k> cargo test -p starbreaker-3d` in `../starbreaker-ps`.
