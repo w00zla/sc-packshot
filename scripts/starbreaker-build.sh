@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds our StarBreaker fork (../starbreaker-qm, github.com/w00zla/starbreaker-qm) at its HEAD for both platforms into
+# Builds our StarBreaker fork (../starbreaker-ps, github.com/w00zla/starbreaker-ps) at its HEAD for both platforms into
 # local/starbreaker-qm/, where packshot and the bundle scripts take it from:
 #   starbreaker      Linux, glibc build against glibc 2.31 (cargo-zigbuild), runs on every Linux from glibc 2.31 on
 #   starbreaker.exe  Windows, cross-built with mingw (x86_64-pc-windows-gnu)
@@ -12,7 +12,7 @@
 # scripts/starbreaker-build.ps1 does the same on Windows.
 set -euo pipefail
 
-fork=../starbreaker-qm
+fork=../starbreaker-ps
 platform=all
 while [[ $# -gt 0 ]]; do
   case $1 in
@@ -59,7 +59,7 @@ fi
 old=""
 [[ -f $out/COMMIT ]] && old=$(cat "$out/COMMIT")
 if [[ ${old%% *} != "$commit" ]]; then
-  echo "$commit starbreaker-qm $branch ($subject)" >"$out/COMMIT"
+  echo "$commit starbreaker-ps $branch ($subject)" >"$out/COMMIT"
 fi
 echo "Done: $out (COMMIT: $(cut -c1-80 "$out/COMMIT"))"
 if [[ $platform != all ]]; then

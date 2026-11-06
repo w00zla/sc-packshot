@@ -1,15 +1,15 @@
-﻿# Builds our StarBreaker fork (..\starbreaker-qm, github.com/w00zla/starbreaker-qm) at its HEAD for both platforms into
+﻿# Builds our StarBreaker fork (..\starbreaker-ps, github.com/w00zla/starbreaker-ps) at its HEAD for both platforms into
 # local/starbreaker-qm/, where packshot and the bundle scripts take it from:
 #   starbreaker.exe  Windows (native build)
 #   starbreaker      Linux, glibc build against glibc 2.31 (cargo-zigbuild), runs on every Linux from glibc 2.31 on
 #   COMMIT           the commit both are built from (its first word is what packshot compares)
 # Builds exactly the committed HEAD (git archive), whatever the fork's working tree holds.
 # Run from the repo root (pwsh or Windows PowerShell 5.1):
-#   scripts/starbreaker-build.ps1 [-Platform all|windows|linux] [-Fork ..\starbreaker-qm]
+#   scripts/starbreaker-build.ps1 [-Platform all|windows|linux] [-Fork ..\starbreaker-ps]
 # Needs: cargo-zigbuild and zig for the Linux target (winget install zig.zig; cargo install cargo-zigbuild).
 # scripts/starbreaker-build.sh does the same on Linux.
 param(
-  [string]$Fork = '..\starbreaker-qm',
+  [string]$Fork = '..\starbreaker-ps',
   [ValidateSet('all', 'windows', 'linux')][string]$Platform = 'all'
 )
 $ErrorActionPreference = 'Stop'
@@ -61,7 +61,7 @@ try {
 $commitFile = Join-Path $out 'COMMIT'
 $old = if (Test-Path $commitFile) { (Get-Content $commitFile -Raw).Trim() } else { '' }
 if (($old -split ' ')[0] -ne $commit) {
-  [IO.File]::WriteAllText($commitFile, "$commit starbreaker-qm $branch ($subject)`n", (New-Object Text.UTF8Encoding $false))
+  [IO.File]::WriteAllText($commitFile, "$commit starbreaker-ps $branch ($subject)`n", (New-Object Text.UTF8Encoding $false))
 }
 Write-Host "Done: $out (COMMIT $commit)"
 if ($Platform -ne 'all') {

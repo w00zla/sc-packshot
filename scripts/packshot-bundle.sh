@@ -44,7 +44,7 @@ mkdir -p "$cache"
 blender_lin=local/blender/blender-$blender_version-linux-x64
 addon=$blender_lin/portable/scripts/addons/starbreaker_addon
 if ! compgen -G "$addon/*.py" >/dev/null; then
-  echo "ERROR: no add-on in $addon (the symlink into ../starbreaker-qm/blender_addon)" >&2
+  echo "ERROR: no add-on in $addon (the symlink into ../starbreaker-ps/blender_addon)" >&2
   exit 1
 fi
 
