@@ -20,7 +20,7 @@
 
 ## What it does
 
-- **Exports entities from `Data.p4k`** with a modified version of [StarBreaker](https://github.com/w00zla/starbreaker-ps)<!-- TODO: placeholder URL -->: meshes, textures,
+- **Exports entities from `Data.p4k`** with a modified version of [StarBreaker](https://github.com/w00zla/starbreaker-ps): meshes, textures,
   materials, paints and palettes.
 - **Renders them in Blender** with the staging and materials you choose: orientation, framing, light rig, scene and
   material tweaks come from a profile. The default profile mimics the game's inventory tiles. (Profiles are in
