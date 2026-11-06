@@ -36,6 +36,14 @@ flowchart LR
     B --> R[run folder<br/>PNG per entity]
 ```
 
+### StarBreaker fork
+
+Export and materials come from **[starbreaker-ps](https://github.com/w00zla/starbreaker-ps)**, a fork of
+[StarBreaker](https://github.com/diogotr7/StarBreaker) made for packshot: its `entity export-batch --stdin` exporter
+feeds the export workers, and its Blender add-on builds the materials. packshot uses it as a pinned build
+([ADR 0026](docs/adr/0026-starbreaker-by-release-pin.md)); the fork's own decisions are in its
+[docs/adr](https://github.com/w00zla/starbreaker-ps/tree/main/docs/adr).
+
 ## Quick start
 
 Grab a bundle for your OS (built with `scripts/packshot-bundle.sh` or `.ps1`). It contains packshot, StarBreaker,
@@ -98,6 +106,7 @@ Today's look becomes the default profile.
 
 ## Documentation
 
+- [Pipeline](docs/pipeline.md): export, look, scheduler, runs and sets, cluster, assessment, bundles.
 - [Architecture decisions](docs/adr/README.md): why things are the way they are.
 - [CLAUDE.md](CLAUDE.md): working rules for contributors and coding agents.
 
@@ -124,6 +133,7 @@ property of Cloud Imperium Games. packshot is a fan project, not affiliated with
 
 - [StarBreaker](https://github.com/diogotr7/StarBreaker) by Diogo Trindade.
 - The [fleetyards fork](https://github.com/fleetyards/StarBreaker) it builds on.
+- [starbreaker-ps](https://github.com/w00zla/starbreaker-ps), the fork packshot uses.
 - [Blender](https://www.blender.org/).
 
 ## Licence
