@@ -1,5 +1,5 @@
 <p align="center">
-  <img alt="packshot" src="docs/assets/banner.png" width="100%">
+  <img alt="packshot" src="docs/assets/banner.jpg" width="100%">
 </p>
 
 <h1 align="center">packshot</h1>
@@ -122,10 +122,13 @@ In a cluster, every node runs Python (render script, add-on) that it receives fr
 with the token can make every node run code, so share a cluster only with machines and people you trust
 ([ADR 0028](docs/adr/0028-security-notice-only.md)).
 
-## Game data
+## Game data and fan content
 
-This repository contains no game data; you need your own copy of Star Citizen. Rendered entities are the intellectual
-property of Cloud Imperium Games. packshot is a fan project, not affiliated with or endorsed by Cloud Imperium Games.
+This repository contains no game data; you need your own copy of Star Citizen.
+
+packshot is an unofficial Star Citizen fan project, not endorsed by or affiliated with the Cloud Imperium group of
+companies. Game content and materials, including everything packshot renders, are copyright Cloud Imperium Rights LLC
+and Cloud Imperium Rights Ltd. Star Citizen® is a registered trademark of Cloud Imperium Rights LLC.
 
 ## Credits
 
