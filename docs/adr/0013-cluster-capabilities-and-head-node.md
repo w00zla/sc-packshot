@@ -26,4 +26,4 @@ A single machine rendered a full run in about 52 minutes (4 hours for the first 
 - Discovery was tested on one machine at recording time; real multi-node runs were still to be done.
 
 ## References
-- sc-quartermaster 3898614, 4dc90fd, a4bdf98
+- sc-quartermaster 4497d65, 9959881, 4061fce

@@ -29,4 +29,4 @@ Materials match the game's families as far as the add-on reproduces them; fixing
 
 ## References
 - Related: [0002](0002-facts-only-from-unlicensed-projects.md), [0003](0003-pose-and-light-from-game-data.md), [0005](0005-own-tone-curve-and-studio-world.md).
-- sc-quartermaster 690ef74, 0e90f78, 2335c65, 86ac546.
+- sc-quartermaster 13a08bf, 9a67923, 0648d94, 19422b8.

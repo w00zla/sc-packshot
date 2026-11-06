@@ -23,4 +23,4 @@ Every exporting node keeps its own local copy of `Data.p4k` with `build_manifest
 - The maintainer excluded a NAS evaluation from the follow-up work; this ADR keeps these ideas from being proposed again unless the forces change (for example a 10 GbE SSD share).
 
 ## References
-- sc-quartermaster a4bdf98
+- sc-quartermaster 4061fce

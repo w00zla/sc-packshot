@@ -29,5 +29,5 @@ Values were tuned by eye on 19 items; the maintainer picked from contact sheets.
 Clip 0.5-0.7 %, channel nulling 1.2 % (4.8 % with the toe). The game's reflection probe behind the tile is not reproduced; gold highlights and glass sheen are still weaker than in-game tiles. Since [0022](0022-modular-profiles.md) this is the default profile's behaviour, not a fixed part of packshot.
 
 ## References
-- sc-quartermaster c8a2093, f44dafa, eb572360 (session ids omitted).
+- sc-quartermaster 1369d5c, 5431166, eb572360 (session ids omitted).
 - Related: [0006](0006-calibrate-against-game-tiles.md).

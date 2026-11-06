@@ -24,4 +24,4 @@ With 8 parallel Blenders the OpenGL render phase grew from 0.12 to 0.86 s per it
 A node without a working Vulkan driver cannot render (a bare NVIDIA driver without libnvidia-gl lacks Vulkan). Windows renderers check path length (above 259 characters) and case collisions, since missing textures render silently white; keep `--work` short.
 
 ## References
-- sc-quartermaster eb18cb1, a4bdf98; its docs/catalog-sources.md "Icons" step 4.
+- sc-quartermaster 3a6a2d8, 4061fce; its docs/catalog-sources.md "Icons" step 4.

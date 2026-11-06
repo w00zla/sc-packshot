@@ -22,5 +22,5 @@ Export folders of blocks with failures were kept in `work/export` for diagnosis.
 - A crashed process leaves no stale export data after the next start.
 
 ## References
-- sc-quartermaster a4bdf98, ddbde99
+- sc-quartermaster 4061fce, 656bcfc
 - [0009](0009-event-log-and-report.md)

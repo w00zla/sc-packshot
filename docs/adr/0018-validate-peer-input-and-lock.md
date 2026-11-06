@@ -23,5 +23,5 @@ Not recorded.
 - Some peer input that used to be accepted now fails loudly; a bundle with a long path needs a short `--work`.
 
 ## References
-- sc-quartermaster a4bdf98
+- sc-quartermaster 4061fce
 - [0015](0015-chunks-and-content-hash-fetch.md)

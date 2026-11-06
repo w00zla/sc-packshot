@@ -25,4 +25,4 @@ The original `pnpm icons:render` (TypeScript) ran one export and one Blender at 
 One static binary per OS, no Node on render machines. The TUI grew views for runs, sets and nodes (see [0011](0011-runs-and-sets.md), [0013](0013-cluster-capabilities-and-head-node.md)). Konsole disables Sixel in ratatui-image and falls back to blurry half blocks, so `PACKSHOT_GRAPHICS` can force a protocol.
 
 ## References
-- sc-quartermaster eb18cb1, 78d9499.
+- sc-quartermaster 3a6a2d8, 8b99788.

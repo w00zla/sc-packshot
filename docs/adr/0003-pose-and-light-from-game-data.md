@@ -25,5 +25,5 @@ The images should look like the game's own inventory tiles, so camera orientatio
 New item types get a plausible pose without code changes; types without an orientation entry use the default and are unchecked against the game. Entries with `requiredTag` (sidearms receive the primary-weapon rig) are not handled. Since [0022](0022-modular-profiles.md) this is the default profile's behaviour, not a fixed part of packshot.
 
 ## References
-- sc-quartermaster 2335c65; its docs/catalog-sources.md "Icons" step 3.
+- sc-quartermaster 0648d94; its docs/catalog-sources.md "Icons" step 3.
 - Related: [0002](0002-facts-only-from-unlicensed-projects.md).

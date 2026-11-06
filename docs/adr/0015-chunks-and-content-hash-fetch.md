@@ -27,4 +27,4 @@ The first cluster design sent "packages" (export plus render on one remote node)
 - Every node must reach every other node ([0013](0013-cluster-capabilities-and-head-node.md)).
 
 ## References
-- sc-quartermaster a4bdf98
+- sc-quartermaster 4061fce

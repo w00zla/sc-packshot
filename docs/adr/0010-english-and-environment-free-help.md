@@ -20,4 +20,4 @@ Not recorded (German comments like the rest of the original project were the sta
 Contributors and users outside the original project can read everything. Help and messages must be checked for host names, paths and ports before release. The decision matched the plan to make packshot standalone.
 
 ## References
-- sc-quartermaster eb18cb1, 78d9499, a4bdf98.
+- sc-quartermaster 3a6a2d8, 8b99788, 4061fce.

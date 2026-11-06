@@ -21,4 +21,4 @@ Not recorded. The first version wrote one `<work>/logs/<date>_<node>.jsonl` per 
 Performance claims in other ADRs are reproducible from logs. Event names and JSON keys are stable interfaces for the report. Failures can be reproduced from the log ([0017](0017-delete-work-data-log-deviations.md)).
 
 ## References
-- sc-quartermaster eb18cb1, 2add368, ddbde99.
+- sc-quartermaster 3a6a2d8, 1f62aa5, 656bcfc.

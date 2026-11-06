@@ -26,5 +26,5 @@ The full run happens on render machines without a development environment. The f
 - Not verified end to end at recording time: the Windows zip and `setup.cmd`, the `.ps1` scripts.
 
 ## References
-- sc-quartermaster eb18cb1, 4dc90fd
+- sc-quartermaster 3a6a2d8, 9959881
 - [0016](0016-data-p4k-only-on-exporters.md)

@@ -26,5 +26,5 @@ The packshot folder has the same layout on every node: `packshot.json`, `assessm
 - A run fetched from another node is appended to `live` only.
 
 ## References
-- sc-quartermaster 78d9499, 4dc90fd
+- sc-quartermaster 8b99788, 9959881
 - [0015](0015-chunks-and-content-hash-fetch.md) (hashing is used for transfer, not for storage)

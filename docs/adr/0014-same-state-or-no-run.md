@@ -21,5 +21,5 @@ All connected nodes must report the same packshot build (hash over the source an
 - The build hash was later removed from the assessment's validity keys ([0019](0019-compute-assessment-on-demand.md)).
 
 ## References
-- sc-quartermaster 3898614, 4dc90fd, b412f49
+- sc-quartermaster 4497d65, 9959881, 7407f49
 - [0013](0013-cluster-capabilities-and-head-node.md), [0016](0016-data-p4k-only-on-exporters.md)

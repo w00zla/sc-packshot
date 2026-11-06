@@ -23,5 +23,5 @@ None recorded.
 - Random numbers inside Blender's node updates are no longer hardware random; the renders stay identical, so nothing visible depends on them.
 
 ## References
-- sc-quartermaster a4bdf98
+- sc-quartermaster 4061fce
 - [0008](0008-blender-vulkan-threads-long-lived.md)
