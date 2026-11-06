@@ -4,7 +4,7 @@
 // the images of the runs (per entity the newest run in the chain with an image), set.json (base, chain, files in the folder,
 // where its target list came from) and targets.json, the set's target list (taken from the base when branching,
 // replaceable; the game's items change with its updates).
-// `live` is the main set (pnpm thumbs:build reads it); experiments branch off live and are adopted
+// `live` is the main set (what consumers read); experiments branch off live and are adopted
 // by appending their runs to live's chain. No storage by content hash: renders are not bit-identical.
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;

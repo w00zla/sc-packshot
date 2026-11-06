@@ -1964,7 +1964,7 @@ mod tests {
         let mut a = Hub::new(NetConfig { name: "a".into(), token: "t".into(), listen: format!("127.0.0.1:{port}"), peers: Vec::new(), discovery: false }, me("a"), root.join("a"));
         let mut b = Hub::new(NetConfig { name: "b".into(), token: "t".into(), listen: format!("127.0.0.1:{}", crate::net::test_port()), peers: vec![format!("127.0.0.1:{port}")], discovery: false }, me("b"), root.join("b"));
         let mut r = Renderer::new("b", &root.join("work"), blender, PathBuf::new(), 1);
-        r.tools = Some(ExportTools { starbreaker: repo.join("local/starbreaker-qm").join(crate::exe("starbreaker")), p4k });
+        r.tools = Some(ExportTools { starbreaker: repo.join("local/starbreaker-ps").join(crate::exe("starbreaker")), p4k });
         let t0 = Instant::now();
         let conn_a = loop {
             b.poll();

@@ -219,7 +219,7 @@ pub(crate) mod tests {
     pub(crate) fn repo_tables(work: &Path) -> crate::tables::Tables {
         let repo = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         let p4k = PathBuf::from(std::env::var("SC_DATA_P4K").expect("SC_DATA_P4K"));
-        let starbreaker = repo.join("local/starbreaker-qm").join(crate::exe("starbreaker"));
+        let starbreaker = repo.join("local/starbreaker-ps").join(crate::exe("starbreaker"));
         let dcb = repo.join("local/packshot/work/dcb");
         fs::create_dir_all(work.join("dcb")).unwrap();
         fs::copy(dcb.join("pitconfig.json"), work.join("dcb/pitconfig.json")).unwrap();
@@ -237,7 +237,7 @@ pub(crate) mod tests {
         use crate::engine::Target;
         let repo = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         let p4k = PathBuf::from(std::env::var("SC_DATA_P4K").expect("SC_DATA_P4K"));
-        let starbreaker = repo.join("local/starbreaker-qm").join(crate::exe("starbreaker"));
+        let starbreaker = repo.join("local/starbreaker-ps").join(crate::exe("starbreaker"));
         let blender = fs::read_dir(repo.join("local/blender")).unwrap().flatten().map(|e| e.path().join(crate::exe("blender"))).find(|p| p.exists()).unwrap();
         let root = std::env::temp_dir().join(format!("packshot-closure-real-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);

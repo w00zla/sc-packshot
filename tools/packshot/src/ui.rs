@@ -299,7 +299,7 @@ impl App {
                 (!list.is_empty()).then_some(TargetsChoice { path: p, count: list.len(), at })
             })
             .collect();
-        // targets.json (what pnpm packshot:targets writes) first
+        // targets.json in the packshot folder first
         choices.sort_by_key(|c| (c.path.file_name().is_none_or(|n| n != "targets.json"), c.path.clone()));
         self.input = Some(Input::Targets { set: set.to_string(), choices, sel: 0, field: Field::default() });
     }
@@ -1000,7 +1000,7 @@ fn draw_dialog(f: &mut Frame, app: &App) {
                     lines.push(l);
                 }
                 if choices.is_empty() {
-                    lines.push(Line::from("  no target list in the packshot folder (pnpm packshot:targets writes targets.json)").fg(DIM));
+                    lines.push(Line::from("  no target list in the packshot folder (put a targets.json there or use --targets)").fg(DIM));
                 }
                 let other = *sel == choices.len();
                 let label = format!("{} Other file  ", if other { "▸" } else { " " });

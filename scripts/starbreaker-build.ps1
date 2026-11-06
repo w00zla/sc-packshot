@@ -1,5 +1,5 @@
 ﻿# Builds our StarBreaker fork (..\starbreaker-ps, github.com/w00zla/starbreaker-ps) at its HEAD for both platforms into
-# local/starbreaker-qm/, where packshot and the bundle scripts take it from:
+# local/starbreaker-ps/, where packshot and the bundle scripts take it from:
 #   starbreaker.exe  Windows (native build)
 #   starbreaker      Linux, glibc build against glibc 2.31 (cargo-zigbuild), runs on every Linux from glibc 2.31 on
 #   COMMIT           the commit both are built from (its first word is what packshot compares)
@@ -16,7 +16,7 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 Set-Location $root
 $Fork = [System.IO.Path]::GetFullPath((Join-Path $root $Fork))
-$out = Join-Path $root 'local/starbreaker-qm'
+$out = Join-Path $root 'local/starbreaker-ps'
 $work = Join-Path $root 'local/starbreaker-build'
 $src = Join-Path $work 'src'
 $target = Join-Path $work 'target'

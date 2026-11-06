@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Packs everything packshot (tools/packshot) needs on another node, one folder per platform, built on Linux:
 #   <out>/windows: packshot.exe (cross-built with mingw), starbreaker/ (starbreaker.exe and COMMIT from
-#                  local/starbreaker-qm/), the official Blender zip (SHA256 checked, left packed: setup.cmd unpacks
+#                  local/starbreaker-ps/), the official Blender zip (SHA256 checked, left packed: setup.cmd unpacks
 #                  it on the node), portable/ (config and add-on), cli/render.py, targets.json, setup.cmd, run.cmd,
 #                  README.txt, packshot.example.json (the Windows texts with CRLF)
 #   <out>/linux:   packshot (static musl binary), starbreaker/ (the Linux build and COMMIT), the official Blender
@@ -11,21 +11,25 @@
 # junction cannot be read on Linux).
 #
 #   scripts/packshot-bundle.sh [--platform all|windows|linux] [--out <dir>] [--blender-version 5.2.3]
+#                              [--targets <targets.json>]
 #
+# targets.json (default local/packshot/targets.json) goes into both bundles when it exists, else they carry none.
 # Needs: rustup targets x86_64-unknown-linux-musl and x86_64-pc-windows-gnu, mingw64-gcc (the Windows linker),
-# local/blender/blender-<ver>-linux-x64 (its portable/), the StarBreaker builds in local/starbreaker-qm/, the DB for
-# pnpm packshot:targets (DATABASE_URL from .env), curl, sha256sum and rsync.
+# local/blender/blender-<ver>-linux-x64 (its portable/), the StarBreaker builds in local/starbreaker-ps/, curl,
+# sha256sum and rsync.
 set -euo pipefail
 
 out=local/packshot-bundle
 blender_version=5.2.3
 platform=all
+targets=local/packshot/targets.json
 while [[ $# -gt 0 ]]; do
   case $1 in
     --out) out=$2; shift 2 ;;
     --blender-version) blender_version=$2; shift 2 ;;
     --platform) platform=$2; shift 2 ;;
-    *) echo "Usage: $0 [--platform all|windows|linux] [--out <dir>] [--blender-version <x.y.z>]" >&2; exit 1 ;;
+    --targets) targets=$2; shift 2 ;;
+    *) echo "Usage: $0 [--platform all|windows|linux] [--out <dir>] [--blender-version <x.y.z>] [--targets <file>]" >&2; exit 1 ;;
   esac
 done
 case $platform in
@@ -48,16 +52,22 @@ if ! compgen -G "$addon/*.py" >/dev/null; then
   exit 1
 fi
 
-# The target list once for both
-echo "Target list from the DB ..."
-pnpm packshot:targets --out "$cache/targets.json"
+# The target list, if there is one
+if [[ -f $targets ]]; then
+  echo "Target list: $targets"
+else
+  echo "Note: no target list at $targets, the bundles carry none" >&2
+  targets=
+fi
 
 # Shared texts: README per platform, the example config
 texts() {
   local dir=$1 os=$2
   mkdir -p "$dir/cli"
   cp src/icons/render.py "$dir/cli/"
-  cp "$cache/targets.json" "$dir/"
+  if [[ -n $targets ]]; then
+    cp "$targets" "$dir/targets.json"
+  fi
   if [[ $os == windows ]]; then
     crlf "$tpl/windows/README.txt" "$dir/README.txt"
     crlf "$tpl/packshot.example.json" "$dir/packshot.example.json"
@@ -101,15 +111,15 @@ summary() {
 
 if [[ $do_win == 1 ]]; then
   win=$out/windows
-  if [[ ! -d $blender_lin/portable || ! -f local/starbreaker-qm/starbreaker.exe ]]; then
-    echo "ERROR: $blender_lin/portable or local/starbreaker-qm/starbreaker.exe is missing" >&2
+  if [[ ! -d $blender_lin/portable || ! -f local/starbreaker-ps/starbreaker.exe ]]; then
+    echo "ERROR: $blender_lin/portable or local/starbreaker-ps/starbreaker.exe is missing" >&2
     exit 1
   fi
   echo "Building packshot (Windows, mingw) ..."
   (cd tools/packshot && cargo build --release --target x86_64-pc-windows-gnu)
   mkdir -p "$win/starbreaker"
   cp tools/packshot/target/x86_64-pc-windows-gnu/release/packshot.exe "$win/"
-  cp local/starbreaker-qm/starbreaker.exe local/starbreaker-qm/COMMIT "$win/starbreaker/"
+  cp local/starbreaker-ps/starbreaker.exe local/starbreaker-ps/COMMIT "$win/starbreaker/"
   # Blender zip, packed (setup.cmd unpacks it); the unpacked blender/ of older bundles goes
   zip_name=blender-$blender_version-windows-x64.zip
   fetch_blender "$zip_name"
@@ -128,7 +138,7 @@ fi
 
 if [[ $do_lin == 1 ]]; then
   lin=$out/linux
-  sb=local/starbreaker-qm/starbreaker
+  sb=local/starbreaker-ps/starbreaker
   if [[ ! -d $blender_lin/portable || ! -x $sb ]]; then
     echo "ERROR: $blender_lin/portable or $sb (Linux build of the fork) is missing" >&2
     exit 1
@@ -139,7 +149,7 @@ if [[ $do_lin == 1 ]]; then
   mkdir -p "$lin/starbreaker"
   cp tools/packshot/target/x86_64-unknown-linux-musl/release/packshot "$lin/"
   # 2. StarBreaker: dynamically linked against glibc, so the node needs at least the glibc it was built with
-  cp "$sb" local/starbreaker-qm/COMMIT "$lin/starbreaker/"
+  cp "$sb" local/starbreaker-ps/COMMIT "$lin/starbreaker/"
   if command -v objdump >/dev/null 2>&1; then
     glibc=$(objdump -T "$sb" | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -n 1 || true)
     echo "StarBreaker needs ${glibc:-no glibc (static)} on the node (ldd --version shows its glibc)"

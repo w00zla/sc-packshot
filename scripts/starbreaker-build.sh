@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Builds our StarBreaker fork (../starbreaker-ps, github.com/w00zla/starbreaker-ps) at its HEAD for both platforms into
-# local/starbreaker-qm/, where packshot and the bundle scripts take it from:
+# local/starbreaker-ps/, where packshot and the bundle scripts take it from:
 #   starbreaker      Linux, glibc build against glibc 2.31 (cargo-zigbuild), runs on every Linux from glibc 2.31 on
 #   starbreaker.exe  Windows, cross-built with mingw (x86_64-pc-windows-gnu)
 #   COMMIT           the commit both are built from (its first word is what packshot compares)
@@ -27,7 +27,7 @@ case $platform in
 esac
 
 cd "$(dirname "$0")/.."
-out=local/starbreaker-qm
+out=local/starbreaker-ps
 work=local/starbreaker-build
 fork=$(cd "$fork" && pwd)
 commit=$(git -C "$fork" rev-parse --short=8 HEAD)

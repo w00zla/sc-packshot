@@ -1,9 +1,9 @@
-// packshot: control room for rendering the icons. Every set carries its target list (targets.json from
-// `pnpm packshot:targets`, taken into a set with key t or --targets),
+// packshot: control room for rendering game entities. Every set carries its target list (a targets.json,
+// taken into a set with key t or --targets),
 // computes pose and light rig from the game's tables, exports with StarBreaker export-batch and
 // renders with src/icons/render.py, several export and Blender processes at once, selection by filter and scope
 // (missing / failed / all), image preview. Every run is a run folder whose images land in the target set (store.rs;
-// pnpm thumbs:build reads live). Every node starts with what it can do now (--render, --export); with a token in
+// consumers read live). Every node starts with what it can do now (--render, --export); with a token in
 // packshot.json the nodes find each other and every node can start a run, on itself or on another node as its main
 // node (cluster.rs, node.rs). Runs in the repo (paths under local/) and in the bundle (paths next to the exe),
 // without Node.js and without the DB. The worker counts come from the node's compute assessment when it has a valid
@@ -237,9 +237,9 @@ fn real_main() -> Result<()> {
     if render && blender.is_none() {
         bail!("--render: Blender not found (local/blender/*/ or --blender)");
     }
-    let starbreaker = path("starbreaker").or_else(|| first_existing(&[root.join("local/starbreaker-qm").join(exe("starbreaker")), root.join("starbreaker").join(exe("starbreaker"))]));
+    let starbreaker = path("starbreaker").or_else(|| first_existing(&[root.join("local/starbreaker-ps").join(exe("starbreaker")), root.join("starbreaker").join(exe("starbreaker"))]));
     if export && starbreaker.is_none() {
-        bail!("--export: StarBreaker not found (local/starbreaker-qm/ or --starbreaker)");
+        bail!("--export: StarBreaker not found (local/starbreaker-ps/ or --starbreaker)");
     }
     // export: Data.p4k with build_manifest.id next to it
     let p4k = if export {
@@ -534,7 +534,7 @@ fn plain(engine: &mut Engine, args: &Args) -> Result<()> {
         println!("Avg per render (s): {}", parts.join(" · "));
     }
     if let Some(log) = engine.events.as_ref() {
-        println!("Event log: {} · report: pnpm packshot --report", log.path.display());
+        println!("Event log: {} · report: packshot --report", log.path.display());
     }
     for (t, e) in &engine.errors {
         println!("  ! {}: {e}", engine.targets[*t].entity);

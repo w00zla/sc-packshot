@@ -1,7 +1,7 @@
-packshot bundle (sc-quartermaster), Windows
+packshot bundle, Windows
 
 Contents: packshot.exe, starbreaker\ (StarBreaker CLI, our fork), the official Blender zip, portable\ (Blender
-config and StarBreaker add-on), cli\render.py (Blender script), targets.json (target list from the development DB),
+config and StarBreaker add-on), cli\render.py (Blender script), targets.json (the target list, if one was bundled),
 setup.cmd, run.cmd, packshot.example.json (cluster settings). The first run start (Enter) asks for live's target list:
 Enter takes the targets.json next to it; every set keeps its own (t in view 2 replaces it after a game update).
 

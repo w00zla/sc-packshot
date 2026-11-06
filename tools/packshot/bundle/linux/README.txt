@@ -1,8 +1,8 @@
-packshot bundle (sc-quartermaster), Linux
+packshot bundle, Linux
 
 Contents: packshot (static binary), starbreaker/ (StarBreaker CLI, our fork), the official Blender tarball,
-portable/ (Blender config and StarBreaker add-on), cli/render.py, targets.json (target list from the development
-DB), setup.sh, check.sh, run.sh, packshot.example.json (cluster settings). The first run start (Enter) asks for live's
+portable/ (Blender config and StarBreaker add-on), cli/render.py, targets.json (the target list, if one
+was bundled), setup.sh, check.sh, run.sh, packshot.example.json (cluster settings). The first run start (Enter) asks for live's
 target list: Enter takes the targets.json next to it; every set keeps its own (t in view 2 replaces it).
 
 1. Copy the whole folder to the Linux node, e.g. scp -r linux/ user@host:packshot

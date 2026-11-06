@@ -1949,7 +1949,7 @@ else:
     }
 }
 
-/// Runs with real tools (SC_DATA_P4K must be set; Blender in local/blender, StarBreaker in local/starbreaker-qm)
+/// Runs with real tools (SC_DATA_P4K must be set; Blender in local/blender, StarBreaker in local/starbreaker-ps)
 #[cfg(test)]
 mod real_tests {
     use super::*;
@@ -1963,7 +1963,7 @@ mod real_tests {
     fn real(root: &Path, name: &str, listen: String, peers: Vec<String>, render: bool, export: bool) -> Engine {
         let repo = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         let p4k = PathBuf::from(std::env::var("SC_DATA_P4K").expect("SC_DATA_P4K"));
-        let starbreaker = repo.join("local/starbreaker-qm").join(crate::exe("starbreaker"));
+        let starbreaker = repo.join("local/starbreaker-ps").join(crate::exe("starbreaker"));
         let blender = fs::read_dir(repo.join("local/blender")).unwrap().flatten().map(|e| e.path().join(crate::exe("blender"))).find(|p| p.exists()).unwrap();
         let targets: Vec<Target> = serde_json::from_slice(&fs::read(repo.join("local/packshot/targets.json")).unwrap()).unwrap();
         let dir = root.join(name);

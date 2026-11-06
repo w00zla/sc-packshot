@@ -3,16 +3,19 @@
 #   <Out>/windows: packshot.exe, StarBreaker (our fork), the official Blender zip (SHA256 checked, left packed:
 #                  setup.cmd unpacks it on the node), portable/ (config + add-on), render.py, targets.json, setup.cmd,
 #                  run.cmd, README.txt, packshot.example.json (the Windows texts with CRLF)
-#   <Out>/linux:   packshot (static musl binary), StarBreaker (the Linux build from local/starbreaker-qm/, made on
+#   <Out>/linux:   packshot (static musl binary), StarBreaker (the Linux build from local/starbreaker-ps/, made on
 #                  Linux), the official Blender tarball (SHA256 checked), portable/ (config + add-on), render.py,
 #                  targets.json, setup.sh and check.sh (unpack and check on the Linux node), run.sh, README.txt,
 #                  packshot.example.json
 # Run from the repo root (pwsh or Windows PowerShell 5.1):
 #   scripts/packshot-bundle.ps1 [-Out local/packshot-bundle] [-BlenderVersion 5.2.3] [-Platform all|windows|linux]
+#                               [-Targets local/packshot/targets.json]
+# The target list goes into both bundles when it exists, else they carry none.
 param(
   [string]$Out = 'local/packshot-bundle',
   [string]$BlenderVersion = '5.2.3',
-  [ValidateSet('all', 'windows', 'linux')][string]$Platform = 'all'
+  [ValidateSet('all', 'windows', 'linux')][string]$Platform = 'all',
+  [string]$Targets = 'local/packshot/targets.json'
 )
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
@@ -71,8 +74,8 @@ function Get-Blender([string]$name) {
 # Folder of the local Windows Blender (with blender.exe): its portable/ goes into both bundles
 $blenderSrc = Get-ChildItem local/blender -Directory | Where-Object { Test-Path (Join-Path $_.FullName 'blender.exe') } | Select-Object -First 1
 if (-not $blenderSrc) { throw 'No Blender under local/blender/*/blender.exe' }
-if ($doLin -and -not (Test-Path local/starbreaker-qm/starbreaker)) {
-  throw 'No local/starbreaker-qm/starbreaker: the Linux build of the fork is made on Linux (cargo build --release -p starbreaker)'
+if ($doLin -and -not (Test-Path local/starbreaker-ps/starbreaker)) {
+  throw 'No local/starbreaker-ps/starbreaker: the Linux build of the fork is made on Linux (cargo build --release -p starbreaker)'
 }
 
 # 1. Build
@@ -92,13 +95,16 @@ try {
   Pop-Location
 }
 
-# Target list from the DB once for both (needs DATABASE_URL from .env)
+# The target list, if there is one
 $cache = Join-Path $Out 'cache'
 New-Item -ItemType Directory -Force -Path $cache | Out-Null
-$targets = Join-Path $cache 'targets.json'
-Write-Host 'Target list from the DB ...'
-pnpm packshot:targets --out $targets
-Assert-Ok 'writing targets.json'
+if (Test-Path $Targets) {
+  $targets = (Resolve-Path $Targets).Path
+  Write-Host "Target list: $targets"
+} else {
+  Write-Host "Note: no target list at $Targets, the bundles carry none"
+  $targets = $null
+}
 
 # 2. Windows bundle
 if ($doWin) {
@@ -107,7 +113,7 @@ if ($doWin) {
   Copy-Item (Join-Path $crate 'target/release/packshot.exe') $win -Force
 
   New-Item -ItemType Directory -Force -Path (Join-Path $win 'starbreaker') | Out-Null
-  Copy-Item local/starbreaker-qm/starbreaker.exe, local/starbreaker-qm/COMMIT (Join-Path $win 'starbreaker') -Force
+  Copy-Item local/starbreaker-ps/starbreaker.exe, local/starbreaker-ps/COMMIT (Join-Path $win 'starbreaker') -Force
 
   # Blender zip, packed (setup.cmd unpacks it); the unpacked blender/ of older bundles goes
   $zip = Get-Blender "blender-$BlenderVersion-windows-x64.zip"
@@ -123,7 +129,7 @@ if ($doWin) {
 
   New-Item -ItemType Directory -Force -Path (Join-Path $win 'cli') | Out-Null
   Copy-Item src/icons/render.py (Join-Path $win 'cli') -Force
-  Copy-Item $targets $win -Force
+  if ($targets) { Copy-Item $targets (Join-Path $win 'targets.json') -Force }
 
   foreach ($f in 'setup.cmd', 'run.cmd', 'README.txt') { Copy-Template (Join-Path $tpl "windows/$f") (Join-Path $win $f) -Crlf }
   Copy-Template (Join-Path $tpl 'packshot.example.json') (Join-Path $win 'packshot.example.json') -Crlf
@@ -139,7 +145,7 @@ if ($doLin) {
   # StarBreaker for Linux: linked against glibc, the node needs at least the one it was built with
   # (scripts/packshot-bundle.sh on Linux prints it)
   New-Item -ItemType Directory -Force -Path (Join-Path $lin 'starbreaker') | Out-Null
-  Copy-Item local/starbreaker-qm/starbreaker, local/starbreaker-qm/COMMIT (Join-Path $lin 'starbreaker') -Force
+  Copy-Item local/starbreaker-ps/starbreaker, local/starbreaker-ps/COMMIT (Join-Path $lin 'starbreaker') -Force
 
   # Blender tarball, put into the bundle packed (unpacking on Windows would lose symlinks and exec bits: setup.sh
   # does that on the Linux node)
@@ -155,7 +161,7 @@ if ($doLin) {
 
   New-Item -ItemType Directory -Force -Path (Join-Path $lin 'cli') | Out-Null
   Copy-Item src/icons/render.py (Join-Path $lin 'cli') -Force
-  Copy-Item $targets $lin -Force
+  if ($targets) { Copy-Item $targets (Join-Path $lin 'targets.json') -Force }
   foreach ($f in 'setup.sh', 'check.sh', 'run.sh', 'README.txt') { Copy-Template (Join-Path $tpl "linux/$f") (Join-Path $lin $f) }
   Copy-Template (Join-Path $tpl 'packshot.example.json') (Join-Path $lin 'packshot.example.json')
   Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $lin 'LIESMICH.txt'), (Join-Path $lin 'run-node.sh')
