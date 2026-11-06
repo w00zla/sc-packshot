@@ -5,7 +5,7 @@
 - Scope: exporter, bundles, build
 
 ## Context
-packshot needs the StarBreaker fork (github.com/w00zla/starbreaker-qm): the exporter binary (`export-batch --stdin`)
+packshot needs the StarBreaker fork (github.com/w00zla/starbreaker-ps): the exporter binary (`export-batch --stdin`)
 and its Blender add-on. The fork is a real GitHub fork (fleetyards' fork with upstream merged in, MIT) and must keep
 merging upstream; some of its changes may go upstream. Until now the bundle scripts built the fork's committed HEAD
 from a sibling checkout.

@@ -12,7 +12,7 @@ Star Citizen's `Data.p4k` contains no usable 2D item images (`displayIcon` is em
 - Export with StarBreaker `--kind decomposed` (`Packages/<name>_LOD1_TEX2/scene.blend` plus sidecars and a shared `Data/` tree per chunk).
 - Render headless in Blender (portable 5.2.3) with the StarBreaker add-on, which rebuilds the shader families (HardSurface, LayerBlend_V2, Illum, GlassPBR, MeshDecal, POM, palettes).
 - Renderer: EEVEE, 16 samples, transparent film, 256 px PNG per catalog UUID. The add-on is "Cycles-first with EEVEE fallbacks"; no visible problem was found with EEVEE.
-- Add-on and exporter must come from the same fork commit, so both are taken from the StarBreaker fork (github.com/w00zla/starbreaker-qm).
+- Add-on and exporter must come from the same fork commit, so both are taken from the StarBreaker fork (github.com/w00zla/starbreaker-ps).
 - Clothing is rendered worn, like armour.
 
 ## Alternatives
