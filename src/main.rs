@@ -104,11 +104,29 @@ fn first_existing(candidates: &[PathBuf]) -> Option<PathBuf> {
     candidates.iter().find(|p| p.exists()).cloned()
 }
 
+/// The local Blender of a checkout: the version deps.toml pins (scripts/setup.* puts it in local/blender/), else the
+/// first one there
 fn find_blender(root: &Path) -> Option<PathBuf> {
     let dir = root.join("local/blender");
     let mut found = fs::read_dir(&dir).ok()?.flatten().map(|e| e.path().join(exe("blender"))).filter(|p| p.exists()).collect::<Vec<_>>();
     found.sort();
-    found.into_iter().next()
+    let prefix = pinned_blender(root).map(|v| format!("blender-{v}-"));
+    let pinned = prefix.and_then(|p| found.iter().find(|b| b.parent().and_then(|d| d.file_name()).is_some_and(|n| n.to_string_lossy().starts_with(&p))).cloned());
+    pinned.or_else(|| found.into_iter().next())
+}
+
+/// `[blender] version` from deps.toml (plain `key = "value"` lines)
+fn pinned_blender(root: &Path) -> Option<String> {
+    let text = fs::read_to_string(root.join("deps.toml")).ok()?;
+    let mut section = "";
+    for line in text.lines().map(str::trim) {
+        if line.starts_with('[') {
+            section = line;
+        } else if section == "[blender]" && let Some(v) = line.strip_prefix("version").map(str::trim).and_then(|r| r.strip_prefix('=')) {
+            return Some(v.trim().trim_matches('"').to_string());
+        }
+    }
+    None
 }
 
 /// SC_DATA_P4K from .env when the environment has none (like node --env-file-if-exists)

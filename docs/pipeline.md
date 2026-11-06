@@ -640,8 +640,16 @@ toolchain needed; static PIE without interpreter or shared libraries; the embedd
 the bundles need nothing extra). Windows exes also build on Linux with mingw (`--target x86_64-pc-windows-gnu`,
 `mingw64-gcc` as linker; they need only Windows' own DLLs).
 
-**StarBreaker:** `scripts/starbreaker-build.{sh,ps1} [--platform all|windows|linux]` builds the fork's committed HEAD
-(`git archive`, so the working tree does not matter) into `local/starbreaker-ps/` with one `COMMIT`. Windows natively or
+**Pins** ([ADR 0033](adr/0033-one-pin-file-for-dev-and-bundles.md)): `deps.toml` holds the Blender version with the SHA256 of
+each platform's official archive and the StarBreaker fork's commit. `scripts/setup.{ps1,sh}` sets up a checkout from it
+(clones `../starbreaker-ps` if missing; downloads Blender into `local/cache/`, checks it, unpacks it into
+`local/blender/blender-<version>-<platform>/`; creates `portable/`, links the add-on in and enables it in
+`portable/config/userpref.blend`; builds StarBreaker at the pin), safe to run again. packshot in a checkout prefers the
+pinned Blender version in `local/blender/`.
+
+**StarBreaker:** `scripts/starbreaker-build.{sh,ps1} [--platform all|windows|linux] [--commit <rev>]` builds the pinned
+commit (`git archive`, so the working tree does not matter; `--commit HEAD` tries a fork change) into
+`local/starbreaker-ps/` and stamps each binary (`<binary>.commit`); `COMMIT` mirrors this OS's binary. Windows natively or
 from Linux with mingw; Linux with cargo-zigbuild against glibc 2.31 (on Windows too: zig via `winget install zig.zig`, `cargo install
 cargo-zigbuild`, `rustup target add x86_64-unknown-linux-gnu`; a zig run that fails with "unable to load …: Unexpected" passes
 when started again) (the binary needs glibc 2.30: Ubuntu 20.04 and later;
@@ -649,18 +657,18 @@ a build on a current Fedora-based distro needed 2.43, more than Ubuntu 24.04's 2
 build (20 armour pieces 2.70 s each, identical output). A musl build would run anywhere but exported 58 % slower (4.3
 against 2.7 s, musl's allocator), and the export is the limit.
 
-**Blender:** on Linux `local/blender/blender-5.2.3-linux-x64` (the official tarball) with `portable/config` from the
-Windows one and the add-on as a relative symlink into the fork (ntfs3 cannot follow the Windows junction).
+**Blender:** `local/blender/blender-<version>-<platform>/` from `scripts/setup.*`: on Windows the add-on is a junction, on
+Linux a relative symlink into the fork (ntfs3 cannot follow the Windows junction).
 
 **`scripts/packshot-bundle.sh [--platform all|windows|linux] [--out <dir>]`** (Linux) writes both bundles; the `.ps1`
-builds the same two on Windows (the Linux StarBreaker in `local/starbreaker-ps/` must have been built on Linux).
-- `windows`: packshot.exe from mingw, StarBreaker with `COMMIT`, the official Blender zip checked against its
-  `blender-<ver>.sha256` and left packed, `portable/` with config and the add-on copied from the fork, `cli/render.py`,
+builds the same two on Windows. Both take Blender from the pins (`local/cache/`, the pinned SHA256) and refuse a
+StarBreaker binary whose `.commit` stamp is not the pinned commit; each bundle's `COMMIT` is its binary's stamp.
+- `windows`: packshot.exe from mingw, StarBreaker with `COMMIT`, the pinned Blender zip left packed, `portable/` with config and the add-on copied from the fork, `cli/render.py`,
   `targets.json`, `setup.cmd` (unpacks the zip into `blender\` with Windows' own `tar` and puts `portable/` into it),
   `run.cmd` (refuses `--render` without it), `README.txt`, `packshot.example.json`; texts with CRLF; ~425 MB, unpacked
   ~920 MB.
-- `linux`: the static binary, the Linux StarBreaker with `COMMIT` (printing the glibc it needs), the official Blender
-  tarball from download.blender.org checked against its `.sha256` and left packed so symlinks and exec bits survive, the
+- `linux`: the static binary, the Linux StarBreaker with `COMMIT` (printing the glibc it needs), the pinned Blender
+  tarball, left packed so symlinks and exec bits survive, the
   same `portable/` with the add-on as real files, `cli/render.py`, `targets.json`, `setup.sh` (unpack and install),
   `check.sh` (tests the add-on and a headless EEVEE render on Vulkan), `run.sh` (passes the capabilities on:
   `./run.sh --render --export`), `README.txt`, `packshot.example.json`.

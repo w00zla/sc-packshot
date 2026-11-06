@@ -1,0 +1,15 @@
+# Pinned external tools: the dev setup (scripts/setup.*), the StarBreaker build (scripts/starbreaker-build.*), the
+# bundles (scripts/packshot-bundle.*) and packshot itself in a checkout use exactly these. Change a pin here, then
+# run scripts/setup.* again. Plain `key = "value"` lines only (the scripts read them without a TOML library).
+
+[blender]
+version = "5.2.3"
+# SHA256 of the official archives (download.blender.org/release/Blender<major.minor>/blender-<version>.sha256)
+sha256-windows-x64 = "723f08a4401502561eb763cdeacf8745b31e5f3f154d287d3830d97cf75dc2fb"
+sha256-linux-x64 = "78486c018b4443efe5e75ab54c290ed8c15abafd249b862c2c9ce2530a918eec"
+
+[starbreaker]
+# The fork, built from source until it publishes releases (ADR 0026)
+url = "https://github.com/w00zla/starbreaker-ps"
+repo = "../starbreaker-ps"
+commit = "f1e343635dd2058b596dcd70c208160e75c06bec"
