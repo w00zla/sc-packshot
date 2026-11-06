@@ -2103,7 +2103,7 @@ mod tests {
             ..Default::default()
         };
         let x = root.join("x");
-        let cfg = Config { p4k: x.clone(), starbreaker: x.clone(), blender: x.clone(), render_script: x, work: root.join("work"), size: 256, chunk: 50 };
+        let cfg = Config { p4k: x.clone(), starbreaker: x.clone(), blender: x.clone(), render_script: x, work: root.join("work"), size: 256, chunk: 50, cache_limit: 0 };
         let targets = vec![Target { uuids: vec!["0".into()], names: Some(vec!["Gun".into()]), entity: "gun_a".into(), kind: "WeaponPersonal".into(), sub_type: "Small".into(), worn: false }];
         let mut engine = Engine::new(cfg, targets, Tables::default(), store, set, None, me).unwrap();
         engine.max_renderers = 6;

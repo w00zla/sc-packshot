@@ -801,6 +801,9 @@ impl Renderer {
                     continue;
                 }
                 p.files += 1;
+                if self.cas.has(&f.hash) {
+                    self.cas.touch(&f.hash);
+                }
                 if self.cas.has(&f.hash) || self.inflight.contains_key(&f.hash) {
                     p.cached += f.size;
                 } else {
@@ -899,6 +902,9 @@ impl Renderer {
                     let entity = g.entities.get(&it.item).cloned().unwrap_or_default();
                     match res {
                         Ok(()) => {
+                            for f in &it.files {
+                                self.cas.touch(&f.hash);
+                            }
                             // only what is linked counts against later case variants
                             if self.win_paths {
                                 linked.extend(it.files.iter().map(|f| (f.path.to_lowercase(), f.path.clone())));
@@ -940,6 +946,15 @@ impl Renderer {
             }
             self.request(hub, conn, hashes);
         }
+        // over the cache limit: the least recently used files go, except those the waiting chunks still need (linked
+        // chunks hold their own hard links)
+        let keep: HashSet<String> = self.pending.iter().flat_map(|p| &p.groups).filter_map(|g| g.info.as_ref()).flatten().flat_map(|it| &it.files).map(|f| f.hash.clone()).collect();
+        self.cas.trim(&keep);
+    }
+
+    /// Limit of the fetched-file cache in bytes (0 = none)
+    pub fn set_cache_limit(&mut self, bytes: u64) {
+        self.cas.set_limit(bytes);
     }
 
     /// One tick: start queued work on free slots, give the chunks their processes, forward the processes' results,

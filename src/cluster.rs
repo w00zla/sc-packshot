@@ -925,7 +925,7 @@ mod tests {
         let me = Hello { name: cfg.name.clone(), version: "t".into(), render, export, blender: "5.2.3".into(), addon: Some("a".into()), slots: render as usize, exporters: export as usize, ..Default::default() };
         let hub = Hub::new(cfg, me.clone(), root.join("inbox"));
         let x = root.join("no-such-tool");
-        let config = Config { p4k: x.clone(), starbreaker: x.clone(), blender: x.clone(), render_script: x, work: root.join("work"), size: 256, chunk: 50 };
+        let config = Config { p4k: x.clone(), starbreaker: x.clone(), blender: x.clone(), render_script: x, work: root.join("work"), size: 256, chunk: 50, cache_limit: 0 };
         let mut e = Engine::new(config, Vec::new(), Tables::default(), store, set, Some(hub), me).unwrap();
         e.max_renderers = render as usize;
         e.max_exporters = export as usize;
@@ -1427,6 +1427,7 @@ else:
             work: dir.join("work"),
             size: 64,
             chunk,
+            cache_limit: 0,
         };
         let mut e = Engine::new(config, Vec::new(), Tables::with_rig(rig), store, set, Some(hub), me).unwrap();
         e.max_renderers = blenders;
@@ -1974,7 +1975,7 @@ mod real_tests {
         me.name = name.into();
         let hub = Hub::new(NetConfig { name: name.into(), token: "t".into(), listen, peers, discovery: false }, me.clone(), dir.join("inbox"));
         let tables = if export { crate::cas::tests::repo_tables(&dir.join("work")) } else { crate::tables::Tables::default() };
-        let cfg = Config { p4k, starbreaker, blender, render_script: repo.join("blender/render.py"), work: dir.join("work"), size: 128, chunk: 50 };
+        let cfg = Config { p4k, starbreaker, blender, render_script: repo.join("blender/render.py"), work: dir.join("work"), size: 128, chunk: 50, cache_limit: 0 };
         let mut e = Engine::new(cfg, targets, tables, store, set, Some(hub), me).unwrap();
         e.max_renderers = if render { 2 } else { 0 };
         e.max_exporters = if export { 2 } else { 0 };

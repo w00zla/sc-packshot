@@ -119,19 +119,61 @@ pub fn link_or_copy(src: &Path, dst: &Path) -> Result<()> {
     Ok(())
 }
 
-/// The content-addressed cache of a rendering node: one file per hash, for the run going on
+/// The content-addressed cache of a rendering node: one file per hash, for the run going on. With a limit, `trim`
+/// drops the least recently used files beyond it; render chunks hold hard links (or copies) of what they use, so a
+/// dropped file only means fetching it again if a later chunk needs it
 pub struct Cas {
     dir: PathBuf,
-    have: HashMap<String, u64>,
+    /// hash -> (size, last use)
+    have: HashMap<String, (u64, u64)>,
+    total: u64,
+    tick: u64,
+    /// bytes; 0 = no limit
+    limit: u64,
 }
 
 impl Cas {
     pub fn new(dir: PathBuf) -> Self {
-        Self { dir, have: HashMap::new() }
+        Self { dir, have: HashMap::new(), total: 0, tick: 0, limit: 0 }
+    }
+
+    pub fn set_limit(&mut self, bytes: u64) {
+        self.limit = bytes;
     }
 
     pub fn has(&self, hash: &str) -> bool {
         self.have.contains_key(hash)
+    }
+
+    /// Mark a cached file as used now (it is linked or counted for a chunk)
+    pub fn touch(&mut self, hash: &str) {
+        self.tick += 1;
+        if let Some(e) = self.have.get_mut(hash) {
+            e.1 = self.tick;
+        }
+    }
+
+    /// Over the limit: delete the least recently used files that are not in `keep` (files chunks still wait for)
+    /// until the cache fits; a file that cannot be deleted (Windows: open without share-delete) stays. Returns the
+    /// bytes freed
+    pub fn trim(&mut self, keep: &HashSet<String>) -> u64 {
+        if self.limit == 0 || self.total <= self.limit {
+            return 0;
+        }
+        let mut order: Vec<(u64, String, u64)> = self.have.iter().filter(|(h, _)| !keep.contains(*h)).map(|(h, (size, used))| (*used, h.clone(), *size)).collect();
+        order.sort();
+        let mut freed = 0;
+        for (_, hash, size) in order {
+            if self.total <= self.limit {
+                break;
+            }
+            if fs::remove_file(self.path(&hash)).is_ok() {
+                self.have.remove(&hash);
+                self.total -= size;
+                freed += size;
+            }
+        }
+        freed
     }
 
     pub fn path(&self, hash: &str) -> PathBuf {
@@ -156,18 +198,21 @@ impl Cas {
             fs::copy(src, &dst)?;
             let _ = fs::remove_file(src);
         }
-        self.have.insert(hash.to_string(), size);
+        self.tick += 1;
+        self.have.insert(hash.to_string(), (size, self.tick));
+        self.total += size;
         Ok(())
     }
 
     /// Bytes in the cache
     pub fn bytes(&self) -> u64 {
-        self.have.values().sum()
+        self.total
     }
 
     /// Empty the cache (run over, head node gone)
     pub fn clear(&mut self) {
         self.have.clear();
+        self.total = 0;
         let _ = fs::remove_dir_all(&self.dir);
     }
 }
@@ -379,6 +424,39 @@ pub(crate) mod tests {
         assert_eq!(fs::read_to_string(root.join("out/x/y.png")).unwrap(), "data");
         cas.clear();
         assert!(!cas.has(&hash) && !root.join("cas").exists());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// Over the limit the least recently used files go, files chunks still wait for stay, and a chunk's hard link
+    /// keeps its content when the cache drops the file
+    #[test]
+    fn cache_trims_least_recently_used() {
+        let root = std::env::temp_dir().join(format!("packshot-cas-trim-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        let mut cas = Cas::new(root.join("cas"));
+        let mut hashes = Vec::new();
+        for (i, text) in ["aaaa", "bbbb", "cccc", "dddd"].iter().enumerate() {
+            let src = root.join(format!("in{i}"));
+            fs::write(&src, text).unwrap();
+            let (_, h) = hash_file(&src).unwrap();
+            cas.put(&h, &src).unwrap();
+            hashes.push(h);
+        }
+        let (a, b, c, d) = (&hashes[0], &hashes[1], &hashes[2], &hashes[3]);
+        assert_eq!(cas.trim(&HashSet::new()), 0, "no limit, nothing goes");
+        link_or_copy(&cas.path(a), &root.join("chunk/a.png")).unwrap();
+        cas.touch(a);
+        cas.set_limit(8);
+        // b is the oldest but a chunk waits for it; c is next: c and then d go (a was used last)
+        let freed = cas.trim(&HashSet::from([b.clone()]));
+        assert_eq!((freed, cas.bytes()), (8, 8));
+        assert!(cas.has(a) && cas.has(b) && !cas.has(c) && !cas.has(d));
+        assert!(!cas.path(c).exists() && cas.path(a).exists());
+        // the cache drops a: the chunk's link still has the data
+        cas.set_limit(4);
+        cas.trim(&HashSet::from([b.clone()]));
+        assert!(!cas.has(a) && cas.has(b) && fs::read_to_string(root.join("chunk/a.png")).unwrap() == "aaaa");
         let _ = fs::remove_dir_all(&root);
     }
 }

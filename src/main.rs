@@ -61,6 +61,7 @@ Tuning
   --workers <n>          Blender processes (default: the assessment, else ¾ of the cores)
   --exporters <n>        export processes (default: the assessment, else ¼ of the cores, at least 2)
   --chunk <n>            at most n items per chunk (default 50)
+  --cache-limit <GB>     cache of files fetched from other nodes (default 20, 0 = no limit)
   --size <px>            icon edge length (default 256)
   --refresh-tables       read the pose and light tables from the DataCore again
 
@@ -184,7 +185,7 @@ fn real_main() -> Result<()> {
                     it.next();
                 }
             }
-            "filter" | "scope" | "set" | "name" | "workers" | "exporters" | "chunk" | "size" | "targets" | "p4k" | "starbreaker" | "blender" | "render-script" | "store" | "work" => {
+            "filter" | "scope" | "set" | "name" | "workers" | "exporters" | "chunk" | "cache-limit" | "size" | "targets" | "p4k" | "starbreaker" | "blender" | "render-script" | "store" | "work" => {
                 let v = it.next().ok_or_else(|| anyhow!("--{key} needs a value"))?;
                 opt.insert(key.to_string(), v.clone());
             }
@@ -332,7 +333,7 @@ fn real_main() -> Result<()> {
         bail!("--plain and --dry-run need a target list in set {} (--targets <file>)", set.name);
     }
     let tables = if export && !tables_later { Tables::load(starbreaker.as_deref().unwrap_or(Path::new("")), &p4k, &work, flags.contains("refresh-tables"), |s| println!("{s}"))? } else { Tables::default() };
-    let cfg = Config { p4k, starbreaker: starbreaker.unwrap_or_default(), blender: blender.unwrap_or_default(), render_script, work: work.clone(), size: num("size", 256)? as u32, chunk: num("chunk", 50)?.max(1) };
+    let cfg = Config { p4k, starbreaker: starbreaker.unwrap_or_default(), blender: blender.unwrap_or_default(), render_script, work: work.clone(), size: num("size", 256)? as u32, chunk: num("chunk", 50)?.max(1), cache_limit: num("cache-limit", 20)? as u64 * (1 << 30) };
     // Network only with a token and not for a dry run; files of an earlier session in the inbox are stale
     if net_cfg.enabled() && !args.dry_run {
         let _ = fs::remove_dir_all(work.join("inbox"));

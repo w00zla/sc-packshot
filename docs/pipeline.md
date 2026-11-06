@@ -71,7 +71,7 @@ colour, and the vertex colours are blend masks. Hence the decomposed export plus
 ### The StarBreaker fork
 
 The fork **starbreaker-ps** (`local/starbreaker-ps/`, built from the repo `../starbreaker-ps`, MIT, version
-`0.3.2-qm.n`, commit in `COMMIT`) is required ([ADR 0026](adr/0026-starbreaker-by-release-pin.md)). It is the
+`0.3.2-ps.n`, commit in `COMMIT`) is required ([ADR 0026](adr/0026-starbreaker-by-release-pin.md)). It is the
 [fleetyards fork](https://github.com/fleetyards/StarBreaker) with upstream (diogotr7) merged in (merge commit
 9aa7ce15): fleetyards' item, material and add-on work, upstream's rest (skinning, characters, `--geometry-tag`,
 quick_xml, fixes such as the Sion compensator's texture). The Blender add-on is fleetyards' (both rebuilt the decal
@@ -496,6 +496,8 @@ their connection:
 - It fetches only the hashes it has neither in its **cache** nor on their way (`<work>/cas/`, hash to file, per run,
   gone at the run's end or when its head node drops), and links each render chunk's folder (`<work>/fetch/`) from the
   cache, laid out as on the holder, one subfolder per export chunk, so the paths in the export stay valid.
+- The cache is capped by `--cache-limit <GB>` (default 20, 0 = none): past it, the least recently used files go, except
+  those waiting chunks still need; linked chunks keep their hard links ([ADR 0031](adr/0031-render-cache-limit.md)).
 - No compression (90 % of the bytes are PNG textures).
 - So **every node must reach every other one**: discovery does it in one network segment; with `peers` the nodes have
   to list each other. An item whose holder is not connected to its renderer goes back to the head node (counted) and

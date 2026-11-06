@@ -51,6 +51,8 @@ pub struct Config {
     pub work: PathBuf,
     pub size: u32,
     pub chunk: usize,
+    /// fetched-file cache limit of a rendering node in bytes (0 = none)
+    pub cache_limit: u64,
 }
 
 /// What gets rendered from the filter selection
@@ -579,6 +581,7 @@ impl Engine {
         let haystack = targets.iter().map(search_text).collect();
         let manifest = crate::cluster::load_manifest(&store.root);
         let mut serve = crate::node::Renderer::new(&me.name, &cfg.work, cfg.blender.clone(), cfg.render_script.clone(), 0);
+        serve.set_cache_limit(cfg.cache_limit);
         if me.export {
             serve.tools = Some(crate::node::ExportTools { starbreaker: cfg.starbreaker.clone(), p4k: cfg.p4k.clone() });
         }
