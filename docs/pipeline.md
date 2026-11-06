@@ -18,11 +18,11 @@ the models ([ADR 0001](adr/0001-render-icons-from-3d-models.md)):
 
 1. **Export** with StarBreaker (`entity export-batch`): a decomposed package per entity (`scene.blend`, meshes,
    textures, materials).
-2. **Render** in a portable Blender with the StarBreaker add-on and `src/icons/render.py`: Eevee, 16 samples,
+2. **Render** in a portable Blender with the StarBreaker add-on and `blender/render.py`: Eevee, 16 samples,
    transparent film, 256 px (`--size`), pose and light rig computed from the game's own inventory data.
 3. **Store** the PNG in a run folder and link it into a set.
 
-The orchestrator is `tools/packshot/` (Rust, ratatui, ratatui-image; [ADR 0007](adr/0007-rust-ratatui-orchestrator.md)).
+The orchestrator is the Rust crate at the repository root (ratatui, ratatui-image; [ADR 0007](adr/0007-rust-ratatui-orchestrator.md)).
 It runs export and render with several long-lived processes at once, on one machine or a cluster. Nothing here needs
 Node or a database: the target list is a file (`targets.json`), pose and rig are read from the DataCore by the
 exporting node itself.
@@ -90,7 +90,7 @@ batch wrote it first; 35 warnings in a full run), `--stdin` mode.
 
 ## Render
 
-`blender -b --python src/icons/render.py -- --stdin` in a portable Blender (`local/blender/<version>/`, config under
+`blender -b --python blender/render.py -- --stdin` in a portable Blender (`local/blender/<version>/`, config under
 its `portable/`; [ADR 0008](adr/0008-blender-vulkan-threads-long-lived.md)):
 
 - Blender starts once, prints `ready: pid <pid>`, then takes one JSON job per stdin line (the same object as one entry
@@ -218,7 +218,7 @@ came from a renderer without a licence ([ADR 0002](adr/0002-facts-only-from-unli
 
 ## Output: runs and sets
 
-([ADR 0011](adr/0011-runs-and-sets.md); `tools/packshot/src/store.rs`.)
+([ADR 0011](adr/0011-runs-and-sets.md); `src/store.rs`.)
 
 **Folder layout**, the same on every node: `packshot.json` (cluster config), `assessment.json`, `targets.json` (the file
 offered as a set's target list), `runs/`, `sets/`, `manifests/` and `work/` (cache: exports, renders, DataCore tables,
@@ -344,7 +344,7 @@ Processes are long-lived on every node ([ADR 0008](adr/0008-blender-vulkan-threa
 (`blenkernel/intern/node_tree_update.cc` ~2164 -> `blenlib/intern/rand.cc` ~290); libstdc++ reads it via RDSEED, a slow
 hardware source shared by all cores (~27 us per call), and render.py's node writes make ~1860 calls per item. That
 capped the whole PC at ~13-14 items/s however many Blender ran.
-- The shim (`tools/packshot/shim/rdseed_shim.rs`) replaces only `std::random_device::_M_getval()` in the Blender
+- The shim (`shim/rdseed_shim.rs`) replaces only `std::random_device::_M_getval()` in the Blender
   process (splitmix64 over an atomic counter, seeded once by `getrandom`; thread-safe, no libc).
 - `build.rs` builds it for Linux targets only, as a `no_std` cdylib with rustc and rust-lld (no C compiler, also when
   the musl binary is built on Windows). packshot embeds it and writes it at start to `<work>/rdseed-shim-<hash>.so`
@@ -434,7 +434,7 @@ time), how long items waited for a Blender, CPU/GPU, slowest items, failures.
 
 ([ADR 0013](adr/0013-cluster-capabilities-and-head-node.md), [0014](adr/0014-same-state-or-no-run.md),
 [0016](adr/0016-data-p4k-only-on-exporters.md), [0018](adr/0018-validate-peer-input-and-lock.md);
-`tools/packshot/src/net.rs`, `cluster.rs`, `node.rs`.)
+`src/net.rs`, `cluster.rs`, `node.rs`.)
 
 **Config** in `packshot.json` in the packshot folder (in a bundle next to the exe): `token`, optional `listen` (default
 `0.0.0.0:47950`; all nodes need the same port for the discovery), `peers` (DNS names or IPs with an optional port, for
@@ -570,7 +570,7 @@ their connection:
 
 ## Compute assessment
 
-([ADR 0019](adr/0019-compute-assessment-on-demand.md); `tools/packshot/src/assess.rs`.)
+([ADR 0019](adr/0019-compute-assessment-on-demand.md); `src/assess.rs`.)
 
 On demand only: `--assess` (this node, needs `--render`; prints the steps and the choice, saves it and exits) or `b` in
 view 3 for the selected node (asks first; another node gets a request and runs it itself). Refused while a run is going
@@ -632,7 +632,7 @@ saturates, the GPU does not. The rates are the test set's (a mix); what matters 
 ([ADR 0012](adr/0012-bundles-per-os.md).)
 
 **packshot:** builds for Windows (`cargo build --release`) and as a static Linux binary
-(`--target x86_64-unknown-linux-musl`, linked by Rust's own `rust-lld` per `tools/packshot/.cargo/config.toml`, no C
+(`--target x86_64-unknown-linux-musl`, linked by Rust's own `rust-lld` per `.cargo/config.toml`, no C
 toolchain needed; static PIE without interpreter or shared libraries; the embedded RDSEED shim is built the same way, so
 the bundles need nothing extra). Windows exes also build on Linux with mingw (`--target x86_64-pc-windows-gnu`,
 `mingw64-gcc` as linker; they need only Windows' own DLLs).
@@ -659,7 +659,7 @@ builds the same two on Windows (the Linux StarBreaker in `local/starbreaker-ps/`
   same `portable/` with the add-on as real files, `cli/render.py`, `targets.json`, `setup.sh` (unpack and install),
   `check.sh` (tests the add-on and a headless EEVEE render on Vulkan), `run.sh` (passes the capabilities on:
   `./run.sh --render --export`), `README.txt`, `packshot.example.json`.
-- The templates live in `tools/packshot/bundle/`.
+- The templates live in `bundle/`.
 - Data.p4k and `build_manifest.id` go next to the bundle on exporting nodes.
 
 **Checked:** 2026-11-03 with the bundles of then (node-only Linux bundle, unpacked Windows Blender): both on their

@@ -1,4 +1,4 @@
-﻿# Packs everything the Rust tool packshot (tools/packshot) needs on another machine, one folder per platform, built on
+﻿# Packs everything the Rust tool packshot needs on another machine, one folder per platform, built on
 # Windows (scripts/packshot-bundle.sh builds the same on Linux):
 #   <Out>/windows: packshot.exe, StarBreaker (our fork), the official Blender zip (SHA256 checked, left packed:
 #                  setup.cmd unpacks it on the node), portable/ (config + add-on), render.py, targets.json, setup.cmd,
@@ -21,8 +21,8 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 Set-Location $root
 $Out = [System.IO.Path]::GetFullPath((Join-Path $root $Out))
-$tpl = Join-Path $root 'tools/packshot/bundle'
-$crate = Join-Path $root 'tools/packshot'
+$tpl = Join-Path $root 'bundle'
+$crate = $root
 New-Item -ItemType Directory -Force -Path $Out | Out-Null
 $doWin = $Platform -in 'all', 'windows'
 $doLin = $Platform -in 'all', 'linux'
@@ -128,7 +128,7 @@ if ($doWin) {
   }
 
   New-Item -ItemType Directory -Force -Path (Join-Path $win 'cli') | Out-Null
-  Copy-Item src/icons/render.py (Join-Path $win 'cli') -Force
+  Copy-Item blender/render.py (Join-Path $win 'cli') -Force
   if ($targets) { Copy-Item $targets (Join-Path $win 'targets.json') -Force }
 
   foreach ($f in 'setup.cmd', 'run.cmd', 'README.txt') { Copy-Template (Join-Path $tpl "windows/$f") (Join-Path $win $f) -Crlf }
@@ -160,7 +160,7 @@ if ($doLin) {
   }
 
   New-Item -ItemType Directory -Force -Path (Join-Path $lin 'cli') | Out-Null
-  Copy-Item src/icons/render.py (Join-Path $lin 'cli') -Force
+  Copy-Item blender/render.py (Join-Path $lin 'cli') -Force
   if ($targets) { Copy-Item $targets (Join-Path $lin 'targets.json') -Force }
   foreach ($f in 'setup.sh', 'check.sh', 'run.sh', 'README.txt') { Copy-Template (Join-Path $tpl "linux/$f") (Join-Path $lin $f) }
   Copy-Template (Join-Path $tpl 'packshot.example.json') (Join-Path $lin 'packshot.example.json')

@@ -34,3 +34,4 @@ supersedes the old one. 0001–0020 were recorded afterwards (2026-11-05) from t
 | [0027](0027-output-formats-thumbnails-are-users.md) | packshot writes common image formats; thumbnails are the user's business | accepted | 2026-11-05 |
 | [0028](0028-security-notice-only.md) | Executing distributed profiles: a documented notice, no extra code | accepted | 2026-11-05 |
 | [0029](0029-no-set-comparison-in-tui.md) | No set comparison in the TUI | accepted | 2026-11-05 |
+| [0030](0030-flat-repository-layout.md) | Flat repository layout | accepted | 2026-11-06 |

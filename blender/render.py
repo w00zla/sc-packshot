@@ -1,8 +1,8 @@
 # Renders items as icons: bounding-box fit, the game's pose and light rig, transparent background.
-# Runs only in Blender's own Python (no system Python), started by tools/packshot:
-#   blender -b --python src/icons/render.py -- --stdin                     (persistent: one JSON job per stdin line)
-#   blender -b --python src/icons/render.py -- --jobs <jobs.json>          (batch, one Blender process)
-#   blender -b --python src/icons/render.py -- <in.glb|scene.blend> <out.png> [--pose 90,125,5] [--rig rig.json]
+# Runs only in Blender's own Python (no system Python), started by packshot:
+#   blender -b --python blender/render.py -- --stdin                     (persistent: one JSON job per stdin line)
+#   blender -b --python blender/render.py -- --jobs <jobs.json>          (batch, one Blender process)
+#   blender -b --python blender/render.py -- <in.glb|scene.blend> <out.png> [--pose 90,125,5] [--rig rig.json]
 # --stdin prints "ready: pid <pid>" once Blender is up, then reads one job per line (the same object as one entry
 # of a jobs file) and answers each with its icon:/failed: line; EOF or a line "quit" (or {"quit": true}) ends it.
 # Input: a GLB (StarBreaker bundled) or the scene.blend of a decomposed export (the StarBreaker add-on then

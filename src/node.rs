@@ -1951,7 +1951,7 @@ mod tests {
     #[test]
     #[ignore]
     fn export_hold_render() {
-        let repo = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let repo = Path::new(env!("CARGO_MANIFEST_DIR")).to_path_buf();
         let p4k = PathBuf::from(std::env::var("SC_DATA_P4K").expect("SC_DATA_P4K"));
         let blender = fs::read_dir(repo.join("local/blender")).unwrap().flatten().map(|e| e.path().join(crate::exe("blender"))).find(|p| p.exists()).unwrap();
         let root = std::env::temp_dir().join(format!("packshot-node-{}", std::process::id()));
@@ -1993,7 +1993,7 @@ mod tests {
                     HubEv::Msg { msg: Msg::ItemExported { item, ok, .. }, .. } => exported.push((item, ok)),
                     HubEv::Msg { msg: Msg::ExportDone { .. }, .. } => {
                         // render the exported item where it is held, with the repo's render.py
-                        let script = repo.join("src/icons/render.py");
+                        let script = repo.join("blender/render.py");
                         let files = vec![FileEntry { path: "render.py".into(), size: fs::metadata(&script).unwrap().len() }];
                         let jobs = vec![RenderJob { item: 7, entity: "thumbnailentity_resource_rock_gold".into(), holder: "b".into(), chunk: 1 }];
                         a.send(conn_a, Msg::Render { id: 2, size: 128, jobs, files }, Payload::Files(vec![script]));

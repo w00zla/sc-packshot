@@ -91,8 +91,7 @@ sets/<experiment>/              a branch of live, adopted into live when you lik
 
 ## Status and roadmap
 
-packshot was just split out of the project it was built for. It runs as it did there, and its layout
-(`tools/packshot/`, `src/icons/render.py`, `scripts/`) still shows that.
+packshot was just split out of the project it was built for and runs as it did there.
 
 Next is the **modular design** ([ADR 0022](docs/adr/0022-modular-profiles.md)): profiles that combine these freely,
 so the main use becomes playing with looks.
@@ -113,7 +112,6 @@ Today's look becomes the default profile.
 ## Building
 
 ```sh
-cd tools/packshot
 cargo build --release
 cargo test --release
 ```

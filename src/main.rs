@@ -1,7 +1,7 @@
 // packshot: control room for rendering game entities. Every set carries its target list (a targets.json,
 // taken into a set with key t or --targets),
 // computes pose and light rig from the game's tables, exports with StarBreaker export-batch and
-// renders with src/icons/render.py, several export and Blender processes at once, selection by filter and scope
+// renders with blender/render.py, several export and Blender processes at once, selection by filter and scope
 // (missing / failed / all), image preview. Every run is a run folder whose images land in the target set (store.rs;
 // consumers read live). Every node starts with what it can do now (--render, --export); with a token in
 // packshot.json the nodes find each other and every node can start a run, on itself or on another node as its main
@@ -199,7 +199,7 @@ fn real_main() -> Result<()> {
     // The packshot folder, laid out like a bundle (packshot.json, targets.json, runs/, sets/, work/): local/packshot in
     // the repo, else the current folder (the bundle, next to the exe)
     let root = env::current_dir()?;
-    let repo = root.join("local").is_dir() && root.join("src/icons").is_dir();
+    let repo = root.join("local").is_dir() && root.join("blender/render.py").is_file();
     let path = |key: &str| opt.get(key).map(|p| root.join(p));
     let store_dir = path("store").unwrap_or_else(|| if repo { root.join("local/packshot") } else { root.clone() });
     let work = path("work").unwrap_or_else(|| store_dir.join("work"));
@@ -262,7 +262,7 @@ fn real_main() -> Result<()> {
         PathBuf::new()
     };
     let render_script = path("render-script")
-        .or_else(|| first_existing(&[root.join("src/icons/render.py"), root.join("cli/render.py")]))
+        .or_else(|| first_existing(&[root.join("blender/render.py"), root.join("cli/render.py")]))
         .ok_or_else(|| anyhow!("render.py not found (--render-script)"))?;
 
     let scope = match opt.get("scope") {

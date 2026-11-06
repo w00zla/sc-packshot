@@ -1961,7 +1961,7 @@ mod real_tests {
 
     /// A node with real tools and the given capabilities; its DataCore tables from a copy of the repo's
     fn real(root: &Path, name: &str, listen: String, peers: Vec<String>, render: bool, export: bool) -> Engine {
-        let repo = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let repo = Path::new(env!("CARGO_MANIFEST_DIR")).to_path_buf();
         let p4k = PathBuf::from(std::env::var("SC_DATA_P4K").expect("SC_DATA_P4K"));
         let starbreaker = repo.join("local/starbreaker-ps").join(crate::exe("starbreaker"));
         let blender = fs::read_dir(repo.join("local/blender")).unwrap().flatten().map(|e| e.path().join(crate::exe("blender"))).find(|p| p.exists()).unwrap();
@@ -1974,7 +1974,7 @@ mod real_tests {
         me.name = name.into();
         let hub = Hub::new(NetConfig { name: name.into(), token: "t".into(), listen, peers, discovery: false }, me.clone(), dir.join("inbox"));
         let tables = if export { crate::cas::tests::repo_tables(&dir.join("work")) } else { crate::tables::Tables::default() };
-        let cfg = Config { p4k, starbreaker, blender, render_script: repo.join("src/icons/render.py"), work: dir.join("work"), size: 128, chunk: 50 };
+        let cfg = Config { p4k, starbreaker, blender, render_script: repo.join("blender/render.py"), work: dir.join("work"), size: 128, chunk: 50 };
         let mut e = Engine::new(cfg, targets, tables, store, set, Some(hub), me).unwrap();
         e.max_renderers = if render { 2 } else { 0 };
         e.max_exporters = if export { 2 } else { 0 };

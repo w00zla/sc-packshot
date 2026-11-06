@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Packs everything packshot (tools/packshot) needs on another node, one folder per platform, built on Linux:
+# Packs everything packshot (this repository) needs on another node, one folder per platform, built on Linux:
 #   <out>/windows: packshot.exe (cross-built with mingw), starbreaker/ (starbreaker.exe and COMMIT from
 #                  local/starbreaker-ps/), the official Blender zip (SHA256 checked, left packed: setup.cmd unpacks
 #                  it on the node), portable/ (config and add-on), cli/render.py, targets.json, setup.cmd, run.cmd,
@@ -40,7 +40,7 @@ case $platform in
 esac
 
 cd "$(dirname "$0")/.."
-tpl=tools/packshot/bundle
+tpl=bundle
 cache=$out/cache
 mkdir -p "$cache"
 
@@ -64,7 +64,7 @@ fi
 texts() {
   local dir=$1 os=$2
   mkdir -p "$dir/cli"
-  cp src/icons/render.py "$dir/cli/"
+  cp blender/render.py "$dir/cli/"
   if [[ -n $targets ]]; then
     cp "$targets" "$dir/targets.json"
   fi
@@ -116,9 +116,9 @@ if [[ $do_win == 1 ]]; then
     exit 1
   fi
   echo "Building packshot (Windows, mingw) ..."
-  (cd tools/packshot && cargo build --release --target x86_64-pc-windows-gnu)
+  (cargo build --release --target x86_64-pc-windows-gnu)
   mkdir -p "$win/starbreaker"
-  cp tools/packshot/target/x86_64-pc-windows-gnu/release/packshot.exe "$win/"
+  cp target/x86_64-pc-windows-gnu/release/packshot.exe "$win/"
   cp local/starbreaker-ps/starbreaker.exe local/starbreaker-ps/COMMIT "$win/starbreaker/"
   # Blender zip, packed (setup.cmd unpacks it); the unpacked blender/ of older bundles goes
   zip_name=blender-$blender_version-windows-x64.zip
@@ -145,9 +145,9 @@ if [[ $do_lin == 1 ]]; then
   fi
   # 1. packshot: static, runs on any x86-64 Linux
   echo "Building packshot (Linux, musl) ..."
-  (cd tools/packshot && cargo build --release --target x86_64-unknown-linux-musl)
+  (cargo build --release --target x86_64-unknown-linux-musl)
   mkdir -p "$lin/starbreaker"
-  cp tools/packshot/target/x86_64-unknown-linux-musl/release/packshot "$lin/"
+  cp target/x86_64-unknown-linux-musl/release/packshot "$lin/"
   # 2. StarBreaker: dynamically linked against glibc, so the node needs at least the glibc it was built with
   cp "$sb" local/starbreaker-ps/COMMIT "$lin/starbreaker/"
   if command -v objdump >/dev/null 2>&1; then

@@ -1,8 +1,9 @@
 # CLAUDE.md
 
 packshot: renders Star Citizen items (StarBreaker export + Blender) in parallel, on one machine or a cluster, with a
-ratatui TUI. Public repository, MIT. Split out of sc-quartermaster (the consuming org tool) on 2026-11-05; the
-layout still mirrors it (`tools/packshot/`, `src/icons/render.py`, `scripts/`).
+ratatui TUI. Public repository, MIT. Split out of sc-quartermaster (the consuming org tool) on 2026-11-05.
+Layout: the Rust crate at the root (`src/`, `build.rs`, `shim/`), `blender/render.py` (the Blender script), `bundle/`
+(bundle templates), `scripts/`, `docs/`.
 
 Technical documentation (export, render look, scheduler, runs and sets, cluster, assessment, bundles, measurements):
 [docs/pipeline.md](docs/pipeline.md).
@@ -19,19 +20,19 @@ Technical documentation (export, render look, scheduler, runs and sets, cluster,
 ## Commands
 
 Run everything from the repo root. There is no pnpm here; `P` below stands for
-`cargo run --release --manifest-path tools/packshot/Cargo.toml --` (or use the built `tools/packshot/target/release/packshot`).
+`cargo run --release --` (or use the built `target/release/packshot`).
 Folders: store `local/packshot/`, Blender `local/blender/`, StarBreaker fork build `local/starbreaker-ps/`.
 
 ```sh
-cargo build --release --manifest-path tools/packshot/Cargo.toml    # the tool
-cargo test --release --manifest-path tools/packshot/Cargo.toml     # tests with fake tools; real-tool tests are #[ignore]
-SC_DATA_P4K=<Data.p4k> cargo test --release --manifest-path tools/packshot/Cargo.toml -- --ignored   # real StarBreaker + Blender (Data.p4k with build_manifest.id next to it)
+cargo build --release    # the tool
+cargo test --release     # tests with fake tools; real-tool tests are #[ignore]
+SC_DATA_P4K=<Data.p4k> cargo test --release -- --ignored   # real StarBreaker + Blender (Data.p4k with build_manifest.id next to it)
 
 P [--render] [--export] [--filter <terms>] [--scope missing|failed|all] [--set <name>] [--name <run>] [--plain|--serve] [--workers n] [--exporters n]
 #   renders the targets: long-lived processes per node: one `starbreaker entity export-batch --stdin` per export slot (the fork, local/starbreaker-ps;
-#   without --stdin in its --help one export-batch per export chunk) and one Blender + add-on (local/blender) + src/icons/render.py --stdin per render slot
+#   without --stdin in its --help one export-batch per export chunk) and one Blender + add-on (local/blender) + blender/render.py --stdin per render slot
 #   (restarted after 200 jobs or 3 GB, export-batch after 40 chunks or 2 GB; a crash fails only the job in flight), several in parallel, terminal dashboard with render preview
-#   every Blender gets --threads 2; on Linux also the RDSEED shim via LD_PRELOAD (tools/packshot/shim/rdseed_shim.rs, built by build.rs with rustc + rust-lld, embedded, written to <work>/rdseed-shim-<hash>.so)
+#   every Blender gets --threads 2; on Linux also the RDSEED shim via LD_PRELOAD (shim/rdseed_shim.rs, built by build.rs with rustc + rust-lld, embedded, written to <work>/rdseed-shim-<hash>.so)
 #   no roles: --render (Blender) and --export (Data.p4k + StarBreaker) say what this node can do now, neither = it only starts runs, stores them, watches; counts change in the TUI (+/-, </>)
 #   --export needs $SC_DATA_P4K (or --p4k) with build_manifest.id next to the Data.p4k; --targets <file> sets the target set's list; --dry-run lists what would be rendered; --size <px> (256); --chunk <n> (50)
 #   --store/--work/--starbreaker/--blender/--render-script override the paths; --refresh-tables rereads pose and light tables from the DataCore; --help lists everything
@@ -54,7 +55,7 @@ P --assess                              # compute assessment on this node, then 
 P --report [log|run dir]                # evaluates a run's event log (runs/<run>/events.jsonl, default the latest run): items/s, phases p50/p95, chunk overhead and slot use of every node's Blenders,
                                         # export overhead, transfer between nodes, CPU/GPU, slowest items
 
-cargo build --release --target x86_64-unknown-linux-musl   # in tools/packshot: the static Linux binary, linked by rust-lld (tools/packshot/.cargo/config.toml; target once via rustup target add x86_64-unknown-linux-musl)
+cargo build --release --target x86_64-unknown-linux-musl   # the static Linux binary, linked by rust-lld (.cargo/config.toml; target once via rustup target add x86_64-unknown-linux-musl)
 scripts/packshot-bundle.sh [--platform all|windows|linux] [--out <dir>] [--targets <file>]   # on Linux, both bundles: local/packshot-bundle/windows (packshot.exe cross-built with mingw: rustup target x86_64-pc-windows-gnu + mingw64-gcc;
 #   StarBreaker, the official Blender zip checked by SHA256, portable/ with the add-on, cli/render.py, targets.json, setup.cmd, run.cmd; Data.p4k + build_manifest.id go next to it)
 #   and linux (static packshot, the Linux StarBreaker (glibc: it prints the version it needs), the official Blender tarball checked by SHA256, portable/ with the add-on, render.py, targets.json, setup.sh, check.sh, run.sh)

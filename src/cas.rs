@@ -217,7 +217,7 @@ pub(crate) mod tests {
 
     /// The DataCore tables of the repo's packshot folder, read from a copy (Tables::load rewrites its rigs)
     pub(crate) fn repo_tables(work: &Path) -> crate::tables::Tables {
-        let repo = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let repo = Path::new(env!("CARGO_MANIFEST_DIR")).to_path_buf();
         let p4k = PathBuf::from(std::env::var("SC_DATA_P4K").expect("SC_DATA_P4K"));
         let starbreaker = repo.join("local/starbreaker-ps").join(crate::exe("starbreaker"));
         let dcb = repo.join("local/packshot/work/dcb");
@@ -235,7 +235,7 @@ pub(crate) mod tests {
     #[ignore]
     fn closure_renders_like_full() {
         use crate::engine::Target;
-        let repo = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let repo = Path::new(env!("CARGO_MANIFEST_DIR")).to_path_buf();
         let p4k = PathBuf::from(std::env::var("SC_DATA_P4K").expect("SC_DATA_P4K"));
         let starbreaker = repo.join("local/starbreaker-ps").join(crate::exe("starbreaker"));
         let blender = fs::read_dir(repo.join("local/blender")).unwrap().flatten().map(|e| e.path().join(crate::exe("blender"))).find(|p| p.exists()).unwrap();
@@ -311,7 +311,7 @@ pub(crate) mod tests {
         };
         let full_bytes: u64 = index.files.values().flatten().map(|r| fs::metadata(full.join(r)).unwrap().len()).sum();
         println!("{} of {} exported; whole export {:.1} MB, closures {part_files} files {:.1} MB in all", done.len(), sample.len(), full_bytes as f64 / 1e6, part_bytes as f64 / 1e6);
-        let script = repo.join("src/icons/render.py");
+        let script = repo.join("blender/render.py");
         let render = |name: &str, jobs: &Vec<serde_json::Value>| {
             let file = root.join(format!("{name}.json"));
             fs::write(&file, serde_json::to_vec(jobs).unwrap()).unwrap();

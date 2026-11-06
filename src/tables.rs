@@ -1,6 +1,6 @@
 // Pose and light tables of the inventory from the DataCore (`PlayerChoice_PITConfig.inventoryParams`,
 // `inventorylightgroup_*`), cached in the working directory under <work>/dcb (port of loadGameTables from the
-// former src/icons/cli.ts, checked identical for all targets and rigs).
+// the TypeScript pipeline it replaced, checked identical for all targets and rigs).
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
