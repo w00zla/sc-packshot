@@ -56,8 +56,7 @@ On Linux run the check first: a headless Blender depends on the GPU driver and i
   [Profiles](#profiles)), and for a target list while the set has none (a JSON file or the target picker;
   [Target lists](#target-lists)). `--profile` preselects the profile; `--size` and `--format png|jpeg|exr` override
   its values.
-- **Cluster:** the same `token` in every node's `packshot.json` (copied from `packshot.example.json`), port 47950 TCP
-  and UDP open on the LAN, nodes on another subnet in `peers`.
+- Several PCs can work on one run as a **cluster** ([Cluster](#cluster)).
 - Process counts follow the node's measured **assessment** (`--assess` or `b`), else a share of its cores.
 
 ## The terminal UI
@@ -199,15 +198,6 @@ The file is a JSON array, one object per entity; other tools can write it, packs
    "type": "WeaponPersonal", "subType": "Medium", "worn": false }]
 ```
 
-### Cluster
-
-Every node starts with what it can do now (`--render`, `--export`, both or neither). Any node can start a run, on
-itself or on another node, which then holds it as the **head node** and assigns the chunks. One run at a time in the
-cluster. Every node must run the same packshot build, Blender, add-on and StarBreaker, and the exporting nodes the same
-`Data.p4k`; otherwise no run starts and the TUI shows what differs. The starter decides what a run renders, as on one
-node: target set, target list and profile go along to the head node. The head node sends `render.py`, `game-tile` and
-the run's profile with every render chunk; a node keeps them while it runs.
-
 ## Profiles
 
 A profile is a folder with two files. Anything it does not set falls back to `game-tile`, the default profile:
@@ -242,6 +232,22 @@ Bundled profiles live in `profiles/` next to the tool; your own go into `profile
 that is the bundle's own `profiles/`) and hide a bundled one of the same name; `game-tile` itself cannot be replaced.
 Every run records its profile, the profile's content hash and the size and format used; the Sets view shows the
 profile per run, the run's tile all of it.
+
+## Cluster
+
+Several PCs can work on one run together. To set it up, on every node:
+
+- copy `packshot.example.json` to `packshot.json` and set the same `token` everywhere;
+- open port 47950 (TCP and UDP) on the LAN; nodes on another subnet go into `peers`.
+
+The nodes then find each other and show up in the Nodes view. Every node starts with what it can do now (`--render`,
+`--export`, both or neither). Any node can start a run, on itself or on another node, which then holds it as the
+**head node** and assigns the chunks; one run at a time in the cluster. The starter decides what a run renders, as on
+one node: target set, target list and profile go along to the head node, which sends `render.py`, `game-tile` and the
+run's profile with every render chunk.
+
+Every node must run the same packshot build, Blender, add-on and StarBreaker, and the exporting nodes the same
+`Data.p4k`; otherwise no run starts and the TUI shows what differs.
 
 ## Develop
 
