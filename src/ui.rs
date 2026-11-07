@@ -906,8 +906,10 @@ fn boxed(title: impl Into<String>) -> Block<'static> {
     Block::bordered().border_style(Style::new().fg(DIM)).title(Span::styled(format!(" {} ", title.into()), Style::new().fg(ACCENT).add_modifier(Modifier::BOLD)))
 }
 
-/// Height of the bottom row in views 1 and 3 (throughput and pool; the node details): the same, so the views line up
-const BOTTOM_ROW: u16 = 14;
+/// Height of the throughput and pool row at the bottom of view 1
+const METRICS_ROW: u16 = 10;
+/// Height of the node details row at the bottom of view 3: the details take 11 lines
+const DETAILS_ROW: u16 = 14;
 
 fn draw(f: &mut Frame, app: &mut App) {
     let [tabs, rest, log, keys] = Layout::vertical([Constraint::Length(1), Constraint::Fill(2), Constraint::Fill(1), Constraint::Length(1)]).areas(f.area());
@@ -1311,9 +1313,9 @@ fn phase_line(avg: Option<[f64; 5]>) -> Line<'static> {
 
 /// The workers table with its summary, above throughput and pool
 fn workers_panel(f: &mut Frame, app: &App, area: Rect, rows: &[WorkerStatus], gone: &[String], summary: Vec<Line<'static>>, rate_title: String) {
-    // fixed heights, so nothing jumps while workers come and go: throughput and pool as high as the details row of
-    // view 3 (both at the bottom), the workers take the rest
-    let [top, bottom] = Layout::vertical([Constraint::Fill(1), Constraint::Length(BOTTOM_ROW)]).areas(area);
+    // fixed heights, so nothing jumps while workers come and go: throughput and pool at the bottom, the workers take
+    // the rest
+    let [top, bottom] = Layout::vertical([Constraint::Fill(1), Constraint::Length(METRICS_ROW)]).areas(area);
     let block = boxed("Workers");
     let inner = block.inner(top);
     f.render_widget(block, top);
@@ -1708,7 +1710,7 @@ fn draw_nodes(f: &mut Frame, app: &mut App, area: Rect) {
     // the details tile needs 11 lines (node, hardware, disk, workers, holds, assessed, fetch, manifest, app, p4k,
     // Blender),
     // the state tile gets room for a few more nodes
-    let [top, bottom] = Layout::vertical([Constraint::Fill(1), Constraint::Length(BOTTOM_ROW)]).areas(area);
+    let [top, bottom] = Layout::vertical([Constraint::Fill(1), Constraint::Length(DETAILS_ROW)]).areas(area);
     let e = &app.engine;
     // this node with its current counts
     let mut me = e.me.clone();
