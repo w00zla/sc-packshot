@@ -227,7 +227,7 @@ land on `main` through pull requests.
 
 ## Security
 
-In a cluster every node runs Python (render script, add-on) that it receives from the node that starts a run. Anyone
+In a cluster every node runs the render script (Python) that it receives from the node that starts a run. Anyone
 with the token can make every node run code, so share a cluster only with machines and people you trust.
 
 ## Game data and fan content

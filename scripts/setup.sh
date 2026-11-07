@@ -12,7 +12,7 @@
 #
 #   scripts/setup.sh [--from-source] [--skip-starbreaker]
 #
-# The bundles (scripts/packshot-bundle.sh) take portable/ from here, so set it up before building them.
+# The bundles (scripts/packshot-bundle.sh) do not need this: they carry no Blender, their own setup.sh fetches it by blender.pin.
 # Needs: curl, sha256sum, tar, unzip; with --from-source git and the StarBreaker build's tools.
 set -euo pipefail
 
