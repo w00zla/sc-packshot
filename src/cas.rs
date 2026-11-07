@@ -287,7 +287,7 @@ pub(crate) mod tests {
         let root = std::env::temp_dir().join(format!("packshot-closure-real-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
         let tables = repo_tables(&root.join("work"));
-        let targets: Vec<Target> = serde_json::from_slice(&fs::read(repo.join("local/packshot/targets.json")).unwrap()).unwrap();
+        let targets: Vec<Target> = serde_json::from_slice(&fs::read(repo.join("local/packshot/targets/targets.json")).unwrap()).unwrap();
         // evenly spread over the types, so every family of shaders and materials is in it
         let want = [
             ("Char_Armor_Helmet", 4), ("Char_Armor_Torso", 3), ("Char_Armor_Legs", 2), ("Char_Armor_Arms", 2), ("Char_Clothing_Torso_1", 3),

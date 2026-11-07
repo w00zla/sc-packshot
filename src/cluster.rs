@@ -1966,7 +1966,7 @@ mod real_tests {
         let p4k = PathBuf::from(std::env::var("SC_DATA_P4K").expect("SC_DATA_P4K"));
         let starbreaker = repo.join("local/starbreaker-ps").join(crate::exe("starbreaker"));
         let blender = fs::read_dir(repo.join("local/blender")).unwrap().flatten().map(|e| e.path().join(crate::exe("blender"))).find(|p| p.exists()).unwrap();
-        let targets: Vec<Target> = serde_json::from_slice(&fs::read(repo.join("local/packshot/targets.json")).unwrap()).unwrap();
+        let targets: Vec<Target> = serde_json::from_slice(&fs::read(repo.join("local/packshot/targets/targets.json")).unwrap()).unwrap();
         let dir = root.join(name);
         let store = Store::open(&dir.join("store")).unwrap();
         let set = store.load_set(MAIN).unwrap();

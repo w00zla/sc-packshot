@@ -380,6 +380,13 @@ pub struct Engine {
     pub state_seq: u64,
     /// the file offered for a set's target list (targets.json in the packshot folder)
     pub targets_file: PathBuf,
+    /// Data.p4k for the target picker's entity list (found even without --export; None without one)
+    pub picker_p4k: Option<PathBuf>,
+    /// the tools and files checked at start, for the TUI's start tile (ADR 0040)
+    pub start: Vec<StartCheck>,
+    /// the step the DataCore tables are at while they load, and why they did not load
+    pub tables_step: String,
+    pub tables_error: Option<String>,
     /// throughput and image size of this node's latest run (the estimate when it is the head node)
     pub stats: Option<crate::store::RunStats>,
     /// the DataCore tables (pose, light rigs) are there; with --export they load in the background at the start, the
@@ -396,6 +403,14 @@ pub struct Engine {
     pub assess_max: usize,
     /// --workers, --exporters given: an assessment does not change them
     pub fixed_counts: (bool, bool),
+}
+
+/// A line of the TUI's start tile (ADR 0040): a tool or file looked for at start, what was found, or what to do
+pub struct StartCheck {
+    pub name: &'static str,
+    pub ok: bool,
+    pub text: String,
+    pub hint: Option<String>,
 }
 
 /// The DataCore tables loading in the background: its steps and its result come through the channel
@@ -629,6 +644,10 @@ impl Engine {
             last_disk: Instant::now(),
             state_seq: 0,
             targets_file: PathBuf::new(),
+            picker_p4k: None,
+            start: Vec::new(),
+            tables_step: String::new(),
+            tables_error: None,
             stats,
             tables_ready: true,
             tables_load: None,
@@ -676,8 +695,8 @@ impl Engine {
         let secs = load.started.elapsed().as_secs_f64();
         for m in msgs {
             match m {
-                // the steps are not logged: only "ready" (exports start) or the error
-                Ok(_) => {}
+                // the steps are not logged (the start tile shows them): only "ready" (exports start) or the error
+                Ok(step) => self.tables_step = step,
                 Err(Ok(tables)) => {
                     self.tables = tables;
                     self.tables_ready = true;
@@ -686,6 +705,7 @@ impl Engine {
                 }
                 Err(Err(e)) => {
                     self.tables_load = None;
+                    self.tables_error = Some(e.clone());
                     self.note(Level::Error, format!("DataCore tables not loaded, this node does not export: {e}"));
                 }
             }

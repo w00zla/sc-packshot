@@ -1,6 +1,6 @@
 # 0026. StarBreaker is used through a pinned release
 
-- Status: accepted
+- Status: accepted; release tags are `0.3.2-ps.n` (starbreaker-ps ADR 0010), not `-qm.n`
 - Date: 2026-11-05
 - Scope: exporter, bundles, build
 

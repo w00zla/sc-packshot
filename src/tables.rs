@@ -27,7 +27,7 @@ struct Category {
     tagged: bool,
 }
 
-fn run(bin: &Path, args: &[&str]) -> Result<Vec<u8>> {
+pub(crate) fn run(bin: &Path, args: &[&str]) -> Result<Vec<u8>> {
     let out = Command::new(bin).args(args).output().with_context(|| format!("{} does not start", bin.display()))?;
     if !out.status.success() {
         let err = String::from_utf8_lossy(if out.stderr.is_empty() { &out.stdout } else { &out.stderr }).trim().to_string();
