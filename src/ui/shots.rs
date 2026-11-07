@@ -373,11 +373,11 @@ fn scene(cell: (u16, u16)) -> Scene {
     let _ = crate::store::remove_tree(&root);
     let store = Store::open(&root.join("store")).unwrap();
     let all = targets(6734);
-    let live = store.load_set(LIVE).unwrap();
+    let main = store.load_set(MAIN).unwrap();
     let tfile = root.join("targets.json");
     std::fs::write(&tfile, serde_json::to_vec(&all).unwrap()).unwrap();
-    let mut live = live;
-    store.set_targets(&mut live, &tfile).unwrap();
+    let mut main = main;
+    store.set_targets(&mut main, &tfile).unwrap();
 
     let me = hello("atlas", "windows", true, true, 6, 2, 8, "AMD Ryzen 7 9800X3D", "RTX 5080 · VRAM 16 GB", 64, 612, 2000);
     let net = NetConfig { name: "atlas".into(), listen: "0.0.0.0:47950".into(), ..Default::default() };
@@ -394,7 +394,7 @@ fn scene(cell: (u16, u16)) -> Scene {
     let rig = root.join("inventorylightgroup_studio_a.json");
     std::fs::write(&rig, "{}").unwrap();
     let cfg = Config { p4k: x.clone(), starbreaker: x.clone(), blender: x.clone(), render_script: x, work: root.join("work"), size: 256, chunk: 50, cache_limit: 0 };
-    let mut e = Engine::new(cfg, all.clone(), Tables::with_rig(rig), store, live, Some(hub), me).unwrap();
+    let mut e = Engine::new(cfg, all.clone(), Tables::with_rig(rig), store, main, Some(hub), me).unwrap();
     e.max_renderers = 6;
     e.max_exporters = 2;
     e.cores = 8;
@@ -418,8 +418,8 @@ fn scene(cell: (u16, u16)) -> Scene {
     }
     finish(&mut e, 6.5);
 
-    // 2. an experiment set off live with its own run
-    e.store.create_set("glow-test", LIVE).unwrap();
+    // 2. an experiment set off main with its own run
+    e.store.create_set("glow-test", MAIN).unwrap();
     e.switch_set("glow-test").unwrap();
     let glow: Vec<usize> = (0..all.len()).filter(|t| t % KINDS.len() == 7).take(16).collect();
     e.start(&glow, "packshot --filter core --scope all --set glow-test", "core", Scope::All, "glow", Vec::new(), "atlas").unwrap();
@@ -428,9 +428,9 @@ fn scene(cell: (u16, u16)) -> Scene {
         chunk += 1;
     }
     finish(&mut e, 2.2);
-    e.switch_set(LIVE).unwrap();
+    e.switch_set(MAIN).unwrap();
 
-    // 3. the full run going on: everything missing in live, on all three nodes
+    // 3. the full run going on: everything missing in main, on all three nodes
     let sel = e.select("", Scope::Missing);
     let todo = sel.todo.clone();
     e.start(&todo, "packshot --name full", "", Scope::Missing, "full", nodes, "atlas").unwrap();
@@ -517,7 +517,7 @@ fn scene(cell: (u16, u16)) -> Scene {
     // a finished run on borealis that this node has not fetched yet
     e.peer_runs.insert(
         "borealis".into(),
-        vec![crate::net::RunSummary { id: "2026-11-06_22-10_weapons".into(), name: "weapons".into(), set: LIVE.into(), node: "borealis".into(), finished: true, images: 412, bytes: 61_400_000 }],
+        vec![crate::net::RunSummary { id: "2026-11-06_22-10_weapons".into(), name: "weapons".into(), set: MAIN.into(), node: "borealis".into(), finished: true, images: 412, bytes: 61_400_000 }],
     );
 
     let args = Args { filter: String::new(), scope: Scope::Missing, plain: false, serve: false, dry_run: false, workers: 6, exporters: 2, name: String::new(), line: String::new() };

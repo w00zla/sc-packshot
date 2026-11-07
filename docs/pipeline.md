@@ -245,9 +245,9 @@ to, where its target list came from) and **`targets.json`, the set's target list
 - A new set takes its base's list; `t` in view 2 (or `--targets <file>`) replaces it with a file (default: `targets.json`
   in the packshot folder; asks before replacing). While the target set has none, view 1 says so and Enter opens that
   dialog instead of starting. The list changes with the game's updates, so each set keeps the one it was rendered with.
-- `live` is the main set. A run's images are linked into its target set as they arrive (`--set`, default live; a name
-  that does not exist yet branches off live).
-- An experiment set takes over into live by appending its own runs to live's chain (no new run, the origin stays). A
+- `main` is the main set. A run's images are linked into its target set as they arrive (`--set`, default main; a name
+  that does not exist yet branches off main).
+- An experiment set takes over into main by appending its own runs to main's chain (no new run, the origin stays). A
   run can be deleted from the middle of a set's chain; older runs then show through again (the question says how many
   images fall back and how many disappear). Deleting an experiment set removes its folder and those of its runs no other
   set uses.
@@ -272,9 +272,9 @@ writes it, the DataCore tables go into the work folder); only `--report` reads a
 the packshot folder.
 
 **Between nodes**, only on a key press, never by itself: in view 3, `h` on another node fetches its finished runs for
-its live that are missing here (folders copied; the same id from another node gets `-<node>`) and appends them to the
-local live in order (shown with a fetch arrow). `m` fetches its live manifest (`<store>/manifests/`), so "missing" on
-the local live also counts what the other one already has (view 1 says "manifest of <node>"; the selection is
+its main that are missing here (folders copied; the same id from another node gets `-<node>`) and appends them to the
+local main in order (shown with a fetch arrow). `m` fetches its main manifest (`<store>/manifests/`), so "missing" on
+the local main also counts what the other one already has (view 1 says "manifest of <node>"; the selection is
 recomputed when it arrives); `m` on this node's own row drops it again, its file too.
 
 ## Scheduler
@@ -384,8 +384,8 @@ head node reports them, and the latest image rendered here. `a` aborts the run g
 
 **2 Sets.** This node's sets with their own runs (date, name, node, filter, images, add-on hash; a fetch arrow marks a
 run fetched from another node); on the right the selected run's result and up to 8 of its images; `i` adds hashes,
-Blender, StarBreaker, p4k and workers. Enter makes a set the target set, `n` creates one from live, `t` gives it a target
-list, `l` adopts an experiment into live, `x` deletes a run or set (all ask). With another node chosen as head node the
+Blender, StarBreaker, p4k and workers. Enter makes a set the target set, `n` creates one from main, `t` gives it a target
+list, `l` adopts an experiment into main, `x` deletes a run or set (all ask). With another node chosen as head node the
 view shows that node's sets and runs (from its state and run list) read only; Enter chooses the target set there;
 changes only on that node itself. No set comparison in the TUI ([ADR 0029](adr/0029-no-set-comparison-in-tui.md)).
 
@@ -477,7 +477,7 @@ itself: every bundle carries everything, update the bundles.
 **Head node:** every node can start a run, on itself or on the node chosen with `n`, which then holds it (run folder,
 set, images, event log). For another node the starter asks it for its sets and the state and target list of the chosen
 set (images, last failures), computes the selection over that list and sends the selected targets; the head node
-appends them to its own list, creates the set from live if it does not exist (with live's target list) and starts. It
+appends them to its own list, creates the set from main if it does not exist (with main's target list) and starts. It
 needs neither Data.p4k nor Blender, only someone connected who exports and someone who renders. **One run at a time:**
 while a node has a run going, no other one starts; who is connected at the start takes part. Every node works through
 the same code for the head node's chunks, the head node itself included (`node.rs`, through `LOCAL` instead of a
@@ -756,7 +756,7 @@ rendering it`, `export-batch ended while exporting it`, a chunk timeout, `MAX_RE
   is covered by its tooltip: take the same grid cell from a later frame where the cursor has moved on.
 - **Wiki item pages** (starcitizen.tools) carry in-game screenshots of the worn item, good for decals and colours.
 - Fixing pose, light or material, then `--filter <class> --scope all`, into an experiment set first (`--set <name>`),
-  compare, then adopt into live.
+  compare, then adopt into main.
 
 ## Open and unproven
 
@@ -796,6 +796,6 @@ sc-quartermaster (the org tool packshot was built for) is only a consumer. It fe
   make up the 6734 targets; the consumer's selection rules stay on its side.
 
 It reads:
-- **`sets/live/`**: the PNG per UUID (`<Name> (<class>) <uuid>.png`) is turned into AVIF thumbnails by its own tool
+- **`sets/main/`**: the PNG per UUID (`<Name> (<class>) <uuid>.png`) is turned into AVIF thumbnails by its own tool
   (`pnpm thumbs:build` there; [ADR 0027](adr/0027-output-formats-thumbnails-are-users.md)). packshot knows nothing about
   thumbnails.

@@ -1,6 +1,6 @@
 # 0011. Immutable run folders and sets of hard links
 
-- Status: accepted
+- Status: accepted; the main set's name superseded by [0035](0035-main-set-is-called-main.md) (`main` instead of `live`)
 - Date: 2026-11-03
 - Recorded: 2026-11-05
 - Scope: packshot (store layout, `store.rs`)

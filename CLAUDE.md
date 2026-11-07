@@ -44,11 +44,11 @@ P [--render] [--export] [--filter <terms>] [--scope missing|failed|all] [--set <
 #   no roles: --render (Blender) and --export (Data.p4k + StarBreaker) say what this node can do now, neither = it only starts runs, stores them, watches; counts change in the TUI (+/-, </>)
 #   --export needs $SC_DATA_P4K (or --p4k) with build_manifest.id next to the Data.p4k; --targets <file> sets the target set's list; --dry-run lists what would be rendered; --size <px> (256); --chunk <n> (50); --cache-limit <GB> (20, 0 = none)
 #   --store/--work/--starbreaker/--blender/--render-script override the paths; --refresh-tables rereads pose and light tables from the DataCore; --help lists everything
-#   every run is runs/<date>_<time>_<name>/ (images, run.json, events.jsonl, run.log) on its head node, its images go into the target set sets/<set>/ there (hard links, default live; a new set branches off live)
+#   every run is runs/<date>_<time>_<name>/ (images, run.json, events.jsonl, run.log) on its head node, its images go into the target set sets/<set>/ there (hard links, default main; a new set branches off main)
 #   every set carries its target list (sets/<set>/targets.json: a new set takes its base's, `t` in view 2 or --targets <file> replaces it; starting a run (Enter) asks for one while the target set has none)
 #   one packshot process per store folder and per work folder (packshot.lock in each, --dry-run too, --report needs none)
-#   TUI views: 1 Run (n head node, s set, a abort, / filter, Enter start), 2 Sets (Enter target set, n new set, t target list, l adopt into live, x delete, i details), 3 Nodes (workers with the assessed items/s, run throughput,
-#   runs to fetch h, disk, prerequisites, status per node; details with the items each node holds; the Next run tile; live manifest m, on this node m drops it; assess b, b again aborts); e switches log/errors; Tab or 1-3 switch views
+#   TUI views: 1 Run (n head node, s set, a abort, / filter, Enter start), 2 Sets (Enter target set, n new set, t target list, l adopt into main, x delete, i details), 3 Nodes (workers with the assessed items/s, run throughput,
+#   runs to fetch h, disk, prerequisites, status per node; details with the items each node holds; the Next run tile; main manifest m, on this node m drops it; assess b, b again aborts); e switches log/errors; Tab or 1-3 switch views
 #   workers read E (export), R (render); PACKSHOT_GRAPHICS=sixel|kitty|iterm2|halfblocks forces one
 #   cluster settings in packshot.json in the store (token; optional listen, peers, discovery; copy packshot.example.json), without a token all local; nodes find each other by UDP broadcast on port 47950 (TCP the same)
 #   every node can start a run on itself or on another node (its head node: holds the run, hands export chunks to exporting nodes, which hold what they exported, and render chunks to rendering ones, its own items first;

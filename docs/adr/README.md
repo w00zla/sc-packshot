@@ -15,7 +15,7 @@ supersedes the old one. 0001–0020 were recorded afterwards (2026-11-05) from t
 | [0008](0008-blender-vulkan-threads-long-lived.md) | Blender on Vulkan with two threads, long-lived worker processes | accepted | 2026-11-02 |
 | [0009](0009-event-log-and-report.md) | Per-run event log and a read-only report | accepted | 2026-11-03 |
 | [0010](0010-english-and-environment-free-help.md) | English throughout; help text free of repository and environment specifics | accepted | 2026-11-03 |
-| [0011](0011-runs-and-sets.md) | Immutable run folders and sets of hard links | accepted | 2026-11-03 |
+| [0011](0011-runs-and-sets.md) | Immutable run folders and sets of hard links | accepted; name superseded by 0035 | 2026-11-03 |
 | [0012](0012-bundles-per-os.md) | Per-OS bundles built by script | accepted | 2026-11-03 |
 | [0013](0013-cluster-capabilities-and-head-node.md) | Cluster of capability nodes with a head node | accepted | 2026-11-04 |
 | [0014](0014-same-state-or-no-run.md) | Same state on all nodes or no run | superseded in part by [0024](0024-head-node-distributes-profiles.md) | 2026-11-03 |
@@ -39,3 +39,4 @@ supersedes the old one. 0001–0020 were recorded afterwards (2026-11-05) from t
 | [0032](0032-fan-disclaimer-suffices.md) | A fan-content disclaimer in the README is enough | accepted | 2026-11-06 |
 | [0033](0033-one-pin-file-for-dev-and-bundles.md) | One pin file for Blender and StarBreaker, used by the dev setup and the bundles | accepted | 2026-11-07 |
 | [0034](0034-changes-through-pull-requests.md) | Changes land on main through pull requests | accepted | 2026-11-07 |
+| [0035](0035-main-set-is-called-main.md) | The main set is called main | accepted | 2026-11-07 |

@@ -301,7 +301,7 @@ pub enum Msg {
     /// starting node -> head node: the sets there and the state and target list of one set (for the selection)
     GetState { set: String },
     State { set: String, sets: Vec<crate::store::SetSummary>, images: Vec<String>, failed: Vec<String>, targets: Vec<Target>, stats: Option<crate::store::RunStats> },
-    /// starting node -> head node: start a run over these targets into the set (created from live if missing)
+    /// starting node -> head node: start a run over these targets into the set (created from main if missing)
     StartRun { targets: Vec<Target>, set: String, name: String, filter: String, scope: String, line: String },
     Started { run: String },
     /// any node -> head node: abort the run

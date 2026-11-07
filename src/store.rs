@@ -4,8 +4,8 @@
 // the images of the runs (per entity the newest run in the chain with an image), set.json (base, chain, files in the folder,
 // where its target list came from) and targets.json, the set's target list (taken from the base when branching,
 // replaceable; the game's items change with its updates).
-// `live` is the main set (what consumers read); experiments branch off live and are adopted
-// by appending their runs to live's chain. No storage by content hash: renders are not bit-identical.
+// `main` is the set consumers read (named live until ADR 0035); experiments branch off main and are adopted
+// by appending their runs to main's chain. No storage by content hash: renders are not bit-identical.
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::io::ErrorKind;
@@ -15,7 +15,9 @@ use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-pub const LIVE: &str = "live";
+pub const MAIN: &str = "main";
+/// The main set's name until 2026-11-07 (ADR 0035): stores and runs from before still carry it
+pub const OLD_MAIN: &str = "live";
 /// The target list in a set's folder
 pub const TARGETS: &str = "targets.json";
 
@@ -83,7 +85,7 @@ pub struct RunInfo {
 #[derive(Serialize, Deserialize, Clone, Default)]
 pub struct SetInfo {
     pub name: String,
-    /// branched off from (None for live)
+    /// branched off from (None for main)
     #[serde(default)]
     pub base: Option<String>,
     /// the base's chain at the time of branching
@@ -186,17 +188,49 @@ pub fn slug(s: &str) -> String {
 }
 
 impl Store {
-    /// Opens the store (runs/, sets/) and creates live if it is missing
+    /// Opens the store (runs/, sets/) and creates main if it is missing
     pub fn open(root: &Path) -> Result<Self> {
         for d in ["runs", "sets"] {
             fs::create_dir_all(root.join(d)).with_context(|| root.join(d).display().to_string())?;
         }
         let store = Self { root: root.to_path_buf(), runs: HashMap::new() };
-        if !store.set_dir(LIVE).join("set.json").exists() {
-            fs::create_dir_all(store.set_dir(LIVE))?;
-            store.save_set(&SetInfo { name: LIVE.into(), ..Default::default() })?;
+        store.migrate_live()?;
+        if !store.set_dir(MAIN).join("set.json").exists() {
+            fs::create_dir_all(store.set_dir(MAIN))?;
+            store.save_set(&SetInfo { name: MAIN.into(), ..Default::default() })?;
         }
         Ok(store)
+    }
+
+    /// The main set was called live until 2026-11-07 (ADR 0035): its folder and name become main once, and sets
+    /// branched off it point at main. Runs stay as they are (run.json is never changed); `run` reads their set
+    /// "live" as main.
+    fn migrate_live(&self) -> Result<()> {
+        let old = self.set_dir(OLD_MAIN);
+        if !old.join("set.json").exists() || self.set_dir(MAIN).exists() {
+            return Ok(());
+        }
+        fs::rename(&old, self.set_dir(MAIN)).with_context(|| format!("{} -> {}", old.display(), self.set_dir(MAIN).display()))?;
+        for name in self.sets()? {
+            let mut set = self.load_set(&name)?;
+            let mut changed = false;
+            if set.name == OLD_MAIN {
+                set.name = MAIN.into();
+                changed = true;
+            }
+            if set.base.as_deref() == Some(OLD_MAIN) {
+                set.base = Some(MAIN.into());
+                changed = true;
+            }
+            if let Some(t) = set.targets.as_mut().filter(|t| t.source == format!("<{OLD_MAIN}>")) {
+                t.source = format!("<{MAIN}>");
+                changed = true;
+            }
+            if changed {
+                self.save_set(&set)?;
+            }
+        }
+        Ok(())
     }
 
     /// The packshot folder as it is, without creating anything (--report only reads)
@@ -235,7 +269,11 @@ impl Store {
     pub fn run(&mut self, id: &str) -> Result<&RunInfo> {
         if !self.runs.contains_key(id) {
             let path = self.run_dir(id).join("run.json");
-            let info: RunInfo = serde_json::from_slice(&fs::read(&path).with_context(|| path.display().to_string())?).with_context(|| path.display().to_string())?;
+            let mut info: RunInfo = serde_json::from_slice(&fs::read(&path).with_context(|| path.display().to_string())?).with_context(|| path.display().to_string())?;
+            // runs from before ADR 0035 name the main set live
+            if info.set == OLD_MAIN {
+                info.set = MAIN.into();
+            }
             self.runs.insert(id.to_string(), info);
         }
         Ok(&self.runs[id])
@@ -452,16 +490,16 @@ impl Store {
         Ok(())
     }
 
-    /// Adopt an experiment into live (key l): append its runs in their order to live's chain
+    /// Adopt an experiment into main (key l): append its runs in their order to main's chain
     pub fn adopt(&mut self, name: &str) -> Result<usize> {
-        if name == LIVE {
-            bail!("live cannot be adopted into itself");
+        if name == MAIN {
+            bail!("main cannot be adopted into itself");
         }
         let exp = self.load_set(name)?;
-        let mut live = self.load_set(LIVE)?;
-        let new: Vec<String> = exp.runs.iter().filter(|r| !live.runs.contains(r)).cloned().collect();
-        live.runs.extend(new.iter().cloned());
-        self.sync(&mut live)?;
+        let mut main = self.load_set(MAIN)?;
+        let new: Vec<String> = exp.runs.iter().filter(|r| !main.runs.contains(r)).cloned().collect();
+        main.runs.extend(new.iter().cloned());
+        self.sync(&mut main)?;
         Ok(new.len())
     }
 
@@ -486,8 +524,8 @@ impl Store {
 
     /// Delete an experiment set: the folder and its runs that no other set uses any more
     pub fn delete_set(&mut self, name: &str) -> Result<usize> {
-        if name == LIVE {
-            bail!("live cannot be deleted");
+        if name == MAIN {
+            bail!("main cannot be deleted");
         }
         let set = self.load_set(name)?;
         remove_tree(&self.set_dir(name))?;
@@ -568,32 +606,64 @@ mod tests {
         fs::read_to_string(store.set_dir(set).join(format!("{entity} 0000.png"))).ok()
     }
 
+    /// A store from before ADR 0035: sets/live becomes sets/main with its images, a set branched off it points at
+    /// main, its runs keep "live" in run.json and read as main; a second open changes nothing
+    #[test]
+    fn live_becomes_main() {
+        let root = tmp("migrate");
+        let mut store = Store::open(&root).unwrap();
+        let mut main = store.load_set(MAIN).unwrap();
+        add_run(&mut store, &mut main, "r1", &[("a", true, "a1")]);
+        store.create_set("exp", MAIN).unwrap();
+        // turn it back into an old store
+        fs::rename(store.set_dir(MAIN), store.set_dir(OLD_MAIN)).unwrap();
+        let rewrite = |path: PathBuf| {
+            let text = fs::read_to_string(&path).unwrap().replace("\"main\"", "\"live\"").replace("<main>", "<live>");
+            fs::write(&path, text).unwrap();
+        };
+        rewrite(store.set_dir(OLD_MAIN).join("set.json"));
+        rewrite(store.set_dir("exp").join("set.json"));
+        rewrite(store.run_dir("r1").join("run.json"));
+
+        let mut store = Store::open(&root).unwrap();
+        assert!(!store.set_dir(OLD_MAIN).exists() && store.set_dir(MAIN).join("set.json").exists());
+        assert_eq!(store.load_set(MAIN).unwrap().name, MAIN);
+        assert_eq!(store.load_set("exp").unwrap().base.as_deref(), Some(MAIN));
+        assert_eq!(read(&store, MAIN, "a").as_deref(), Some("a1"), "the images moved with the folder");
+        assert!(fs::read_to_string(store.run_dir("r1").join("run.json")).unwrap().contains("\"live\""), "run.json untouched");
+        assert_eq!(store.run("r1").unwrap().set, MAIN);
+        assert_eq!(store.sets().unwrap(), vec!["exp".to_string(), MAIN.to_string()]);
+        Store::open(&root).unwrap();
+        assert_eq!(store.sets().unwrap(), vec!["exp".to_string(), MAIN.to_string()]);
+        let _ = remove_tree(&root);
+    }
+
     /// A set's target list: none in a new store, set from a file, inherited when branching, replaced per set, kept
     /// by the folder repair, gone with the set
     #[test]
     fn targets_per_set() {
         let root = tmp("targets");
         let store = Store::open(&root).unwrap();
-        let mut live = store.load_set(LIVE).unwrap();
-        assert!(live.targets.is_none() && store.load_targets(&live).unwrap().is_empty());
+        let mut main = store.load_set(MAIN).unwrap();
+        assert!(main.targets.is_none() && store.load_targets(&main).unwrap().is_empty());
         let file = |name: &str, entities: &[&str]| {
             let list: Vec<serde_json::Value> = entities.iter().map(|e| serde_json::json!({ "uuids": ["0"], "entity": e, "type": "T", "subType": "S" })).collect();
             let p = root.join(name);
             fs::write(&p, serde_json::to_vec(&list).unwrap()).unwrap();
             p
         };
-        assert_eq!(store.set_targets(&mut live, &file("a.json", &["x", "y"])).unwrap(), 2);
-        assert!(store.set_targets(&mut live, &file("bad.json", &[])).is_err(), "an empty list is refused");
+        assert_eq!(store.set_targets(&mut main, &file("a.json", &["x", "y"])).unwrap(), 2);
+        assert!(store.set_targets(&mut main, &file("bad.json", &[])).is_err(), "an empty list is refused");
         let mut store = store;
-        let mut exp = store.create_set("exp", LIVE).unwrap();
-        assert_eq!(store.load_targets(&exp).unwrap().len(), 2, "inherited from live");
-        assert_eq!(exp.targets.as_ref().unwrap().source, "<live>");
+        let mut exp = store.create_set("exp", MAIN).unwrap();
+        assert_eq!(store.load_targets(&exp).unwrap().len(), 2, "inherited from main");
+        assert_eq!(exp.targets.as_ref().unwrap().source, "<main>");
         store.set_targets(&mut exp, &file("b.json", &["x", "y", "z"])).unwrap();
         assert_eq!(store.load_targets(&store.load_set("exp").unwrap()).unwrap().len(), 3);
-        assert_eq!(store.load_targets(&store.load_set(LIVE).unwrap()).unwrap().len(), 2, "live keeps its own");
-        let mut live = store.load_set(LIVE).unwrap();
-        store.sync(&mut live).unwrap();
-        assert!(store.set_dir(LIVE).join(TARGETS).exists(), "the folder repair keeps it");
+        assert_eq!(store.load_targets(&store.load_set(MAIN).unwrap()).unwrap().len(), 2, "main keeps its own");
+        let mut main = store.load_set(MAIN).unwrap();
+        store.sync(&mut main).unwrap();
+        assert!(store.set_dir(MAIN).join(TARGETS).exists(), "the folder repair keeps it");
         store.delete_set("exp").unwrap();
         assert!(!store.set_dir("exp").exists());
         remove_tree(&root).unwrap();
@@ -605,7 +675,7 @@ mod tests {
         let root = tmp("stats");
         let mut store = Store::open(&root).unwrap();
         assert!(store.last_stats().is_none());
-        let mut info = RunInfo { id: "2026-11-04_10-00_big".into(), name: "big".into(), set: LIVE.into(), node: "a".into(), started: "2026-11-04T10:00:00+01:00".into(), finished: Some("2026-11-04T10:00:20+01:00".into()), ..Default::default() };
+        let mut info = RunInfo { id: "2026-11-04_10-00_big".into(), name: "big".into(), set: MAIN.into(), node: "a".into(), started: "2026-11-04T10:00:00+01:00".into(), finished: Some("2026-11-04T10:00:20+01:00".into()), ..Default::default() };
         fs::create_dir_all(store.run_dir(&info.id)).unwrap();
         for k in 0..100 {
             let f = format!("e{k} 0000.png");
@@ -628,50 +698,50 @@ mod tests {
     fn chain_branch_adopt_delete() {
         let root = tmp("chain");
         let mut store = Store::open(&root).unwrap();
-        let mut live = store.load_set(LIVE).unwrap();
-        add_run(&mut store, &mut live, "r1", &[("a", true, "a1"), ("b", true, "b1"), ("c", false, "")]);
-        add_run(&mut store, &mut live, "r2", &[("a", true, "a2"), ("b", false, "")]);
-        assert_eq!(read(&store, LIVE, "a").as_deref(), Some("a2"));
+        let mut main = store.load_set(MAIN).unwrap();
+        add_run(&mut store, &mut main, "r1", &[("a", true, "a1"), ("b", true, "b1"), ("c", false, "")]);
+        add_run(&mut store, &mut main, "r2", &[("a", true, "a2"), ("b", false, "")]);
+        assert_eq!(read(&store, MAIN, "a").as_deref(), Some("a2"));
         // b: old image stays, but counts as failed
-        assert_eq!(read(&store, LIVE, "b").as_deref(), Some("b1"));
-        let r = store.resolve(&live).unwrap();
+        assert_eq!(read(&store, MAIN, "b").as_deref(), Some("b1"));
+        let r = store.resolve(&main).unwrap();
         assert!(r.failed.contains("b") && r.failed.contains("c") && !r.failed.contains("a"));
         // images read-only, also via the set link
-        assert!(fs::metadata(store.set_dir(LIVE).join("a 0000.png")).unwrap().permissions().readonly());
+        assert!(fs::metadata(store.set_dir(MAIN).join("a 0000.png")).unwrap().permissions().readonly());
 
         // experiment: branches off, own run overrides only there
-        let mut exp = store.create_set("exp", LIVE).unwrap();
+        let mut exp = store.create_set("exp", MAIN).unwrap();
         assert_eq!(read(&store, "exp", "a").as_deref(), Some("a2"));
         add_run(&mut store, &mut exp, "r3", &[("a", true, "a3"), ("c", true, "c3")]);
         assert_eq!(read(&store, "exp", "a").as_deref(), Some("a3"));
-        assert_eq!(read(&store, LIVE, "a").as_deref(), Some("a2"));
-        assert_eq!(read(&store, LIVE, "c"), None);
+        assert_eq!(read(&store, MAIN, "a").as_deref(), Some("a2"));
+        assert_eq!(read(&store, MAIN, "c"), None);
 
-        // adopt: r3 attaches to live
+        // adopt: r3 attaches to main
         assert_eq!(store.adopt("exp").unwrap(), 1);
-        let live = store.load_set(LIVE).unwrap();
-        assert_eq!(live.runs, vec!["r1", "r2", "r3"]);
-        assert_eq!(read(&store, LIVE, "a").as_deref(), Some("a3"));
-        assert_eq!(read(&store, LIVE, "c").as_deref(), Some("c3"));
+        let main = store.load_set(MAIN).unwrap();
+        assert_eq!(main.runs, vec!["r1", "r2", "r3"]);
+        assert_eq!(read(&store, MAIN, "a").as_deref(), Some("a3"));
+        assert_eq!(read(&store, MAIN, "c").as_deref(), Some("c3"));
 
-        // delete a run from the middle of live: r1 shows through for b, a still comes from r3
+        // delete a run from the middle of main: r1 shows through for b, a still comes from r3
         let touched = store.delete_run("r2").unwrap();
-        assert_eq!(touched, vec!["exp".to_string(), LIVE.to_string()]);
-        assert_eq!(read(&store, LIVE, "b").as_deref(), Some("b1"));
-        assert!(!store.resolve(&store.load_set(LIVE).unwrap()).unwrap().failed.contains("b"));
+        assert_eq!(touched, vec!["exp".to_string(), MAIN.to_string()]);
+        assert_eq!(read(&store, MAIN, "b").as_deref(), Some("b1"));
+        assert!(!store.resolve(&store.load_set(MAIN).unwrap()).unwrap().failed.contains("b"));
         assert!(!store.run_dir("r2").exists());
         // r1's images are still read-only after the links are removed
         assert!(fs::metadata(store.run_dir("r1").join("b 0000.png")).unwrap().permissions().readonly());
 
         // delete r3: a falls back to r1, c is missing again
         store.delete_run("r3").unwrap();
-        assert_eq!(read(&store, LIVE, "a").as_deref(), Some("a1"));
-        assert_eq!(read(&store, LIVE, "c"), None);
+        assert_eq!(read(&store, MAIN, "a").as_deref(), Some("a1"));
+        assert_eq!(read(&store, MAIN, "c"), None);
 
-        // delete set: folder gone, live stays
+        // delete set: folder gone, main stays
         store.delete_set("exp").unwrap();
         assert!(!store.set_dir("exp").exists());
-        assert_eq!(store.sets().unwrap(), vec![LIVE.to_string()]);
+        assert_eq!(store.sets().unwrap(), vec![MAIN.to_string()]);
         remove_tree(&root).unwrap();
     }
 
@@ -679,15 +749,15 @@ mod tests {
     fn sync_repairs_folder() {
         let root = tmp("sync");
         let mut store = Store::open(&root).unwrap();
-        let mut live = store.load_set(LIVE).unwrap();
-        add_run(&mut store, &mut live, "r1", &[("a", true, "a1"), ("b", true, "b1")]);
+        let mut main = store.load_set(MAIN).unwrap();
+        add_run(&mut store, &mut main, "r1", &[("a", true, "a1"), ("b", true, "b1")]);
         // deleted link comes back, foreign PNG gets thrown out
-        remove_link(&store.set_dir(LIVE).join("a 0000.png"), None).unwrap();
-        fs::write(store.set_dir(LIVE).join("stray.png"), "x").unwrap();
-        let (added, removed) = store.sync(&mut live).unwrap();
+        remove_link(&store.set_dir(MAIN).join("a 0000.png"), None).unwrap();
+        fs::write(store.set_dir(MAIN).join("stray.png"), "x").unwrap();
+        let (added, removed) = store.sync(&mut main).unwrap();
         assert_eq!((added, removed), (1, 1));
-        assert_eq!(read(&store, LIVE, "a").as_deref(), Some("a1"));
-        assert!(!store.set_dir(LIVE).join("stray.png").exists());
+        assert_eq!(read(&store, MAIN, "a").as_deref(), Some("a1"));
+        assert!(!store.set_dir(MAIN).join("stray.png").exists());
         remove_tree(&root).unwrap();
     }
 
@@ -695,17 +765,17 @@ mod tests {
     fn link_entity_replaces_old_names() {
         let root = tmp("link");
         let mut store = Store::open(&root).unwrap();
-        let mut live = store.load_set(LIVE).unwrap();
-        add_run(&mut store, &mut live, "r1", &[("a", true, "a1")]);
+        let mut main = store.load_set(MAIN).unwrap();
+        add_run(&mut store, &mut main, "r1", &[("a", true, "a1")]);
         // new display name: different file, the old one disappears
         fs::create_dir_all(store.run_dir("r2")).unwrap();
         let src = root.join("render.png");
         fs::write(&src, "a2").unwrap();
         let files = vec!["A neu 0000.png".to_string()];
         store.put_image("r2", &src, &files).unwrap();
-        store.link_entity(&mut live, &["a 0000.png".to_string()], "r2", &files).unwrap();
-        assert!(!store.set_dir(LIVE).join("a 0000.png").exists());
-        assert_eq!(fs::read_to_string(store.set_dir(LIVE).join("A neu 0000.png")).unwrap(), "a2");
+        store.link_entity(&mut main, &["a 0000.png".to_string()], "r2", &files).unwrap();
+        assert!(!store.set_dir(MAIN).join("a 0000.png").exists());
+        assert_eq!(fs::read_to_string(store.set_dir(MAIN).join("A neu 0000.png")).unwrap(), "a2");
         assert!(fs::metadata(store.run_dir("r1").join("a 0000.png")).unwrap().permissions().readonly());
         remove_tree(&root).unwrap();
     }

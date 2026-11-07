@@ -2,7 +2,7 @@
 // and can start a run, on itself or on another node, which then is that run's head node: it holds the run, its
 // set and its images, hands export chunks to the exporting nodes and render chunks to the rendering ones (itself
 // included), takes their results back (back into the queue when a node drops or a chunk stalls) and tells every node
-// the run's status once a second; every node can abort it. Nodes fetch each other's runs (key h, they attach to live) and live manifests (m, for "missing").
+// the run's status once a second; every node can abort it. Nodes fetch each other's runs (key h, they attach to main) and main manifests (m, for "missing").
 // All connected nodes must have the same state, else no run starts and the TUI says what differs: the packshot
 // build everywhere, Blender and add-on between the rendering nodes, Data.p4k and StarBreaker between the exporting
 // ones (each compared with the first node of that capability, this one first, then by name).
@@ -15,7 +15,7 @@ use anyhow::{Context, Result, bail};
 use crate::engine::{Engine, Kind, Level, Manifest, Pool, RemoteRun, RemoteSel, Scope, Target, blender_version};
 use crate::net::{DiskInfo, Hello, HubEv, Msg, Payload, RunStatus, RunSummary, WorkerStatus, collect_files, safe_name};
 use crate::node::addon_dir;
-use crate::store::{LIVE, RunInfo, slug};
+use crate::store::{MAIN, RunInfo, slug};
 
 pub fn load_manifest(store_root: &Path) -> Option<Manifest> {
     let mut files: Vec<(std::time::SystemTime, PathBuf)> = fs::read_dir(store_root.join("manifests"))
@@ -459,8 +459,8 @@ impl Engine {
             Msg::GetState { set } => {
                 let reply = (|| -> Result<Msg> {
                     let sets = self.store.sets()?;
-                    // a set that does not exist yet would branch off live
-                    let s = self.store.load_set(if sets.contains(&set) { &set } else { LIVE })?;
+                    // a set that does not exist yet would branch off main
+                    let s = self.store.load_set(if sets.contains(&set) { &set } else { MAIN })?;
                     let r = self.store.resolve(&s)?;
                     let targets = self.store.load_targets(&s)?;
                     let sets = self.store.set_summaries()?;
@@ -557,7 +557,7 @@ impl Engine {
                     return;
                 }
                 match self.import_run(&id, &dir) {
-                    Ok(Some((new_id, images))) => self.note(Level::Ok, format!("Run {new_id} fetched from {from}: {images} images, appended to live")),
+                    Ok(Some((new_id, images))) => self.note(Level::Ok, format!("Run {new_id} fetched from {from}: {images} images, appended to main")),
                     Ok(None) => self.note(Level::Info, format!("Run {id} is here already")),
                     Err(e) => self.note(Level::Error, format!("Run {id} from {from} not taken: {e:#}")),
                 }
@@ -579,7 +579,7 @@ impl Engine {
                 // the selection counts it: the TUI recomputes
                 self.state_seq += 1;
                 match res {
-                    Ok(()) => self.note(Level::Ok, format!("Manifest of {set} from {from}: {present} entities with an image (counts for “missing” on live)")),
+                    Ok(()) => self.note(Level::Ok, format!("Manifest of {set} from {from}: {present} entities with an image (counts for “missing” on main)")),
                     Err(e) => self.note(Level::Error, format!("Manifest not saved: {e:#}")),
                 }
             }
@@ -596,7 +596,7 @@ impl Engine {
     }
 
     /// Start a run that another node asked for, with this node as head node: its targets appended, the set
-    /// (created from live if missing) becomes the target set
+    /// (created from main if missing) becomes the target set
     #[allow(clippy::too_many_arguments)]
     fn start_for(&mut self, starter: &str, targets: Vec<Target>, set: &str, name: &str, filter: &str, scope: &str, line: &str) -> Result<String> {
         if self.running() {
@@ -610,8 +610,8 @@ impl Engine {
             bail!("{why}");
         }
         if !self.store.sets()?.contains(&set.to_string()) {
-            self.store.create_set(set, LIVE)?;
-            self.note(Level::Info, format!("New set {set}, branched off live (for {starter})"));
+            self.store.create_set(set, MAIN)?;
+            self.note(Level::Info, format!("New set {set}, branched off main (for {starter})"));
         }
         if self.set.name != set {
             self.switch_set(set)?;
@@ -669,7 +669,7 @@ impl Engine {
                 }
             }
             Some(n) => {
-                let set = self.remote.as_ref().filter(|r| r.node == n).map(|r| r.set.clone()).unwrap_or_else(|| LIVE.to_string());
+                let set = self.remote.as_ref().filter(|r| r.node == n).map(|r| r.set.clone()).unwrap_or_else(|| MAIN.to_string());
                 let sets = self.remote.as_ref().filter(|r| r.node == n).map(|r| r.sets.clone()).unwrap_or_default();
                 let set_list = self.remote.as_ref().filter(|r| r.node == n).map(|r| r.set_list.clone()).unwrap_or_default();
                 self.remote = Some(RemoteSel { node: n, set, sets, set_list, stats: None, images: Default::default(), failed: Default::default(), loaded: false });
@@ -781,7 +781,7 @@ impl Engine {
     }
 
     /// Take over a fetched run: folder to runs/ (with -<node> if the same id comes from another machine), images
-    /// read-only, appended to live's chain. None: was already there
+    /// read-only, appended to main's chain. None: was already there
     fn import_run(&mut self, id: &str, dir: &Path) -> Result<Option<(String, usize)>> {
         if self.running() {
             bail!("a run is in progress");
@@ -819,22 +819,22 @@ impl Engine {
                 fs::set_permissions(e.path(), p)?;
             }
         }
-        let mut live = self.store.load_set(LIVE)?;
-        live.runs.push(new_id.clone());
-        self.store.sync(&mut live)?;
-        if self.set.name == LIVE {
-            self.set = live;
+        let mut main = self.store.load_set(MAIN)?;
+        main.runs.push(new_id.clone());
+        self.store.sync(&mut main)?;
+        if self.set.name == MAIN {
+            self.set = main;
             self.resolved = self.store.resolve(&self.set)?;
         }
         self.stats = self.store.last_stats();
         Ok(Some((new_id, info.entities.values().filter(|e| e.ok).count())))
     }
 
-    /// Runs of another node that are missing here: finished and rendered for its live
+    /// Runs of another node that are missing here: finished and rendered for its main
     pub fn fetchable(&self, peer: &str) -> Vec<RunSummary> {
         let Some(runs) = self.peer_runs.get(peer) else { return Vec::new() };
         runs.iter()
-            .filter(|r| r.finished && r.set == LIVE && !self.fetching.contains(&(peer.to_string(), r.id.clone())))
+            .filter(|r| r.finished && r.set == MAIN && !self.fetching.contains(&(peer.to_string(), r.id.clone())))
             .filter(|r| {
                 let here = |id: &str| self.store.run_dir(id).join("run.json").exists();
                 !(here(&r.id) && self.store.peek_node(&r.id).as_deref() == Some(r.node.as_str())) && !here(&format!("{}-{}", r.id, slug(&r.node)))
@@ -855,7 +855,7 @@ impl Engine {
     }
 
     /// Key m on this node: drop the fetched manifest (its file too, else it comes back at the next start); "missing"
-    /// counts only this node's live again
+    /// counts only this node's main again
     pub fn drop_manifest(&mut self) {
         let Some(m) = self.manifest.take() else {
             self.note(Level::Info, "No manifest to drop");
@@ -864,15 +864,15 @@ impl Engine {
         let dir = self.store.root.join("manifests");
         let removed = fs::remove_dir_all(&dir).map_or_else(|e| e.kind() == std::io::ErrorKind::NotFound, |_| true);
         if removed {
-            self.note(Level::Ok, format!("Manifest of {} dropped: \"missing\" counts only this node's live again", m.from));
+            self.note(Level::Ok, format!("Manifest of {} dropped: \"missing\" counts only this node's main again", m.from));
         } else {
             self.note(Level::Error, format!("Manifest of {} dropped here, but {} not deleted", m.from, dir.display()));
         }
     }
 
-    /// Key m: fetch the other node's live manifest
+    /// Key m: fetch the other node's main manifest
     pub fn fetch_manifest(&mut self, conn: u64) {
-        self.reply(conn, Msg::GetManifest { set: LIVE.into() }, Payload::None);
+        self.reply(conn, Msg::GetManifest { set: MAIN.into() }, Payload::None);
     }
 
     /// Request a node's run list again
@@ -921,7 +921,7 @@ mod tests {
     /// An engine with fake tools: `render`/`export` only as capabilities (the processes fail at once)
     fn engine(root: &Path, cfg: NetConfig, render: bool, export: bool) -> Engine {
         let store = Store::open(&root.join("store")).unwrap();
-        let set = store.load_set(LIVE).unwrap();
+        let set = store.load_set(MAIN).unwrap();
         let me = Hello { name: cfg.name.clone(), version: "t".into(), render, export, blender: "5.2.3".into(), addon: Some("a".into()), slots: render as usize, exporters: export as usize, ..Default::default() };
         let hub = Hub::new(cfg, me.clone(), root.join("inbox"));
         let x = root.join("no-such-tool");
@@ -998,7 +998,7 @@ mod tests {
         let _ = crate::store::remove_tree(&root);
     }
 
-    /// Two nodes: b lists a's runs, fetches the missing one (h) and a's live manifest (m)
+    /// Two nodes: b lists a's runs, fetches the missing one (h) and a's main manifest (m)
     #[test]
     fn fetch_runs_and_manifest() {
         let root = std::env::temp_dir().join(format!("packshot-cluster-{}", std::process::id()));
@@ -1007,25 +1007,25 @@ mod tests {
         let mut a = engine(&root.join("a"), net("a", format!("127.0.0.1:{port}"), Vec::new()), false, false);
         let mut b = engine(&root.join("b"), net("b", format!("127.0.0.1:{}", crate::net::test_port()), vec![format!("127.0.0.1:{port}")]), false, false);
 
-        // a finished run on a's live with one image
+        // a finished run on a's main with one image
         let id = "2026-11-03_10-00_x_missing";
         fs::create_dir_all(a.store.run_dir(id)).unwrap();
         let src = root.join("a").join("r.png");
         fs::write(&src, "png").unwrap();
         let files = vec!["X (x) 0000.png".to_string()];
         a.store.put_image(id, &src, &files).unwrap();
-        let mut info = RunInfo { id: id.into(), name: "x".into(), set: LIVE.into(), node: "a".into(), finished: Some("now".into()), ..Default::default() };
+        let mut info = RunInfo { id: id.into(), name: "x".into(), set: MAIN.into(), node: "a".into(), finished: Some("now".into()), ..Default::default() };
         info.entities.insert("x".into(), EntityResult { ok: true, error: None, files: files.clone() });
         a.store.save_run(&info).unwrap();
-        let mut live = a.store.load_set(LIVE).unwrap();
-        live.runs.push(id.into());
-        a.store.sync(&mut live).unwrap();
+        let mut main = a.store.load_set(MAIN).unwrap();
+        main.runs.push(id.into());
+        a.store.sync(&mut main).unwrap();
 
         until(&mut [&mut a, &mut b], "runs listed", &|e| e[1].fetchable("a").len() == 1);
         let conn = b.hub.as_ref().unwrap().peers[0].conn;
         assert_eq!(b.fetch_runs(conn), 1);
         until(&mut [&mut a, &mut b], "run fetched", &|e| e[1].store.run_dir(id).join("run.json").exists() && e[1].fetching.is_empty());
-        assert_eq!(fs::read_to_string(b.store.set_dir(LIVE).join(&files[0])).unwrap(), "png");
+        assert_eq!(fs::read_to_string(b.store.set_dir(MAIN).join(&files[0])).unwrap(), "png");
         assert_eq!(b.set.runs, vec![id.to_string()]);
         assert!(b.fetchable("a").is_empty());
 
@@ -1053,18 +1053,18 @@ mod tests {
         let port = crate::net::test_port();
         let mut m = engine(&root.join("m"), net("m", format!("127.0.0.1:{port}"), Vec::new()), true, true);
         let mut a = engine(&root.join("a"), net("a", format!("127.0.0.1:{}", crate::net::test_port()), vec![format!("127.0.0.1:{port}")]), false, false);
-        // the target list lives in m's live; a has none of its own
+        // the target list lives in m's main; a has none of its own
         let file = root.join("targets.json");
         fs::write(&file, serde_json::to_vec(&vec![target("gun_a"), target("gun_b")]).unwrap()).unwrap();
-        let mut live = m.store.load_set(LIVE).unwrap();
-        m.store.set_targets(&mut live, &file).unwrap();
+        let mut main = m.store.load_set(MAIN).unwrap();
+        m.store.set_targets(&mut main, &file).unwrap();
         assert_eq!(a.own_len, 0);
         until(&mut [&mut m, &mut a], "connected", &|e| !e[1].connected_nodes().is_empty());
 
         a.set_head(Some("m".into()));
         until(&mut [&mut m, &mut a], "state of m", &|e| e[1].remote_sel().is_some_and(|r| r.loaded));
-        assert_eq!(a.remote_sel().unwrap().sets, vec![LIVE.to_string()]);
-        assert_eq!(a.own_len, 2, "the target list of m's live came with its state");
+        assert_eq!(a.remote_sel().unwrap().sets, vec![MAIN.to_string()]);
+        assert_eq!(a.own_len, 2, "the target list of m's main came with its state");
         a.set_remote_set("exp");
         until(&mut [&mut m, &mut a], "state of exp", &|e| e[1].remote_sel().is_some_and(|r| r.loaded));
         let sel = a.select("", Scope::Missing);
@@ -1076,7 +1076,7 @@ mod tests {
         assert_eq!((st.head.as_str(), st.starter.as_str(), st.set.as_str(), st.total, st.failed), ("m", "a", "exp", 2, 2));
         assert_eq!(st.errors.len(), 2);
         assert_eq!(m.set.name, "exp", "the set was created on m");
-        assert_eq!(m.store.load_targets(&m.set).unwrap().len(), 2, "with live's target list");
+        assert_eq!(m.store.load_targets(&m.set).unwrap().len(), 2, "with main's target list");
         assert!(m.record.as_ref().is_some_and(|r| r.origin["starter"] == "a"));
         // the failures are part of m's set now: the selection on a sees them after the end
         until(&mut [&mut m, &mut a], "state after the run", &|e| e[1].remote_sel().is_some_and(|r| r.loaded && r.failed.len() == 2));
@@ -1157,7 +1157,7 @@ mod tests {
         let root = std::env::temp_dir().join(format!("packshot-runfiles-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
         let mut e = engine(&root, NetConfig { name: "b".into(), ..Default::default() }, false, false);
-        // sets/live/../../outside.png
+        // sets/main/../../outside.png
         let outside = root.join("store/outside.png");
         fs::write(&outside, "keep").unwrap();
         let id = "2026-11-04_10-00_x";
@@ -1165,7 +1165,7 @@ mod tests {
             let d = root.join("inbox-run");
             let _ = fs::remove_dir_all(&d);
             fs::create_dir_all(&d).unwrap();
-            let mut info = RunInfo { id: id.into(), name: "x".into(), set: LIVE.into(), node: "a".into(), finished: Some("now".into()), ..Default::default() };
+            let mut info = RunInfo { id: id.into(), name: "x".into(), set: MAIN.into(), node: "a".into(), finished: Some("now".into()), ..Default::default() };
             info.entities.insert(entity.into(), EntityResult { ok: true, error: None, files: vec![file.into()] });
             fs::write(d.join("run.json"), serde_json::to_vec(&info).unwrap()).unwrap();
             if safe_name(file) {
@@ -1195,7 +1195,7 @@ mod tests {
         // a proper one is taken
         e.fetching.insert((String::new(), id.into()));
         take(&mut e, inbox("x", good));
-        assert_eq!(fs::read_to_string(e.store.set_dir(LIVE).join(good)).unwrap(), "png");
+        assert_eq!(fs::read_to_string(e.store.set_dir(MAIN).join(good)).unwrap(), "png");
         let _ = crate::store::remove_tree(&root);
     }
 
@@ -1207,7 +1207,7 @@ mod tests {
         let mut e = engine(&root, NetConfig { name: "h".into(), ..Default::default() }, true, true);
         let bad = |entity: &str, uuid: &str| Target { uuids: vec!["0000".into(), uuid.into()], entity: entity.into(), ..target("x") };
         for (t, want) in [(bad("../../evil", "0001"), "target \"../../evil\": not a file name"), (bad("a/b", "0001"), "not a file name"), (bad("gun", "../x"), "target gun: UUID \"../x\" is not a file name")] {
-            let err = e.start_for("a", vec![target("gun_ok"), t], LIVE, "x", "", "all", "t").unwrap_err().to_string();
+            let err = e.start_for("a", vec![target("gun_ok"), t], MAIN, "x", "", "all", "t").unwrap_err().to_string();
             assert!(err.contains(want), "{err}");
         }
         assert!(!e.running() && e.record.is_none());
@@ -1411,7 +1411,7 @@ else:
     fn node_with(root: &Path, cfg: NetConfig, blenders: usize, exporters: usize, chunk: usize, export_script: &str) -> Engine {
         let dir = root.join(&cfg.name);
         let store = Store::open(&dir.join("store")).unwrap();
-        let set = store.load_set(LIVE).unwrap();
+        let set = store.load_set(MAIN).unwrap();
         let (render, export) = (blenders > 0, exporters > 0);
         let me = Hello { name: cfg.name.clone(), version: "t".into(), render, export, blender: "5.2.3".into(), addon: Some("a".into()), slots: blenders, exporters, ..Default::default() };
         let hub = Hub::new(cfg, me.clone(), dir.join("inbox"));
@@ -1969,7 +1969,7 @@ mod real_tests {
         let targets: Vec<Target> = serde_json::from_slice(&fs::read(repo.join("local/packshot/targets.json")).unwrap()).unwrap();
         let dir = root.join(name);
         let store = Store::open(&dir.join("store")).unwrap();
-        let set = store.load_set(LIVE).unwrap();
+        let set = store.load_set(MAIN).unwrap();
         let caps = Caps { render, export, blender: Some(blender.as_path()), starbreaker: Some(starbreaker.as_path()), p4k: Some(p4k.as_path()) };
         let mut me = own_hello(name, caps, if render { 2 } else { 0 }, if export { 2 } else { 0 }, 8, Vec::new());
         me.name = name.into();

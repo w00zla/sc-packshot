@@ -31,7 +31,7 @@ flowchart LR
     P[(Data.p4k)] --> E[StarBreaker<br/>export-batch --stdin]
     E -->|scene.blend, meshes,<br/>textures, sidecars| B[Blender<br/>add-on + render.py --stdin]
     B --> R[run folder<br/>PNG per entity]
-    R --> S[sets/live]
+    R --> S[sets/main]
 ```
 
 packshot renders nothing itself. It cuts the selected targets into chunks and hands them to long-lived processes:
@@ -98,7 +98,7 @@ Otherwise no run starts and the TUI shows what differs. `render.py` travels with
 |---|---|
 | **Run** | `runs/<date>_<time>_<name>/`: the images as `<Name> (<class>) <uuid>.png`, `run.json`, `events.jsonl`, `run.log`; never changed after its end |
 | **Set** | `sets/<name>/`: per entity a hard link to the newest image in its chain of runs, plus its own `targets.json` |
-| **live** | the main set, what consumers read; an experiment set branches off it and is adopted by appending its runs |
+| **main** | the set consumers read (called live before ADR 0035); an experiment set branches off it and is adopted by appending its runs |
 
 `packshot --report` evaluates a run's event log: throughput, phase timings, slot use per node, slowest entities.
 

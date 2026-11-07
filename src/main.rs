@@ -3,7 +3,7 @@
 // computes pose and light rig from the game's tables, exports with StarBreaker export-batch and
 // renders with blender/render.py, several export and Blender processes at once, selection by filter and scope
 // (missing / failed / all), image preview. Every run is a run folder whose images land in the target set (store.rs;
-// consumers read live). Every node starts with what it can do now (--render, --export); with a token in
+// consumers read main). Every node starts with what it can do now (--render, --export); with a token in
 // packshot.json the nodes find each other and every node can start a run, on itself or on another node as its main
 // node (cluster.rs, node.rs). Runs in the repo (paths under local/) and in the bundle (paths next to the exe),
 // without Node.js and without the DB. The worker counts come from the node's compute assessment when it has a valid
@@ -46,7 +46,7 @@ What to render
   --filter <terms>       class name, display name or type contains a term (TUI: /)
   --scope <s>            missing (default) · failed · all
   --force                same as --scope all
-  --set <name>           target set (default live; a new name branches off live)
+  --set <name>           target set (default main; a new name branches off main)
   --targets <file>       give the target set this target list
   --name <name>          run name (default: filter, scope, add-on and render.py hashes)
 
@@ -328,14 +328,14 @@ fn real_main() -> Result<()> {
     if let Some((_, l)) = &shim_line {
         println!("{l}");
     }
-    let set_name = opt.get("set").cloned().unwrap_or_else(|| store::LIVE.to_string());
+    let set_name = opt.get("set").cloned().unwrap_or_else(|| store::MAIN.to_string());
     let mut set = if store.sets()?.contains(&set_name) {
         store.load_set(&set_name)?
     } else if args.dry_run {
-        bail!("Set {set_name} does not exist (a run would create it from live)");
+        bail!("Set {set_name} does not exist (a run would create it from main)");
     } else {
-        println!("New set {set_name}, branched off live");
-        store.create_set(&set_name, store::LIVE)?
+        println!("New set {set_name}, branched off main");
+        store.create_set(&set_name, store::MAIN)?
     };
     println!("Set: {} ({} runs) in {}", set.name, set.chain().count(), store.set_dir(&set.name).display());
     // the set's target list: --targets gives it a new one
