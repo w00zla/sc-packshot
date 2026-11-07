@@ -113,7 +113,8 @@ matches; below the selected node's details and where and how the next run would 
 ### Images in the terminal
 
 Renders show in full on terminals with Sixel, Kitty or iTerm2 graphics (Windows Terminal, WezTerm, kitty, iTerm2, …),
-else as half blocks. packshot detects the protocol; `PACKSHOT_GRAPHICS=sixel|kitty|iterm2|halfblocks` forces one.
+else as half blocks. packshot detects the protocol itself; to set one, give the environment variable
+`PACKSHOT_GRAPHICS` one of `sixel`, `kitty`, `iterm2` or `halfblocks`.
 
 ## How it works
 
