@@ -15,6 +15,8 @@ Technical documentation (export, render look, scheduler, runs and sets, cluster,
 - **English throughout**: identifiers, UI texts, comments, docs, scripts.
 - **Public repo**: no game data, no personal paths, host names or tokens, no repo- or environment-specific defaults in
   help texts or messages ([0010](docs/adr/0010-english-and-environment-free-help.md)).
+- **Pull requests only** ([0034](docs/adr/0034-changes-through-pull-requests.md)): branch from `main`, open a pull
+  request, squash merge. Never push to `main` directly, never force-push it.
 - Shell scripts must pass `shellcheck`. Text files are LF (`.gitattributes`).
 
 ## Commands

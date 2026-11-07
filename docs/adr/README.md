@@ -38,3 +38,4 @@ supersedes the old one. 0001–0020 were recorded afterwards (2026-11-05) from t
 | [0031](0031-render-cache-limit.md) | The render-node cache has a size limit | accepted | 2026-11-06 |
 | [0032](0032-fan-disclaimer-suffices.md) | A fan-content disclaimer in the README is enough | accepted | 2026-11-06 |
 | [0033](0033-one-pin-file-for-dev-and-bundles.md) | One pin file for Blender and StarBreaker, used by the dev setup and the bundles | accepted | 2026-11-07 |
+| [0034](0034-changes-through-pull-requests.md) | Changes land on main through pull requests | accepted | 2026-11-07 |
