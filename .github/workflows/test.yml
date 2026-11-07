@@ -45,4 +45,4 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: shellcheck
-        run: shellcheck scripts/*.sh scripts/lib/*.sh bundle/linux/*.sh
+        run: shellcheck -x -P SCRIPTDIR scripts/*.sh scripts/lib/*.sh bundle/linux/*.sh

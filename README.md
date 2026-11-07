@@ -148,13 +148,6 @@ Every render slot runs one portable Blender of the version `deps.toml` pins (5.2
 | Staging | pose and light rig from the game's inventory data (per item type), the item scaled to 0.7 m |
 | Look | linear EXR mapped by `render.py`'s own tone curve, a studio world, boosted emission with bloom, a second pass for light behind glass |
 
-### Cluster
-
-Every node starts with what it can do now (`--render`, `--export`, both or neither). Any node can start a run, on
-itself or on another node, which then holds it as the **head node** and assigns the chunks. One run at a time in the
-cluster. Every node must run the same packshot build, Blender, add-on and StarBreaker, and the exporting nodes the same
-`Data.p4k`; otherwise no run starts and the TUI shows what differs.
-
 ### Runs and sets
 
 | | |
@@ -166,6 +159,13 @@ cluster. Every node must run the same packshot build, Blender, add-on and StarBr
 Everything packshot writes lives in one folder, laid out the same on every node: `local/packshot/` in a checkout, the
 bundle's own folder in a bundle (`--store`, `--work`). `packshot --report` evaluates a run's event log: throughput,
 phase timings, slot use per node, slowest entities.
+
+### Cluster
+
+Every node starts with what it can do now (`--render`, `--export`, both or neither). Any node can start a run, on
+itself or on another node, which then holds it as the **head node** and assigns the chunks. One run at a time in the
+cluster. Every node must run the same packshot build, Blender, add-on and StarBreaker, and the exporting nodes the same
+`Data.p4k`; otherwise no run starts and the TUI shows what differs.
 
 ## Develop
 
