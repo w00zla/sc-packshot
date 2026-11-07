@@ -10,26 +10,25 @@
 # portable/ comes from the Linux Blender for both, the add-on from the fork as real files (the Windows Blender's
 # junction cannot be read on Linux).
 #
-#   scripts/packshot-bundle.sh [--platform all|windows|linux] [--out <dir>] [--blender-version 5.2.3]
-#                              [--targets <targets.json>]
+#   scripts/packshot-bundle.sh [--platform all|windows|linux] [--out <dir>] [--targets <targets.json>]
 #
+# Blender and StarBreaker as deps.toml pins them: the Blender archive from local/cache/ (scripts/lib/deps.sh), the
+# StarBreaker binaries only when their <binary>.commit stamp is the pinned commit (scripts/starbreaker-build.sh).
 # targets.json (default local/packshot/targets.json) goes into both bundles when it exists, else they carry none.
 # Needs: rustup targets x86_64-unknown-linux-musl and x86_64-pc-windows-gnu, mingw64-gcc (the Windows linker),
-# local/blender/blender-<ver>-linux-x64 (its portable/), the StarBreaker builds in local/starbreaker-ps/, curl,
-# sha256sum and rsync.
+# local/blender/blender-<ver>-linux-x64 (its portable/, from scripts/setup.sh), the StarBreaker builds in
+# local/starbreaker-ps/, curl, sha256sum and rsync.
 set -euo pipefail
 
 out=local/packshot-bundle
-blender_version=5.2.3
 platform=all
 targets=local/packshot/targets.json
 while [[ $# -gt 0 ]]; do
   case $1 in
     --out) out=$2; shift 2 ;;
-    --blender-version) blender_version=$2; shift 2 ;;
     --platform) platform=$2; shift 2 ;;
     --targets) targets=$2; shift 2 ;;
-    *) echo "Usage: $0 [--platform all|windows|linux] [--out <dir>] [--blender-version <x.y.z>] [--targets <file>]" >&2; exit 1 ;;
+    *) echo "Usage: $0 [--platform all|windows|linux] [--out <dir>] [--targets <file>]" >&2; exit 1 ;;
   esac
 done
 case $platform in
@@ -40,9 +39,26 @@ case $platform in
 esac
 
 cd "$(dirname "$0")/.."
+# shellcheck source=lib/deps.sh
+. scripts/lib/deps.sh
 tpl=bundle
-cache=$out/cache
-mkdir -p "$cache"
+blender_version=$(pin blender version)
+pinned=$(pinned_commit)
+mkdir -p "$out"
+
+# A StarBreaker binary with its stamp, refused unless built from the pinned commit
+starbreaker_for() {
+  local bin=$1 stamp
+  if [[ ! -f local/starbreaker-ps/$bin || ! -f local/starbreaker-ps/$bin.commit ]]; then
+    echo "ERROR: local/starbreaker-ps/$bin or its .commit stamp is missing (scripts/starbreaker-build.sh)" >&2
+    exit 1
+  fi
+  stamp=$(cut -d" " -f1 "local/starbreaker-ps/$bin.commit")
+  if [[ $stamp != "$pinned" ]]; then
+    echo "ERROR: local/starbreaker-ps/$bin is $stamp, deps.toml pins $pinned (scripts/starbreaker-build.sh)" >&2
+    exit 1
+  fi
+}
 
 # The add-on as real files: the Linux Blender's portable/ links into the fork
 blender_lin=local/blender/blender-$blender_version-linux-x64
@@ -81,51 +97,25 @@ crlf() {
   sed 's/\r$//; s/$/\r/' "$1" >"$2"
 }
 
-# Blender archive (blender-<ver>-<platform>): downloaded once into cache/, checked against the published SHA256
-fetch_blender() {
-  local name=$1 minor base expected actual
-  minor=$(echo "$blender_version" | cut -d. -f1-2)
-  base=https://download.blender.org/release/Blender$minor
-  if [[ ! -f $cache/$name ]]; then
-    echo "Downloading $name ..."
-    curl -fL -o "$cache/$name.part" "$base/$name"
-    mv "$cache/$name.part" "$cache/$name"
-  fi
-  expected=$(curl -fsSL "$base/blender-$blender_version.sha256" | grep -F "$name" | head -n 1 | cut -d' ' -f1)
-  if [[ -z $expected ]]; then
-    echo "ERROR: no SHA256 for $name in $base/blender-$blender_version.sha256" >&2
-    exit 1
-  fi
-  actual=$(sha256sum "$cache/$name" | cut -d' ' -f1)
-  if [[ $actual != "$expected" ]]; then
-    rm -f "$cache/$name"
-    echo "ERROR: SHA256 mismatch ($actual, expected $expected): download deleted" >&2
-    exit 1
-  fi
-  echo "SHA256 ok ($name)"
-}
-
 summary() {
   echo "Bundle $(basename "$1"): $1 ($(du -sh "$1" | cut -f1), $(find "$1" -type f | wc -l) files)"
 }
 
 if [[ $do_win == 1 ]]; then
   win=$out/windows
-  if [[ ! -d $blender_lin/portable || ! -f local/starbreaker-ps/starbreaker.exe ]]; then
-    echo "ERROR: $blender_lin/portable or local/starbreaker-ps/starbreaker.exe is missing" >&2
-    exit 1
-  fi
+  [[ -d $blender_lin/portable ]] || { echo "ERROR: $blender_lin/portable is missing (scripts/setup.sh)" >&2; exit 1; }
+  starbreaker_for starbreaker.exe
   echo "Building packshot (Windows, mingw) ..."
   (cargo build --release --target x86_64-pc-windows-gnu)
   mkdir -p "$win/starbreaker"
   cp target/x86_64-pc-windows-gnu/release/packshot.exe "$win/"
-  cp local/starbreaker-ps/starbreaker.exe local/starbreaker-ps/COMMIT "$win/starbreaker/"
+  cp local/starbreaker-ps/starbreaker.exe "$win/starbreaker/"
+  cp local/starbreaker-ps/starbreaker.exe.commit "$win/starbreaker/COMMIT"
   # Blender zip, packed (setup.cmd unpacks it); the unpacked blender/ of older bundles goes
-  zip_name=blender-$blender_version-windows-x64.zip
-  fetch_blender "$zip_name"
+  zip=$(blender_archive windows-x64)
   rm -rf "$win/blender"
   rm -f "$win"/blender-*-windows-x64.zip
-  cp "$cache/$zip_name" "$win/"
+  cp "$zip" "$win/"
   # portable/: real files instead of the add-on symlink, without __pycache__
   rm -rf "$win/portable"
   rsync -aL --exclude __pycache__ "$blender_lin/portable/" "$win/portable/"
@@ -139,26 +129,24 @@ fi
 if [[ $do_lin == 1 ]]; then
   lin=$out/linux
   sb=local/starbreaker-ps/starbreaker
-  if [[ ! -d $blender_lin/portable || ! -x $sb ]]; then
-    echo "ERROR: $blender_lin/portable or $sb (Linux build of the fork) is missing" >&2
-    exit 1
-  fi
+  [[ -d $blender_lin/portable ]] || { echo "ERROR: $blender_lin/portable is missing (scripts/setup.sh)" >&2; exit 1; }
+  starbreaker_for starbreaker
   # 1. packshot: static, runs on any x86-64 Linux
   echo "Building packshot (Linux, musl) ..."
   (cargo build --release --target x86_64-unknown-linux-musl)
   mkdir -p "$lin/starbreaker"
   cp target/x86_64-unknown-linux-musl/release/packshot "$lin/"
   # 2. StarBreaker: dynamically linked against glibc, so the node needs at least the glibc it was built with
-  cp "$sb" local/starbreaker-ps/COMMIT "$lin/starbreaker/"
+  cp "$sb" "$lin/starbreaker/"
+  cp local/starbreaker-ps/starbreaker.commit "$lin/starbreaker/COMMIT"
   if command -v objdump >/dev/null 2>&1; then
     glibc=$(objdump -T "$sb" | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -n 1 || true)
     echo "StarBreaker needs ${glibc:-no glibc (static)} on the node (ldd --version shows its glibc)"
   fi
   # 3. Blender tarball, packed (setup.sh unpacks it)
-  tar_name=blender-$blender_version-linux-x64.tar.xz
-  fetch_blender "$tar_name"
+  tarball=$(blender_archive linux-x64)
   rm -f "$lin"/blender-*-linux-x64.tar.xz
-  cp "$cache/$tar_name" "$lin/"
+  cp "$tarball" "$lin/"
   # 4. portable/: real files instead of the add-on symlink, without __pycache__
   rm -rf "$lin/portable"
   rsync -aL --exclude __pycache__ "$blender_lin/portable/" "$lin/portable/"

@@ -8,18 +8,21 @@
 #                  targets.json, setup.sh and check.sh (unpack and check on the Linux node), run.sh, README.txt,
 #                  packshot.example.json
 # Run from the repo root (pwsh or Windows PowerShell 5.1):
-#   scripts/packshot-bundle.ps1 [-Out local/packshot-bundle] [-BlenderVersion 5.2.3] [-Platform all|windows|linux]
+#   scripts/packshot-bundle.ps1 [-Out local/packshot-bundle] [-Platform all|windows|linux]
 #                               [-Targets local/packshot/targets.json]
-# The target list goes into both bundles when it exists, else they carry none.
+# Blender and StarBreaker as deps.toml pins them: the Blender archives from local/cache/ (scripts/lib/deps.ps1), the
+# StarBreaker binaries only when their <binary>.commit stamp is the pinned commit (scripts/starbreaker-build.ps1),
+# portable/ from the pinned local Blender (scripts/setup.ps1). The target list goes into both bundles when it exists,
+# else they carry none.
 param(
   [string]$Out = 'local/packshot-bundle',
-  [string]$BlenderVersion = '5.2.3',
   [ValidateSet('all', 'windows', 'linux')][string]$Platform = 'all',
   [string]$Targets = 'local/packshot/targets.json'
 )
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 Set-Location $root
+. (Join-Path $root 'scripts/lib/deps.ps1')
 $Out = [System.IO.Path]::GetFullPath((Join-Path $root $Out))
 $tpl = Join-Path $root 'bundle'
 $crate = $root
@@ -27,9 +30,16 @@ New-Item -ItemType Directory -Force -Path $Out | Out-Null
 $doWin = $Platform -in 'all', 'windows'
 $doLin = $Platform -in 'all', 'linux'
 
-# Native programs set $LASTEXITCODE but do not throw
-function Assert-Ok([string]$what) {
-  if ($LASTEXITCODE -ne 0) { throw "$what failed ($LASTEXITCODE)" }
+# A StarBreaker binary and its stamp, refused unless built from the pinned commit
+function Assert-StarBreaker([string]$bin) {
+  $file = Join-Path $root "local/starbreaker-ps/$bin"
+  if (-not (Test-Path $file) -or -not (Test-Path "$file.commit")) {
+    throw "local/starbreaker-ps/$bin or its .commit stamp is missing (scripts/starbreaker-build.ps1)"
+  }
+  $stamp = ((Get-Content "$file.commit" -Raw).Trim() -split ' ')[0]
+  if ($stamp -ne (Get-PinnedCommit)) {
+    throw "local/starbreaker-ps/$bin is $stamp, deps.toml pins $(Get-PinnedCommit) (scripts/starbreaker-build.ps1)"
+  }
 }
 
 # Mirror a folder: robocopy exit codes < 8 are success (1 = copied, 0 = unchanged)
@@ -47,36 +57,13 @@ function Copy-Template([string]$src, [string]$dst, [switch]$Crlf) {
   [IO.File]::WriteAllText($dst, $text, $enc)
 }
 
-# Blender archive (blender-<ver>-<platform>): downloaded once into cache/, checked against the published SHA256;
-# returns its path
-function Get-Blender([string]$name) {
-  $minor = ($BlenderVersion -split '\.')[0..1] -join '.'
-  $base = "https://download.blender.org/release/Blender$minor"
-  $file = Join-Path $cache $name
-  if (-not (Test-Path $file)) {
-    Write-Host "Downloading $name ..."
-    $ProgressPreference = 'SilentlyContinue'  # else Invoke-WebRequest is extremely slow in 5.1
-    Invoke-WebRequest -Uri "$base/$name" -OutFile "$file.part" -UseBasicParsing
-    Move-Item "$file.part" $file -Force
-  }
-  $sums = (Invoke-WebRequest -Uri "$base/blender-$BlenderVersion.sha256" -UseBasicParsing).Content
-  $expected = ($sums -split "`n" | Where-Object { $_ -match [regex]::Escape($name) } | Select-Object -First 1) -replace '\s.*$', ''
-  if (-not $expected) { throw "No SHA256 for $name in $base/blender-$BlenderVersion.sha256" }
-  $actual = (Get-FileHash $file -Algorithm SHA256).Hash
-  if ($actual -ne $expected.Trim().ToUpperInvariant()) {
-    Remove-Item -Force $file
-    throw "SHA256 mismatch ($actual, expected $expected): download deleted"
-  }
-  Write-Host "SHA256 ok ($name)"
-  return $file
+# The pinned local Windows Blender: its portable/ (config and add-on) goes into both bundles
+$blenderSrc = Get-Item (Join-Path $root "local/blender/blender-$(Get-Pin 'blender' 'version')-windows-x64")
+if (-not (Test-Path (Join-Path $blenderSrc.FullName 'portable/config/userpref.blend'))) {
+  throw "$($blenderSrc.FullName) has no set-up portable/ (scripts/setup.ps1)"
 }
-
-# Folder of the local Windows Blender (with blender.exe): its portable/ goes into both bundles
-$blenderSrc = Get-ChildItem local/blender -Directory | Where-Object { Test-Path (Join-Path $_.FullName 'blender.exe') } | Select-Object -First 1
-if (-not $blenderSrc) { throw 'No Blender under local/blender/*/blender.exe' }
-if ($doLin -and -not (Test-Path local/starbreaker-ps/starbreaker)) {
-  throw 'No local/starbreaker-ps/starbreaker: the Linux build of the fork is made on Linux (cargo build --release -p starbreaker)'
-}
+if ($doWin) { Assert-StarBreaker 'starbreaker.exe' }
+if ($doLin) { Assert-StarBreaker 'starbreaker' }
 
 # 1. Build
 Push-Location $crate
@@ -96,8 +83,6 @@ try {
 }
 
 # The target list, if there is one
-$cache = Join-Path $Out 'cache'
-New-Item -ItemType Directory -Force -Path $cache | Out-Null
 if (Test-Path $Targets) {
   $targets = (Resolve-Path $Targets).Path
   Write-Host "Target list: $targets"
@@ -113,10 +98,11 @@ if ($doWin) {
   Copy-Item (Join-Path $crate 'target/release/packshot.exe') $win -Force
 
   New-Item -ItemType Directory -Force -Path (Join-Path $win 'starbreaker') | Out-Null
-  Copy-Item local/starbreaker-ps/starbreaker.exe, local/starbreaker-ps/COMMIT (Join-Path $win 'starbreaker') -Force
+  Copy-Item local/starbreaker-ps/starbreaker.exe (Join-Path $win 'starbreaker') -Force
+  Copy-Item local/starbreaker-ps/starbreaker.exe.commit (Join-Path $win 'starbreaker/COMMIT') -Force
 
   # Blender zip, packed (setup.cmd unpacks it); the unpacked blender/ of older bundles goes
-  $zip = Get-Blender "blender-$BlenderVersion-windows-x64.zip"
+  $zip = Get-BlenderArchive 'windows-x64'
   if (Test-Path (Join-Path $win 'blender')) { Remove-Item -Recurse -Force (Join-Path $win 'blender') }
   Get-ChildItem $win -Filter 'blender-*-windows-x64.zip' | Remove-Item -Force
   Copy-Item $zip $win -Force
@@ -145,11 +131,12 @@ if ($doLin) {
   # StarBreaker for Linux: linked against glibc, the node needs at least the one it was built with
   # (scripts/packshot-bundle.sh on Linux prints it)
   New-Item -ItemType Directory -Force -Path (Join-Path $lin 'starbreaker') | Out-Null
-  Copy-Item local/starbreaker-ps/starbreaker, local/starbreaker-ps/COMMIT (Join-Path $lin 'starbreaker') -Force
+  Copy-Item local/starbreaker-ps/starbreaker (Join-Path $lin 'starbreaker') -Force
+  Copy-Item local/starbreaker-ps/starbreaker.commit (Join-Path $lin 'starbreaker/COMMIT') -Force
 
   # Blender tarball, put into the bundle packed (unpacking on Windows would lose symlinks and exec bits: setup.sh
   # does that on the Linux node)
-  $tar = Get-Blender "blender-$BlenderVersion-linux-x64.tar.xz"
+  $tar = Get-BlenderArchive 'linux-x64'
   Get-ChildItem $lin -Filter 'blender-*-linux-x64.tar.xz' | Remove-Item -Force
   Copy-Item $tar $lin -Force
 
