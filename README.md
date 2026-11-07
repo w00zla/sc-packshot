@@ -100,7 +100,7 @@ matches; below the selected node's details and where and how the next run would 
 
 ## How it works
 
-![Data flow: Data.p4k through StarBreaker and Blender into a run and its set, driven by packshot](docs/assets/arch-overview.png)
+<p align="center"><a href="docs/assets/arch-overview.png"><img src="docs/assets/arch-overview.png" alt="Data flow: Data.p4k through StarBreaker and Blender into a run and its set, driven by packshot" width="600"></a></p>
 
 packshot renders nothing itself. It cuts the selected targets into chunks and hands them to long-lived processes:
 
