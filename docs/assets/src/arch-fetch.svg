@@ -21,7 +21,7 @@
   <rect class="ext" x="800" y="18" width="160" height="40" rx="6"/><text class="title" x="880" y="43" text-anchor="middle">Blender on C</text>
   <line class="life" x1="140" y1="58" x2="140" y2="462"/><line class="life" x1="400" y1="58" x2="400" y2="462"/>
   <line class="life" x1="660" y1="58" x2="660" y2="462"/><line class="life" x1="880" y1="58" x2="880" y2="462"/>
-  <path class="msg" d="M140 90 H394" marker-end="url(#ahs)"/><text class="label" x="160" y="84">1 · render chunk: items and their holders</text>
+  <path class="msg" d="M140 90 H394" marker-end="url(#ahs)"/><text class="label" x="160" y="84">1 · render chunk: items, holders, profile</text>
   <path class="msg" d="M400 130 H654" marker-end="url(#ahs)"/><text class="label" x="420" y="124">2 · GetItems</text>
   <path class="msg" d="M660 170 H406" marker-end="url(#ahs)"/><text class="label" x="420" y="164">3 · ItemsInfo: closure, sizes, xxh3 hashes</text>
   <path class="msg" d="M400 210 H654" marker-end="url(#ahs)"/><text class="label" x="420" y="204">4 · Fetch: only hashes missing in the cache</text>
@@ -30,7 +30,7 @@
   <text class="label" x="400" y="285" text-anchor="middle">6 · linked from</text>
   <text class="mono" x="400" y="302" text-anchor="middle">cas/ → fetch/</text>
   <path class="msg" d="M400 330 H874" marker-end="url(#ahs)"/><text class="label" x="420" y="324">7 · one job per item over stdin</text>
-  <path class="msg" d="M880 370 H406" marker-end="url(#ahs)"/><text class="label" x="420" y="364">8 · icon: &lt;png&gt; with phase timings</text>
-  <path class="msg" d="M400 410 H146" marker-end="url(#ahs)"/><text class="label" x="160" y="404">9 · result with the PNG</text>
+  <path class="msg" d="M880 370 H406" marker-end="url(#ahs)"/><text class="label" x="420" y="364">8 · icon: &lt;image&gt; with phase timings</text>
+  <path class="msg" d="M400 410 H146" marker-end="url(#ahs)"/><text class="label" x="160" y="404">9 · result with the image</text>
   <path class="msg" d="M140 450 H654" marker-end="url(#ahs)"/><text class="label" x="160" y="444">10 · release once the export chunk is done</text>
 </svg>

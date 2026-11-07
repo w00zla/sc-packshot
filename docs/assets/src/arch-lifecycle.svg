@@ -20,7 +20,7 @@
   <rect class="box" x="214" y="66" width="160" height="64" rx="6"/><text class="title" x="294" y="94" text-anchor="middle">Export chunk</text><text class="faint" x="294" y="114" text-anchor="middle">export-batch at work</text>
   <rect class="box" x="418" y="66" width="160" height="64" rx="6"/><text class="title" x="498" y="94" text-anchor="middle">Pool</text><text class="faint" x="498" y="114" text-anchor="middle">held on node X</text>
   <rect class="box" x="622" y="66" width="160" height="64" rx="6"/><text class="title" x="702" y="94" text-anchor="middle">Render chunk</text><text class="faint" x="702" y="114" text-anchor="middle">fetch · Blender</text>
-  <rect class="box" x="826" y="66" width="154" height="64" rx="6"/><text class="title" x="903" y="94" text-anchor="middle">Done</text><text class="faint" x="903" y="114" text-anchor="middle">PNG in run and set</text>
+  <rect class="box" x="826" y="66" width="154" height="64" rx="6"/><text class="title" x="903" y="94" text-anchor="middle">Done</text><text class="faint" x="903" y="114" text-anchor="middle">image in run and set</text>
   <path class="flow" d="M170 98 H206" marker-end="url(#ah)"/>
   <path class="flow" d="M374 98 H410" marker-end="url(#ah)"/>
   <path class="flow" d="M578 98 H614" marker-end="url(#ah)"/>

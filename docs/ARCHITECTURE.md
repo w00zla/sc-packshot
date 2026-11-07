@@ -132,6 +132,8 @@ assessment.json    measured process counts
 targets/
   targets.json     template for target lists
   <name>.json      lists from the picker or by hand (subfolders are listed too)
+profiles/
+  <name>/          own profiles: profile.toml, hooks.py (hide a bundled one of the same name)
 runs/
   2026-11-05_14-30_full/
     <Name> (<class>) <uuid>.png   read-only (.jpg/.exr with another format)
@@ -145,6 +147,7 @@ work/
   cas/             content cache of fetched files
   fetch/           render chunks, linked from cas/
   dcb/             pose and light tables, entity tags
+  profile-cache/   render.py and profiles received for render chunks, by content hash
   assess/          the assessment's test set
 ```
 
@@ -173,18 +176,23 @@ versions stay the same; it sets the default counts and the chunk sizes.
 
 ## Profiles
 
-The look is a **profile** ([ADR 0022](adr/0022-modular-profiles.md), [0041](adr/0041-profile-hooks.md),
-[0042](adr/0042-profile-folder-and-hook-signatures.md)): a folder with `profile.toml` (parameters such as size,
-samples, format) and `hooks.py` (`before_open`, `after_open`, `stage`, `post`). `render.py` is the core; the bundled
-`game-tile` is the default and the base of every profile: its parameters lie under a profile's, its hooks run where a
-profile has none. A profile may bring a `scene` template and its own copy of the StarBreaker add-on (`addon`, ADR
-[0025](adr/0025-material-module.md)), which `render.py` enables instead of the installed one for its whole process; the
-equality check still compares the installed add-on. A run's profile is the starter's: `--profile` (a name: an own one in
-the packshot folder's `profiles/` hides a bundled one; or a folder) or the TUI's start dialog; a start on another node
-sends the profile's folder with it, so the head node need not have it (game-tile and `render.py` are the head node's).
-`--size` and `--format` override its values. The head node sends `render.py`, `game-tile` and the run's profile with
-every render chunk ([ADR 0024](adr/0024-head-node-distributes-profiles.md)); a node keeps them in its work folder by
-content hash and starts a Blender per `render.py` and profile. The run records `render.py`'s hash, the profile (name,
-origin, hash, template), size and format with their source, and the add-on it used. The assessment always measures
-`game-tile` as PNG. Cluster, chunks, runs, sets and assessment do not depend on the
-look.
+The look is a **profile** ([ADRs 0022](adr/0022-modular-profiles.md), [0041](adr/0041-profile-hooks.md),
+[0042](adr/0042-profile-folder-and-hook-signatures.md), [0044](adr/0044-profile-per-run.md)); cluster, chunks, runs,
+sets and assessment do not depend on it.
+
+- **Core and look:** `render.py` is the core: it opens the item, calls the profile's hooks (`before_open`,
+  `after_open`, `stage`, `post`), renders a linear multi-layer EXR and hands it to `post`, which writes the image. The
+  bundled `game-tile` is the default and the base of every profile: its parameters lie under a profile's, its hooks
+  run where a profile has none.
+- **Extras:** a profile may bring a `scene` template and its own copy of the StarBreaker add-on (`addon`,
+  [ADR 0025](adr/0025-material-module.md)), which `render.py` enables instead of the installed one for its whole
+  process; the equality check still compares the installed add-on.
+- **Choice:** per run, by the starter: `--profile` (a name, or a folder) or the TUI's start dialog; a start on another
+  node sends the profile's folder along, so the head node need not have it. `--size` and `--format` override its
+  values.
+- **Distribution:** the head node sends `render.py`, `game-tile` (both its own) and the run's profile with every render
+  chunk ([ADR 0024](adr/0024-head-node-distributes-profiles.md)); a node keeps them in `work/profile-cache/` by content
+  hash and starts a Blender per `render.py` and profile.
+- **Record:** the run records `render.py`'s hash, the profile (name, origin, hash, template), size and format with
+  their source, and the add-on it used; the Sets view shows them in the run's tile. The assessment always measures
+  `game-tile` as PNG.
