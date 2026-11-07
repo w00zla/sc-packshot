@@ -10,7 +10,7 @@
 #      pinned commit
 # Run from the repo root (pwsh or Windows PowerShell 5.1):
 #   scripts/setup.ps1 [-FromSource] [-SkipStarBreaker]
-# The bundles (scripts/packshot-bundle.ps1) take portable/ from here, so set it up before building them.
+# The bundles (scripts/packshot-bundle.ps1) do not need this: they carry no Blender, their own setup.cmd fetches it by blender.pin.
 param([switch]$FromSource, [switch]$SkipStarBreaker)
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)

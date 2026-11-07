@@ -17,5 +17,5 @@ commit = "10eca519dd36e011e3a81f310f519c4489981dc6"
 sha256-windows-x64 = "47a716159c2740bc3ffef2ee7ac1f6f705e0d196e280e5b6990fc99194aec454"
 sha256-linux-x64 = "3403b386a4bcaee3d0f4aa7117e793fb6a88b310da7b20f354b77b813024bbbd"
 sha256-addon = "cd577713680ca224e75fc0f2ac65e0b9a098b1b75e560c33c90b41e6b602e444"
-# fork development only (setup --from-source, starbreaker-build): the checkout next to this repository
+# fork development only (scripts/setup.ps1 -FromSource / scripts/setup.sh --from-source, scripts/starbreaker-build.*): the checkout next to this repository
 repo = "../starbreaker-ps"

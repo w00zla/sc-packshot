@@ -49,7 +49,7 @@ What to render
   --force                same as --scope all
   --set <name>           target set (default main; a new name branches off main)
   --targets <file>       give the target set this target list
-  --name <name>          run name (default: filter, scope, add-on and render.py hashes)
+  --name <name>          run name (default: filter and scope)
 
 Modes
   --plain                no TUI: run here, one line per item

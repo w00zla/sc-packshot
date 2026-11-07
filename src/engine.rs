@@ -1,4 +1,3 @@
-// The run: selection, scheduling, the images into the run and the target set (store.rs), log. The node that holds a
 // run is its head node, whichever node started it (cluster.rs): it cuts export chunks (each for one StarBreaker
 // `entity export-batch` process) for the exporting nodes and render chunks (each for one Blender with render.py) for
 // the rendering ones, itself included, and files the results. Between the stages each exported item waits in the pool,
@@ -98,24 +97,20 @@ impl Scope {
     }
 }
 
-/// Name of a run without --name: the filter terms (none: nothing), what the scope does (missing, retry, full) and the
-/// first 6 characters of the add-on's and render.py's hashes, the two things that change the images:
-/// "arms-legs_full_addon-6ea0d4_renderpy-6da3cb", "missing_addon-…"
-pub fn default_run_name(filter: &str, scope: Scope, addon: Option<&str>, render_py: Option<&str>) -> String {
+/// Name of a run without --name: the filter terms (none: nothing) and what the scope does (missing, retry, full):
+/// "arms-legs_full", "missing". The run id carries date and time, so equal names are fine.
+pub fn default_run_name(filter: &str, scope: Scope) -> String {
     let terms: Vec<&str> = filter.split([' ', ',']).filter(|s| !s.is_empty()).collect();
     let what = match scope {
         Scope::Missing => "missing",
         Scope::Failed => "retry",
         Scope::All => "full",
     };
-    let short = |h: Option<&str>| h.map(|h| h.chars().take(6).collect::<String>()).unwrap_or_else(|| "none".into());
     let mut parts = Vec::new();
     if !terms.is_empty() {
         parts.push(crate::store::slug(&terms.join("-")).chars().take(32).collect::<String>());
     }
     parts.push(what.to_string());
-    parts.push(format!("addon-{}", short(addon)));
-    parts.push(format!("renderpy-{}", short(render_py)));
     parts.join("_")
 }
 
@@ -1799,9 +1794,8 @@ impl Engine {
         out
     }
 
-    /// default_run_name with this node's add-on and render.py (they are the same on every node of a run)
     pub fn default_run_name(&self, filter: &str, scope: Scope) -> String {
-        default_run_name(filter, scope, self.me.addon.as_deref(), crate::events::file_hash(&self.cfg.render_script).as_deref())
+        default_run_name(filter, scope)
     }
 
     pub fn rate(&self, window: f64) -> f64 {
@@ -1817,12 +1811,12 @@ impl Engine {
 mod name_tests {
     use super::*;
 
-    /// Without --name: filter terms, what the scope does, the add-on's and render.py's hashes
+    /// Without --name: filter terms and what the scope does, no hashes
     #[test]
     fn run_names() {
-        assert_eq!(default_run_name("", Scope::All, Some("6ea0d4c6b77492ba"), Some("6da3cb0c523f77d7")), "full_addon-6ea0d4_renderpy-6da3cb");
-        assert_eq!(default_run_name("arms, legs", Scope::Missing, Some("6ea0d4c6"), None), "arms-legs_missing_addon-6ea0d4_renderpy-none");
-        assert_eq!(default_run_name("", Scope::Failed, None, Some("abcdef12")), "retry_addon-none_renderpy-abcdef");
+        assert_eq!(default_run_name("", Scope::All), "full");
+        assert_eq!(default_run_name("arms, legs", Scope::Missing), "arms-legs_missing");
+        assert_eq!(default_run_name("", Scope::Failed), "retry");
     }
 }
 
