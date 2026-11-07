@@ -17,7 +17,8 @@ tone curve and bloom.
 ## Decision
 - **Format:** a profile is a folder: `profile.toml` (paths to its parts and parameters such as `size`, `samples`,
   `fit`, `format`) and `hooks.py`; optional a `scene.blend` and its own add-on copy. TOML as in `deps.toml`. The
-  profile hash is taken over the whole folder.
+  profile hash is taken over the whole folder. The profile's parameters are defaults: a CLI flag overrides them (for
+  example `--size` over `size`). One output size per run; further sizes are the consumers' job (0027).
 - **Hooks:** every hook takes one context `ctx` (the job, the profile parameters, the scene, the paths):
   `before_open(ctx)`, `after_open(ctx)`, `stage(ctx)` (sets camera and light), `post(ctx, exr_paths)` returning the
   output files. A hook the profile does not define runs the `game-tile` version; today's `render.py` functions become
