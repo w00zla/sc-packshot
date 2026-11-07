@@ -10,7 +10,7 @@ on:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -33,7 +33,7 @@ jobs:
       - uses: swatinem/rust-cache@v2
         with:
           shared-key: test-${{ matrix.platform }}
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+          # saved per pull request (its later pushes read it): no main run fills a shared one (ADR 0050)
       - name: cargo test
         run: cargo test --release --locked
       - name: cargo clippy
