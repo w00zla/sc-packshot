@@ -4,6 +4,9 @@
 
 # a .blend template next to this file whose world, cameras and lights stage() may take (game-tile uses none)
 # scene = "scene.blend"
+# its own copy of the StarBreaker add-on, a folder starbreaker_addon next to this file, used instead of the installed
+# one (game-tile uses the installed one); not inherited by other profiles
+# addon = "starbreaker_addon"
 
 [params]
 size = 256          # px, square

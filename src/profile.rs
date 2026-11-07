@@ -39,6 +39,8 @@ pub struct Profile {
     pub dir: PathBuf,
     /// game-tile as render.py finds it
     pub base: PathBuf,
+    /// where it came from: store (an own one), bundled, folder (--profile with a path), or sent by the run's starter
+    pub from: String,
 }
 
 /// Where render.py looks for a bundled profile: next to it (a render chunk's folder) and beside its folder (blender/
@@ -56,8 +58,8 @@ fn is_profile(dir: &Path) -> bool {
     dir.join("profile.toml").is_file()
 }
 
-fn same_dir(a: &Path, b: &Path) -> bool {
-    fs::canonicalize(a).ok().zip(fs::canonicalize(b).ok()).is_some_and(|(a, b)| a == b)
+pub fn same_dir(a: &Path, b: &Path) -> bool {
+    a == b || fs::canonicalize(a).ok().zip(fs::canonicalize(b).ok()).is_some_and(|(a, b)| a == b)
 }
 
 /// game-tile as render.py finds it
@@ -68,11 +70,13 @@ pub fn base_dir(script: &Path) -> Option<PathBuf> {
 /// --profile: a name (an own profile in <store>/profiles first, then the bundled ones beside render.py) or a folder
 /// (relative to `cwd`); Err: why there is none
 pub fn resolve(arg: &str, store: &Path, script: &Path, cwd: &Path) -> std::result::Result<Profile, String> {
-    let dir = if crate::net::safe_name(arg) {
-        let mut candidates = vec![store.join("profiles").join(arg)];
+    let (dir, from) = if crate::net::safe_name(arg) {
+        let own = store.join("profiles").join(arg);
+        let mut candidates = vec![own.clone()];
         candidates.extend(bundled_dirs(script).into_iter().map(|d| d.join(arg)));
         match candidates.iter().find(|d| is_profile(d)) {
-            Some(d) => d.clone(),
+            // in a bundle the store's profiles/ is the bundled one
+            Some(d) => (d.clone(), if *d == own && !bundled_dirs(script).iter().any(|b| same_dir(&b.join(arg), d)) { "store" } else { "bundled" }),
             None => return Err(format!("{arg} not found in {}", candidates.iter().map(|d| d.parent().unwrap_or(d).display().to_string()).collect::<Vec<_>>().join(" or "))),
         }
     } else {
@@ -80,9 +84,10 @@ pub fn resolve(arg: &str, store: &Path, script: &Path, cwd: &Path) -> std::resul
         if !is_profile(&d) {
             return Err(format!("no profile.toml in {}", d.display()));
         }
-        d
+        (d, "folder")
     };
-    let p = Profile::at(&dir, script).ok_or_else(|| format!("{BASE} not found beside {}", script.display()))?;
+    let mut p = Profile::at(&dir, script).ok_or_else(|| format!("{BASE} not found beside {}", script.display()))?;
+    p.from = from.into();
     // a render chunk's folder holds game-tile and the run's profile side by side, by their names
     if p.name == BASE && !same_dir(&p.dir, &p.base) {
         return Err(format!("{}: an own profile cannot be called {BASE}, the base of every profile; give it another name", p.dir.display()));
@@ -90,22 +95,37 @@ pub fn resolve(arg: &str, store: &Path, script: &Path, cwd: &Path) -> std::resul
     Ok(p)
 }
 
+/// The profiles to choose from: game-tile first, then by name; an own one (in <store>/profiles) hides a bundled one
+/// of the same name, an own game-tile is left out (resolve refuses it)
+pub fn available(store: &Path, script: &Path, cwd: &Path) -> Vec<Profile> {
+    let mut names: Vec<String> = std::iter::once(store.join("profiles"))
+        .chain(bundled_dirs(script))
+        .filter_map(|d| fs::read_dir(d).ok())
+        .flat_map(|rd| rd.flatten().map(|e| e.path()))
+        .filter(|d| is_profile(d))
+        .filter_map(|d| d.file_name().map(|n| n.to_string_lossy().to_string()))
+        .collect();
+    names.sort_by_key(|n| (n != BASE, n.clone()));
+    names.dedup();
+    names.iter().filter_map(|n| resolve(n, store, script, cwd).ok()).collect()
+}
+
 impl Profile {
     /// The profile in `dir` for render.py `script` (None: no game-tile beside it)
     pub fn at(dir: &Path, script: &Path) -> Option<Self> {
         let name = dir.file_name()?.to_string_lossy().to_string();
-        Some(Self { name, dir: dir.to_path_buf(), base: base_dir(script)? })
+        Some(Self { name, dir: dir.to_path_buf(), base: base_dir(script)?, from: String::new() })
     }
 
     /// game-tile itself
     pub fn base(script: &Path) -> Option<Self> {
-        base_dir(script).map(|base| Self { name: BASE.into(), dir: base.clone(), base })
+        base_dir(script).map(|base| Self { name: BASE.into(), dir: base.clone(), base, from: "bundled".into() })
     }
 
     /// game-tile at `dir`, which need not exist: engines in tests that render nothing
     #[cfg(test)]
     pub fn stub(dir: &Path) -> Self {
-        Self { name: BASE.into(), dir: dir.to_path_buf(), base: dir.to_path_buf() }
+        Self { name: BASE.into(), dir: dir.to_path_buf(), base: dir.to_path_buf(), from: "bundled".into() }
     }
 
     /// game-tile, then the profile when it is another one, by their names
@@ -131,8 +151,29 @@ impl Profile {
 
     /// A `[params]` value of the profile, else game-tile's
     pub fn param(&self, key: &str) -> Option<String> {
-        let of = |dir: &Path| fs::read_to_string(dir.join("profile.toml")).ok().and_then(|t| param(&t, key));
+        let of = |dir: &Path| fs::read_to_string(dir.join("profile.toml")).ok().and_then(|t| value(&t, "[params]", key));
         of(&self.dir).or_else(|| of(&self.base))
+    }
+
+    /// A top-level value of the profile's own profile.toml (`scene`, `addon`: not inherited from game-tile)
+    fn own(&self, key: &str) -> Option<String> {
+        fs::read_to_string(self.dir.join("profile.toml")).ok().and_then(|t| value(&t, "", key)).filter(|v| !v.is_empty())
+    }
+
+    /// Its scene template (`scene`), as named in profile.toml
+    pub fn scene(&self) -> Option<String> {
+        self.own("scene")
+    }
+
+    /// Its own copy of the StarBreaker add-on (`addon`, a folder in the profile), render.py uses it instead of the
+    /// installed one
+    pub fn addon(&self) -> Option<PathBuf> {
+        self.own("addon").map(|a| self.dir.join(a))
+    }
+
+    /// The hash of its add-on copy, taken as the installed add-on's (over its .py files)
+    pub fn addon_hash(&self) -> Option<String> {
+        self.addon().and_then(|a| crate::events::tree_hash(&a))
     }
 
     /// The files a render chunk carries: render.py, profiles/game-tile/... and profiles/<name>/... (without
@@ -149,14 +190,28 @@ impl Profile {
     }
 }
 
-/// A `[params]` value of a profile.toml as text (`key = value  # comment`, a string without its quotes): packshot
-/// needs only size and format, render.py reads the whole file
+/// The fields of a run record's origin that say what it renders with (Engine::profile_origin)
+pub const ORIGIN_KEYS: [&str; 12] = ["render_py", "profile", "profile_from", "profile_dir", "profile_hash", "scene", "size", "size_from", "format", "format_from", "addon", "addon_from"];
+
+/// Those fields of a run record's origin
+pub fn origin_fields(origin: &serde_json::Value) -> serde_json::Value {
+    serde_json::Value::Object(ORIGIN_KEYS.iter().filter_map(|k| origin.get(*k).map(|v| (k.to_string(), v.clone()))).collect())
+}
+
+/// A `[params]` value of a profile.toml as text
+#[cfg(test)]
 pub fn param(toml: &str, key: &str) -> Option<String> {
+    value(toml, "[params]", key)
+}
+
+/// A value of a profile.toml as text (`key = value  # comment`, a string without its quotes) in `section` ("" for the
+/// top level): packshot needs only size, format, scene and addon, render.py reads the whole file
+fn value(toml: &str, want: &str, key: &str) -> Option<String> {
     let mut section = "";
     for line in toml.lines().map(str::trim) {
         if line.starts_with('[') {
             section = line.split('#').next().unwrap_or("").trim();
-        } else if section == "[params]" && let Some(rest) = line.strip_prefix(key).map(str::trim_start).and_then(|r| r.strip_prefix('=')) {
+        } else if section == want && let Some(rest) = line.strip_prefix(key).map(str::trim_start).and_then(|r| r.strip_prefix('=')) {
             let v = rest.trim();
             return Some(match v.strip_prefix('"') {
                 Some(s) => s.split('"').next().unwrap_or("").to_string(),
@@ -261,6 +316,32 @@ mod tests {
         let there = Profile::at(&chunk.join("profiles/studio"), &chunk.join("render.py")).unwrap();
         assert!(same_dir(&there.base, &chunk.join("profiles/game-tile")), "render.py finds game-tile next to it");
         assert_eq!((there.hash().unwrap(), there.key(&chunk.join("render.py")).unwrap()), (studio.hash().unwrap(), studio.key(&script).unwrap()));
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// The start dialog's list: game-tile first, own ones hide bundled ones, where each is from; a profile's own
+    /// add-on copy and template (top level, not inherited) go into its hash and its payload, its __pycache__ not
+    #[test]
+    fn listing_addon_and_template() {
+        let (script, store, root) = layout("list");
+        write(&store.join("profiles/studio/profile.toml"), "scene = \"stage.blend\"  # template\naddon = \"starbreaker_addon\"\n[params]\nformat = \"exr\"\n");
+        write(&store.join("profiles/studio/stage.blend"), "blend");
+        write(&store.join("profiles/studio/starbreaker_addon/__init__.py"), "VERSION = 1\n");
+        write(&store.join("profiles/studio/starbreaker_addon/runtime/constants.py"), "GAIN = 1.0\n");
+        write(&store.join("profiles/studio/starbreaker_addon/__pycache__/x.pyc"), "bytecode");
+        let list = available(&store, &script, &root);
+        let names: Vec<(&str, &str)> = list.iter().map(|p| (p.name.as_str(), p.from.as_str())).collect();
+        assert_eq!(names, vec![("game-tile", "bundled"), ("mine", "store"), ("studio", "store")]);
+        let studio = &list[2];
+        assert_eq!((studio.scene().as_deref(), studio.param("format").as_deref()), (Some("stage.blend"), Some("exr")));
+        assert_eq!(studio.addon(), Some(store.join("profiles/studio/starbreaker_addon")));
+        assert!(list[0].addon().is_none() && list[0].scene().is_none(), "game-tile has neither");
+        let (h, a) = (studio.hash().unwrap(), studio.addon_hash().unwrap());
+        write(&store.join("profiles/studio/starbreaker_addon/runtime/constants.py"), "GAIN = 2.0\n");
+        assert!(studio.hash().unwrap() != h && studio.addon_hash().unwrap() != a, "the add-on copy is part of the profile");
+        let (entries, _) = studio.payload(&script).unwrap();
+        assert!(entries.iter().any(|e| e.path == "profiles/studio/starbreaker_addon/runtime/constants.py"));
+        assert!(entries.iter().all(|e| !e.path.contains("__pycache__")));
         let _ = fs::remove_dir_all(&root);
     }
 }

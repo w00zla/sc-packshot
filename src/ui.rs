@@ -25,6 +25,7 @@ use crate::Args;
 use crate::engine::{Engine, Kind, Level, PHASES, Scope, Selection, Target};
 use crate::entities::{self, Entity, Ticks};
 use crate::net::{Hello, RunStatus, WorkerStatus};
+use crate::profile::Profile;
 use crate::store::MAIN;
 
 const ACCENT: Color = Color::Cyan;
@@ -137,6 +138,21 @@ enum Input {
     Pick(Box<Pick>),
     /// the picker's result asks for a file name; Esc goes back to the picker as it was
     PickName { pick: Box<Pick>, targets: Vec<Target>, field: Field },
+    /// the run's profile, asked at the start after its name: the profiles here with a line about each
+    Profile { choices: Vec<(Profile, String)>, sel: usize },
+}
+
+/// A profile's line in the start dialog: where it is, its hash, size and format, its add-on copy and template
+fn profile_choice(p: &Profile) -> String {
+    let hash = p.hash().map(|h| h.chars().take(8).collect::<String>()).unwrap_or_else(|| "–".into());
+    let mut parts = vec![p.from.clone(), hash, format!("{} px · {}", p.param("size").unwrap_or_else(|| "?".into()), p.param("format").unwrap_or_else(|| "png".into()))];
+    if p.addon().is_some() {
+        parts.push("own add-on".into());
+    }
+    if let Some(s) = p.scene() {
+        parts.push(format!("template {s}"));
+    }
+    parts.join(" · ")
 }
 
 /// The JSON files below a folder, subfolders included (a few levels deep)
@@ -407,6 +423,28 @@ impl App {
         choices.sort_by_key(|c| (c.rel != "targets.json", c.rel.clone()));
         // the picker is the first row and preselected
         self.input = Some(Input::Targets { set: set.to_string(), choices, sel: 0, field: Field::default() });
+    }
+
+    /// The start's profile dialog: the profiles here (game-tile first; an own one hides a bundled one of the same
+    /// name), the one chosen last (at first --profile's) preselected
+    fn open_profiles(&mut self) {
+        let e = &self.engine;
+        let mut list = crate::profile::available(&e.store.root, &e.cfg.render_script, std::path::Path::new("."));
+        let current = e.cfg.profile.as_ref().ok().cloned();
+        if let Some(c) = &current
+            && !list.iter().any(|p| crate::profile::same_dir(&p.dir, &c.dir))
+        {
+            list.push(c.clone());
+        }
+        let sel = current.and_then(|c| list.iter().position(|p| crate::profile::same_dir(&p.dir, &c.dir))).unwrap_or(0);
+        let choices = list
+            .into_iter()
+            .map(|p| {
+                let info = profile_choice(&p);
+                (p, info)
+            })
+            .collect();
+        self.input = Some(Input::Profile { choices, sel });
     }
 
     /// The target picker for a set; the entity list starts loading the first time
@@ -747,6 +785,8 @@ impl App {
             let me = self.engine.me.name.clone();
             self.engine.start_local(&todo, line.trim(), &self.filter, self.scope, &name, &me)
         };
+        // --name only counts for the first run; later ones are asked again
+        self.name.clear();
         match res {
             Ok(()) => {
                 self.history_pos = None;
@@ -820,16 +860,34 @@ impl App {
                 }
                 Input::RunName(field) => match code {
                     KeyCode::Esc => {}
+                    // then the profile
                     KeyCode::Enter => {
                         self.name = field.text.trim().to_string();
-                        self.start_flow(1)?;
-                        // --name only counts for the first run; later ones are asked again
-                        self.name.clear();
+                        self.open_profiles();
                     }
                     _ => {
                         field.key(code, mods);
                         self.input = Some(input);
                     }
+                },
+                Input::Profile { choices, sel } => match code {
+                    KeyCode::Esc => {}
+                    KeyCode::Up => {
+                        *sel = sel.saturating_sub(1);
+                        self.input = Some(input);
+                    }
+                    KeyCode::Down => {
+                        *sel = (*sel + 1).min(choices.len().saturating_sub(1));
+                        self.input = Some(input);
+                    }
+                    KeyCode::Enter => {
+                        if let Some((p, _)) = choices.get(*sel) {
+                            let p = p.clone();
+                            self.engine.set_profile(p);
+                            self.start_flow(1)?;
+                        }
+                    }
+                    _ => self.input = Some(input),
                 },
                 Input::NewSet(field) => match code {
                     KeyCode::Esc => {}
@@ -1211,7 +1269,7 @@ fn draw(f: &mut Frame, app: &mut App) {
     draw_tabs(f, app, tabs);
     match app.view {
         View::Run => {
-            let [head, middle] = Layout::vertical([Constraint::Length(5), Constraint::Min(9)]).areas(rest);
+            let [head, middle] = Layout::vertical([Constraint::Length(6), Constraint::Min(9)]).areas(rest);
             let [left, right] = Layout::horizontal([Constraint::Min(50), Constraint::Length(48)]).areas(middle);
             if app.engine.running() {
                 draw_head(f, app, head);
@@ -1286,6 +1344,25 @@ fn draw_dialog(f: &mut Frame, app: &App) {
                 l.extend(field.spans(inner_w.saturating_sub(6), true));
                 lines.push(Line::from(l));
                 ("Start a run".to_string(), "Enter: start  ·  ←/→ Home End: edit  ·  Esc: back", false)
+            }
+            Some(Input::Profile { choices, sel }) => {
+                let head = e.head.clone().unwrap_or_else(|| e.me.name.clone());
+                lines.push(Line::from(format!("The run's look, sent to {head} with the run. game-tile is the base of every profile.")).fg(DIM));
+                lines.push(Line::from(""));
+                let name_w = choices.iter().map(|(p, _)| p.name.chars().count()).max().unwrap_or(0).min(24);
+                for (i, (p, info)) in choices.iter().enumerate() {
+                    let on = i == *sel;
+                    let info_w = inner_w.saturating_sub(name_w + 4);
+                    let mut l = Line::from(format!("{} {:<name_w$.name_w$}  {info:<info_w$.info_w$}", if on { "▸" } else { " " }, p.name));
+                    if on {
+                        l = l.style(Style::new().bg(SEL_BG));
+                    }
+                    lines.push(l);
+                }
+                if choices.is_empty() {
+                    lines.push(Line::from("  no profile found (game-tile belongs beside render.py)").fg(BAD));
+                }
+                ("Profile for the run".to_string(), "Enter: take  ·  ↑↓: choose  ·  Esc: back", false)
             }
             Some(Input::NewSet(field)) => {
                 lines.push(Line::from("Branches off main: its runs and its target list. Letters, digits, - and _.").fg(DIM));
@@ -1567,10 +1644,12 @@ fn draw_head(f: &mut Frame, app: &App, area: Rect) {
         let block = boxed(format!("Run · head node here · target set {}", e.set.name));
         let inner = block.inner(area);
         f.render_widget(block, area);
-        let [a, b, c] = Layout::vertical([Constraint::Length(1); 3]).areas(inner);
+        let [a, b, c, d] = Layout::vertical([Constraint::Length(1); 4]).areas(inner);
         f.render_widget(Paragraph::new(Line::from(l1)), a);
         f.render_widget(Gauge::default().ratio(pct.clamp(0.0, 1.0)).label("").gauge_style(Style::new().fg(if run.failed > 0 { WARN } else { OK }).bg(Color::Black)), b);
         f.render_widget(Paragraph::new(l3), c);
+        let origin = e.record.as_ref().map(|r| r.origin.clone()).unwrap_or_default();
+        f.render_widget(Paragraph::new(profile_line(&origin)), d);
         return;
     }
 
@@ -1637,7 +1716,33 @@ fn draw_head(f: &mut Frame, app: &App, area: Rect) {
     let block = boxed("Run · selection");
     let inner = block.inner(area);
     f.render_widget(block, area);
-    f.render_widget(Paragraph::new(vec![l1, Line::from(l2), l3]), inner);
+    f.render_widget(Paragraph::new(vec![l1, Line::from(l2), l3, profile_line(&e.profile_info)]), inner);
+}
+
+/// The first 8 characters of a run record's text field, "–" without it
+fn short(o: &serde_json::Value, k: &str) -> String {
+    o[k].as_str().map(|s| s.chars().take(8).collect()).unwrap_or_else(|| "–".into())
+}
+
+/// What a run renders with (the run record's fields, Engine::profile_origin) in one line: the profile and where it
+/// came from, the core's (render.py) and the profile's hash, size and format and their source (a flag or the
+/// profile), the add-on (the installed one or the profile's copy), the template
+fn profile_line(o: &serde_json::Value) -> Line<'static> {
+    if let Some(e) = o["error"].as_str() {
+        return Line::from(vec!["Profile ".fg(DIM), Span::styled(format!("none: {e}"), Style::new().fg(BAD))]);
+    }
+    let Some(name) = o["profile"].as_str() else { return Line::from("Profile –  (a run before profiles)").fg(DIM) };
+    let from = |k: &str| if o[k] == "flag" { "flag" } else { "profile" };
+    let size = o["size"].as_u64().map(|s| format!("{s} px")).unwrap_or_else(|| "– px".into());
+    let addon = if o["addon_from"] == "profile" { "profile's copy" } else { "installed" };
+    let scene = o["scene"].as_str().map(|s| format!("  ·  template {s}")).unwrap_or_default();
+    Line::from(vec![
+        "Profile ".fg(DIM),
+        Span::styled(name.to_string(), Style::new().fg(ACCENT)),
+        format!(" ({})  ·  core {} · profile {}  ·  ", o["profile_from"].as_str().unwrap_or("?"), short(o, "render_py"), short(o, "profile_hash")).fg(DIM),
+        format!("{size} ({}) · {} ({})", from("size_from"), o["format"].as_str().unwrap_or("?"), from("format_from")).into(),
+        format!("  ·  add-on {} ({addon}){scene}", short(o, "addon")).fg(DIM),
+    ])
 }
 
 /// Header of another node's run: its progress as its head node reports it
@@ -1668,10 +1773,11 @@ fn draw_remote_head(f: &mut Frame, app: &App, st: &RunStatus, area: Rect) {
     let block = boxed(format!("Run · head node {} · set {}", st.head, st.set));
     let inner = block.inner(area);
     f.render_widget(block, area);
-    let [a, b, c] = Layout::vertical([Constraint::Length(1); 3]).areas(inner);
+    let [a, b, c, d] = Layout::vertical([Constraint::Length(1); 4]).areas(inner);
     f.render_widget(Paragraph::new(Line::from(l1)), a);
     f.render_widget(Gauge::default().ratio(pct.clamp(0.0, 1.0)).label("").gauge_style(Style::new().fg(if st.failed > 0 { WARN } else { OK }).bg(Color::Black)), b);
     f.render_widget(Paragraph::new(l3), c);
+    f.render_widget(Paragraph::new(profile_line(&st.profile)), d);
 }
 
 fn draw_list(f: &mut Frame, app: &mut App, area: Rect) {
@@ -1928,7 +2034,7 @@ fn draw_sets(f: &mut Frame, app: &mut App, area: Rect) {
     let top = app.set_sel.saturating_sub(h.saturating_sub(1).min(h / 2)).min(app.set_rows.len().saturating_sub(h));
     let me = app.engine.me.name.clone();
     let active = app.engine.set.name.clone();
-    let mut lines = vec![Line::from(format!("{:<36}{:<12}{:<16}{:>8} {:<8} {:<9} {:<7} {:<11} {:<11}", "Set / run", "Node", "Targets / filter", "Images", "Add-on", "render.py", "Blender", "StarBreaker", "Profile")).fg(DIM)];
+    let mut lines = vec![Line::from(format!("{:<30}{:<12}{:<16}{:>8} {:<9} {:<9} {:<7} {:<11} {:<15}", "Set / run", "Node", "Targets / filter", "Images", "Add-on", "render.py", "Blender", "StarBreaker", "Profile")).fg(DIM)];
     let rows: Vec<SetRow> = app.set_rows.iter().skip(top).take(h.saturating_sub(1)).cloned().collect();
     for (i, row) in rows.iter().enumerate() {
         let mut line = match row {
@@ -1942,7 +2048,7 @@ fn draw_sets(f: &mut Frame, app: &mut App, area: Rect) {
                 }
                 let used: usize = spans.iter().map(|s| s.content.chars().count()).sum();
                 let targets = s.as_ref().and_then(|s| s.targets.as_ref()).map(|t| format!("{} targets", num(t.count))).unwrap_or_else(|| "no targets".into());
-                spans.push(format!("{:w$}{:<12}{:<16}{:>8}", "", format!("{runs} runs"), targets, num(files), w = 36usize.saturating_sub(used)).fg(DIM));
+                spans.push(format!("{:w$}{:<12}{:<16}{:>8}", "", format!("{runs} runs"), targets, num(files), w = 30usize.saturating_sub(used)).fg(DIM));
                 Line::from(spans)
             }
             SetRow::Run { id, .. } => {
@@ -1953,18 +2059,24 @@ fn draw_sets(f: &mut Frame, app: &mut App, area: Rect) {
                 let filter = r.as_ref().map(|r| r.origin["filter"].as_str().unwrap_or("").to_string()).unwrap_or_default();
                 let images = r.as_ref().map(|r| r.entities.values().filter(|e| e.ok).count()).unwrap_or(0);
                 let origin = |k: &str, n: usize| r.as_ref().and_then(|r| r.origin[k].as_str().map(|s| s.chars().take(n).collect::<String>())).unwrap_or_else(|| "–".into());
-                let (addon, render_py, blender, starbreaker, profile) = (origin("addon", 8), origin("render_py", 8), origin("blender_version", 7), origin("starbreaker", 8), origin("profile", 11));
+                let (addon, render_py, blender, starbreaker, profile) = (origin("addon", 8), origin("render_py", 8), origin("blender_version", 7), origin("starbreaker", 8), origin("profile", 9));
+                // the add-on a run used: the profile's own copy is marked; the profile with its short hash
+                let addon = if r.as_ref().is_some_and(|r| r.origin["addon_from"] == "profile") { format!("{addon}*") } else { addon };
+                let profile = match r.as_ref().and_then(|r| r.origin["profile_hash"].as_str().map(|h| h.chars().take(5).collect::<String>())) {
+                    Some(h) => format!("{profile} {h}"),
+                    None => profile,
+                };
                 let running = r.as_ref().is_some_and(|r| r.finished.is_none());
                 let label = format!("    {}  {}", run_date(id), name);
                 Line::from(vec![
-                    Span::raw(format!("{label:<36.36}")),
+                    Span::raw(format!("{label:<30.30}")),
                     Span::raw(format!("{:<12.12}", format!("{node}{}", if foreign { " ⇣" } else { "" }))),
                     Span::styled(format!("{:<16.16}", if filter.is_empty() { "all".into() } else { filter }), Style::new().fg(DIM)),
                     Span::raw(format!("{:>8}", num(images))),
-                    Span::styled(format!(" {addon:<8} {render_py:<9} "), Style::new().fg(DIM)),
+                    Span::styled(format!(" {addon:<9} {render_py:<9} "), Style::new().fg(DIM)),
                     Span::raw(format!("{blender:<7} ")),
                     Span::styled(format!("{starbreaker:<11}"), Style::new().fg(DIM)),
-                    Span::raw(format!(" {profile:<11}")),
+                    Span::raw(format!(" {profile:<15}")),
                     if running { Span::styled(" running", Style::new().fg(WARN)) } else { "".into() },
                 ])
             }
@@ -1975,7 +2087,7 @@ fn draw_sets(f: &mut Frame, app: &mut App, area: Rect) {
         lines.push(line);
     }
     f.render_widget(Paragraph::new(lines), list_area);
-    let foot_line = Line::from("⇣ = run from another node (its head node), fetched with h in view 3").fg(DIM);
+    let foot_line = Line::from("⇣ = run from another node (its head node), fetched with h in view 3  ·  * = the profile's own add-on").fg(DIM);
     f.render_widget(Paragraph::new(foot_line), foot);
 
     // right: the selected run (or set)
@@ -2121,13 +2233,19 @@ fn draw_run_detail(f: &mut Frame, app: &mut App, area: Rect, id: &str) {
     ];
     if app.details {
         let nodes: Vec<String> = o["nodes"].as_array().map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect()).unwrap_or_default();
-        lines.push(row("Add-on", s("addon")));
-        lines.push(row("render.py", s("render_py")));
+        lines.push(row("Add-on", format!("{}{}", s("addon"), if o["addon_from"] == "profile" { " (the profile's copy)" } else { "" })));
         lines.push(row("Blender", format!("{} · {}", s("blender_version"), s("gpu_backend"))));
         lines.push(row("StarBreaker", s("starbreaker")));
-        // runs before profiles have none
-        let output: Vec<String> = [o["format"].as_str().map(String::from), o["size"].as_u64().map(|s| format!("{s} px"))].into_iter().flatten().collect();
-        lines.push(row("Profile", [o["profile"].as_str().map(String::from), o["profile_hash"].as_str().map(String::from)].into_iter().flatten().chain(output).collect::<Vec<_>>().join(" · ")));
+        // render.py (the core) next to the profile; runs before profiles have no profile fields
+        let from = |k: &str| if o[k] == "flag" { "flag" } else { "profile" };
+        let scene = o["scene"].as_str().map(|t| format!(" · template {t}")).unwrap_or_default();
+        match o["profile"].as_str() {
+            Some(p) => {
+                lines.push(row("Profile", format!("{p} ({}) · {} · core {}{scene}", s("profile_from"), short(o, "profile_hash"), short(o, "render_py"))));
+                lines.push(row("Output", format!("{} px ({}) · {} ({})", o["size"].as_u64().map(|v| v.to_string()).unwrap_or_else(|| "?".into()), from("size_from"), s("format"), from("format_from"))));
+            }
+            None => lines.push(row("render.py", s("render_py"))),
+        }
         let p4k_date = o["p4k_mtime"].as_i64().and_then(|t| chrono::DateTime::from_timestamp(t, 0)).map(|d| d.format("%Y-%m-%d").to_string()).unwrap_or_default();
         let p4k_v = o["p4k_version"].as_str().map(|v| format!("{v} · ")).unwrap_or_default();
         let p4k_id = o["p4k_id"].as_str().map(|v| format!(" · {}", v.get(..8).unwrap_or(v))).unwrap_or_default();
@@ -2557,6 +2675,47 @@ mod tests {
         assert_eq!(f.text, "Gröe");
     }
 
+    /// The start asks for the profile after the name: the profiles here, game-tile first and the chosen one
+    /// preselected; Enter takes one for the run (and the next start), the selection tile shows it
+    #[test]
+    fn profile_dialog() {
+        let root = std::env::temp_dir().join(format!("packshot-profiles-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        for (dir, text) in [("profiles/game-tile", "[params]\nsize = 256\n"), ("store/profiles/studio", "addon = \"starbreaker_addon\"\n[params]\nformat = \"jpeg\"\n")] {
+            std::fs::create_dir_all(root.join(dir)).unwrap();
+            std::fs::write(root.join(dir).join("profile.toml"), text).unwrap();
+        }
+        std::fs::create_dir_all(root.join("store/profiles/studio/starbreaker_addon")).unwrap();
+        std::fs::write(root.join("store/profiles/studio/starbreaker_addon/__init__.py"), "").unwrap();
+        let store = Store::open(&root.join("store")).unwrap();
+        let set = store.load_set(MAIN).unwrap();
+        let x = root.join("x");
+        let base = crate::profile::Profile::base(&x).unwrap();
+        let cfg = Config { p4k: x.clone(), starbreaker: x.clone(), blender: x.clone(), render_script: x.clone(), work: root.join("work"), size: None, format: None, profile: Ok(base), chunk: 50, cache_limit: 0 };
+        let engine = Engine::new(cfg, Vec::new(), Tables::default(), store, set, None, Hello { name: "N".into(), ..Default::default() }).unwrap();
+        let args = Args { filter: String::new(), scope: Scope::Missing, plain: false, serve: false, dry_run: false, workers: 0, exporters: 0, name: String::new(), line: String::new() };
+        let mut app = App::new(engine, Picker::halfblocks(), args);
+        let s = screen(&mut app);
+        assert!(s.contains("Profile game-tile (bundled)") && s.contains("256 px (profile) · png (profile)") && s.contains("(installed)"), "{s}");
+        app.input = Some(Input::RunName(Field::new("look")));
+        app.key(KeyCode::Enter, KeyModifiers::NONE).unwrap();
+        let Some(Input::Profile { choices, sel }) = &app.input else { panic!("no profile dialog") };
+        assert_eq!((choices.iter().map(|(p, _)| p.name.as_str()).collect::<Vec<_>>(), *sel), (vec!["game-tile", "studio"], 0));
+        let s = screen(&mut app);
+        assert!(s.contains("Profile for the run") && s.contains("store · ") && s.contains("own add-on"), "{s}");
+        app.key(KeyCode::Down, KeyModifiers::NONE).unwrap();
+        app.key(KeyCode::Enter, KeyModifiers::NONE).unwrap();
+        assert!(app.input.is_none());
+        assert_eq!(app.engine.cfg.profile.as_ref().unwrap().name, "studio");
+        let s = screen(&mut app);
+        assert!(s.contains("Profile studio (store)") && s.contains("jpeg (profile)") && s.contains("(profile's copy)"), "{s}");
+        // the next start preselects it
+        app.input = Some(Input::RunName(Field::new("again")));
+        app.key(KeyCode::Enter, KeyModifiers::NONE).unwrap();
+        assert!(matches!(app.input, Some(Input::Profile { sel: 1, .. })));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     /// The target picker: the first row of the target-list dialog, search and ticks narrow the list, Enter asks for a
     /// name, writes targets/<name>.json and takes it as the set's list
     #[test]
@@ -2789,7 +2948,7 @@ mod tests {
             node: "DRAGONEGG".into(),
             started: "2026-11-04T10:00:00+00:00".into(),
             finished: Some("2026-11-04T10:05:00+00:00".into()),
-            origin: serde_json::json!({"filter": "", "addon": "1a2b3c4d5e", "render_py": "6da3cb0c523f77d7", "blender_version": "5.2.3", "profile": "studio"}),
+            origin: serde_json::json!({"filter": "", "addon": "1a2b3c4d5e", "render_py": "6da3cb0c523f77d7", "blender_version": "5.2.3", "profile": "studio", "profile_hash": "abcdef12", "addon_from": "profile"}),
             ..Default::default()
         };
         std::fs::create_dir_all(app.engine.store.run_dir(&run.id)).unwrap();
@@ -2800,7 +2959,7 @@ mod tests {
         let s = screen(&mut app);
         assert!(s.contains("Add-on") && s.contains("render.py") && s.contains("Blender") && s.contains("StarBreaker") && s.contains("Profile"), "{s}");
         let row = s.lines().find(|l| l.contains("full") && l.contains("6da3cb0c")).unwrap_or_else(|| panic!("no run row: {s}"));
-        assert!(row.contains("1a2b3c4d") && row.contains("5.2.3") && row.contains("–") && row.contains("studio"), "{row}");
+        assert!(row.contains("1a2b3c4d") && row.contains("5.2.3") && row.contains("–") && row.contains("studio abcde") && row.contains("1a2b3c4d*"), "{row}");
 
         // another node as head node, its state not there yet
         app.view = View::Run;

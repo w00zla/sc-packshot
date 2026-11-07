@@ -362,6 +362,11 @@ fn finish(e: &mut Engine, minutes: f64) {
         info.origin["render_py"] = "6da3cb0c523f77d7".into();
         info.origin["blender_version"] = "5.2.3".into();
         info.origin["profile_hash"] = "3f9c0e7a51d2b864".into();
+        info.origin["size"] = 256.into();
+        // the run tile reads the record in memory
+        if let Some(r) = e.record.as_mut() {
+            r.origin = info.origin.clone();
+        }
         if let Ok(t) = chrono::DateTime::parse_from_rfc3339(&info.started) {
             info.started = (t - chrono::Duration::seconds((minutes * 60.0) as i64)).to_rfc3339();
             e.store.save_run(&info).unwrap();
@@ -406,6 +411,10 @@ fn scene(cell: (u16, u16)) -> Scene {
     e.max_exporters = 2;
     e.cores = 8;
     e.targets_file = tfile;
+    // no render.py or profile files to hash here: fixed values for the profile lines
+    e.profile_info["render_py"] = "6da3cb0c523f77d7".into();
+    e.profile_info["profile_hash"] = "3f9c0e7a51d2b864".into();
+    e.profile_info["size"] = 256.into();
     e.assessment = Some(crate::assess::Assessment { workers: 6, render: 6.3, exporters: Some(2), export: Some(7.1), date: "2026-11-06T20:41:00+01:00".into(), ..Default::default() });
 
     // the procedural renders, a few per shape
@@ -417,7 +426,7 @@ fn scene(cell: (u16, u16)) -> Scene {
 
     // 1. an earlier run over the helmets and backpacks, finished
     let first: Vec<usize> = (0..all.len()).filter(|t| matches!(t % KINDS.len(), 0..=2)).take(60).collect();
-    e.start(&first, "packshot --filter helmet,backpack", "helmet,backpack", Scope::Missing, "helmets", nodes.clone(), "atlas").unwrap();
+    e.start(&first, "packshot --filter helmet,backpack", "helmet,backpack", Scope::Missing, "helmets", nodes.clone(), "atlas", crate::profile::Profile::stub(&root)).unwrap();
     let mut chunk = 1u64;
     for part in first.chunks(12) {
         render_chunk(&mut e, chunk, None, LOCAL, part, &images, &[]);
@@ -429,7 +438,7 @@ fn scene(cell: (u16, u16)) -> Scene {
     e.store.create_set("glow-test", MAIN).unwrap();
     e.switch_set("glow-test").unwrap();
     let glow: Vec<usize> = (0..all.len()).filter(|t| t % KINDS.len() == 7).take(16).collect();
-    e.start(&glow, "packshot --filter core --scope all --set glow-test", "core", Scope::All, "glow", Vec::new(), "atlas").unwrap();
+    e.start(&glow, "packshot --filter core --scope all --set glow-test", "core", Scope::All, "glow", Vec::new(), "atlas", crate::profile::Profile::stub(&root)).unwrap();
     for part in glow.chunks(8) {
         render_chunk(&mut e, chunk, None, LOCAL, part, &images, &[]);
         chunk += 1;
@@ -440,7 +449,7 @@ fn scene(cell: (u16, u16)) -> Scene {
     // 3. the full run going on: everything missing in main, on all three nodes
     let sel = e.select("", Scope::Missing);
     let todo = sel.todo.clone();
-    e.start(&todo, "packshot --name full", "", Scope::Missing, "full", nodes, "atlas").unwrap();
+    e.start(&todo, "packshot --name full", "", Scope::Missing, "full", nodes, "atlas", crate::profile::Profile::stub(&root)).unwrap();
     let done_n = 1284;
     let fails = [todo[211], todo[730], todo[1102]];
     let hosts: [(Option<&str>, u64); 3] = [(None, LOCAL), (Some("borealis"), c_bor), (Some("cinder"), c_cin)];

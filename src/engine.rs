@@ -60,13 +60,13 @@ pub struct Config {
 }
 
 impl Config {
-    /// The runs' output format: --format, else the profile's (png without either)
-    pub fn out_format(&self) -> String {
-        self.format.clone().or_else(|| self.profile.as_ref().ok().and_then(|p| p.param("format"))).unwrap_or_else(|| "png".into())
+    /// A run's output format with profile `p`: --format, else the profile's (png without either)
+    pub fn out_format(&self, p: &Profile) -> String {
+        self.format.clone().or_else(|| p.param("format")).unwrap_or_else(|| "png".into())
     }
-    /// The runs' image size: --size, else the profile's
-    pub fn out_size(&self) -> Option<u32> {
-        self.size.or_else(|| self.profile.as_ref().ok().and_then(|p| p.param("size")).and_then(|s| s.parse().ok()))
+    /// A run's image size with profile `p`: --size, else the profile's
+    pub fn out_size(&self, p: &Profile) -> Option<u32> {
+        self.size.or_else(|| p.param("size").and_then(|s| s.parse().ok()))
     }
 }
 
@@ -271,6 +271,8 @@ pub struct Run {
     logged_end: bool,
     /// the extension of the run's output format (fixed at its start)
     pub(crate) ext: &'static str,
+    /// the run's profile: the one chosen here, or the one its starter sent
+    pub(crate) profile: Profile,
 }
 
 /// Phases per render, as render.py appends them to the icon: line ("timing load=… prep=… render=… glass=… post=…")
@@ -397,6 +399,8 @@ pub struct Engine {
     pub picker_p4k: Option<PathBuf>,
     /// the tools and files checked at start, for the TUI's start tile (ADR 0040)
     pub start: Vec<StartCheck>,
+    /// what a run started here would render with (Engine::profile_origin of the chosen profile)
+    pub profile_info: serde_json::Value,
     /// the step the DataCore tables are at while they load, and why they did not load
     pub tables_step: String,
     pub tables_error: Option<String>,
@@ -616,7 +620,7 @@ impl Engine {
         }
         let stats = store.last_stats();
         let own_len = targets.len();
-        Ok(Self {
+        let mut e = Self {
             cfg,
             targets,
             own_len,
@@ -671,7 +675,24 @@ impl Engine {
             assess_items: crate::assess::TEST_ITEMS,
             assess_max: 32,
             fixed_counts: (false, false),
-        })
+            profile_info: serde_json::Value::Null,
+        };
+        e.refresh_profile_info();
+        Ok(e)
+    }
+
+    /// The profile chosen for runs started here: from --profile, or the start dialog's choice
+    pub fn set_profile(&mut self, p: Profile) {
+        self.cfg.profile = Ok(p);
+        self.refresh_profile_info();
+    }
+
+    /// What a run started here would render with (the selection tile), taken once per choice: its hashes read files
+    pub fn refresh_profile_info(&mut self) {
+        self.profile_info = match &self.cfg.profile {
+            Ok(p) => self.profile_origin(p),
+            Err(e) => json!({ "error": e }),
+        };
     }
 
     /// Load the DataCore tables in the background (the TUI shows the steps); until they are there this node exports
@@ -769,7 +790,7 @@ impl Engine {
             self.connected_nodes().into_iter().map(|(_, h)| h).find(|h| h.export && nodes.contains(&h.name))
         };
         let p4k = self.me.export.then(|| fs::metadata(&self.cfg.p4k).ok()).flatten();
-        json!({
+        let mut meta = json!({
             "run": run_id,
             "set": self.set.name,
             "host": self.me.name,
@@ -788,7 +809,6 @@ impl Engine {
             "blender": self.cfg.blender,
             "blender_version": version,
             "gpu_backend": "vulkan",
-            "render_py": file_hash(&self.cfg.render_script),
             "addon": self.me.addon,
             "starbreaker": self.me.starbreaker,
             "p4k": self.me.export.then(|| self.cfg.p4k.clone()),
@@ -797,11 +817,34 @@ impl Engine {
             "p4k_id": exporter.as_ref().and_then(|h| h.p4k_id.clone()),
             "p4k_version": exporter.as_ref().and_then(|h| h.p4k_version.clone()),
             "p4k_mtime": p4k.and_then(|m| m.modified().ok()).and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| d.as_secs()),
-            // the profile with game-tile under it, and what the run renders with it (flags over the profile's)
-            "profile": self.cfg.profile.as_ref().ok().map(|p| p.name.clone()),
-            "profile_hash": self.cfg.profile.as_ref().ok().and_then(Profile::hash),
-            "size": self.cfg.out_size(),
-            "format": self.cfg.out_format(),
+        });
+        // render.py, the profile and what the run renders with them (the add-on: the profile's copy if it has one)
+        if let (Some(m), Some(run)) = (meta.as_object_mut(), self.run.as_ref())
+            && let serde_json::Value::Object(p) = self.profile_origin(&run.profile)
+        {
+            m.extend(p);
+        }
+        meta
+    }
+
+    /// What a run renders with, as the run record keeps it: render.py's hash, the profile (name, where from, folder,
+    /// hash, template), size and format with where they come from (the profile or a flag), and the add-on (the
+    /// installed one, or the profile's copy)
+    pub fn profile_origin(&self, p: &Profile) -> serde_json::Value {
+        let copy = p.addon_hash();
+        json!({
+            "render_py": file_hash(&self.cfg.render_script),
+            "profile": p.name,
+            "profile_from": p.from,
+            "profile_dir": p.dir,
+            "profile_hash": p.hash(),
+            "scene": p.scene(),
+            "size": self.cfg.out_size(p),
+            "size_from": if self.cfg.size.is_some() { "flag" } else { "profile" },
+            "format": self.cfg.out_format(p),
+            "format_from": if self.cfg.format.is_some() { "flag" } else { "profile" },
+            "addon": copy.clone().or_else(|| self.me.addon.clone()),
+            "addon_from": if copy.is_some() { "profile" } else { "installed" },
         })
     }
 
@@ -943,14 +986,13 @@ impl Engine {
     }
 
     /// Starts a run over `todo` as a new run (`name`, empty = from filter and scope) in the target set; `nodes`: the
-    /// connected nodes that take part, `starter`: the node that asked for it (cluster.rs)
+    /// connected nodes that take part, `starter`: the node that asked for it (cluster.rs), `profile`: the run's
     #[allow(clippy::too_many_arguments)]
-    pub fn start(&mut self, todo: &[usize], args_line: &str, filter: &str, scope: Scope, name: &str, nodes: Vec<String>, starter: &str) -> Result<()> {
-        if let Err(e) = &self.cfg.profile {
-            anyhow::bail!("no profile: {e}");
-        }
+    pub fn start(&mut self, todo: &[usize], args_line: &str, filter: &str, scope: Scope, name: &str, nodes: Vec<String>, starter: &str, profile: Profile) -> Result<()> {
         if let Some(s) = self.serve.as_mut() {
             s.blender_log(&format!("=== {}", chrono::Local::now().to_rfc3339()));
+            // this node's own render chunks render with the run's profile
+            s.profile = profile.dir.clone();
         }
         self.errors.clear();
 
@@ -980,7 +1022,8 @@ impl Engine {
             phase_sum: [0.0; 5],
             phase_n: 0,
             logged_end: false,
-            ext: crate::profile::ext(&self.cfg.out_format()),
+            ext: crate::profile::ext(&self.cfg.out_format(&profile)),
+            profile: profile.clone(),
         });
         // The run: folder with start time and name, run.json with the origin, at the end of the chain in the target set
         let name = if name.trim().is_empty() { self.default_run_name(filter, scope) } else { name.trim().to_string() };
@@ -1275,10 +1318,10 @@ impl Engine {
         self.emit("render_start", json!({ "block": id, "worker": worker, "items": n, "queue_wait": round3(wait), "holders": holders }));
         // the other nodes render with the head node's render.py, game-tile and the run's profile (ADR 0024); this one
         // with its own folders
-        let sent = match &self.cfg.profile {
-            Ok(_) if conn == LOCAL => Ok((Vec::new(), Payload::None)),
-            Ok(p) => p.payload(&self.cfg.render_script).map(|(files, paths)| (files, Payload::Files(paths))).map_err(|e| format!("{e:#}")),
-            Err(e) => Err(format!("no profile: {e}")),
+        let Some(profile) = self.run.as_ref().map(|r| r.profile.clone()) else { return };
+        let sent = match conn {
+            LOCAL => Ok((Vec::new(), Payload::None)),
+            _ => profile.payload(&self.cfg.render_script).map(|(files, paths)| (files, Payload::Files(paths))).map_err(|e| format!("{e:#}")),
         };
         let (files, payload) = match sent {
             Ok(x) => x,
@@ -1290,8 +1333,7 @@ impl Engine {
                 return;
             }
         };
-        let profile = self.cfg.profile.as_ref().map(|p| p.name.clone()).unwrap_or_default();
-        self.dispatch(conn, Msg::Render { id, size: self.cfg.size, format: self.cfg.format.clone(), profile, jobs, files }, payload);
+        self.dispatch(conn, Msg::Render { id, size: self.cfg.size, format: self.cfg.format.clone(), profile: profile.name, jobs, files }, payload);
     }
 
     /// Result of an item (export failure or render result); a failure's first line is the message, further lines the

@@ -90,6 +90,10 @@ class Profile:
                  'mirror': a.mirror, 'az': a.az, 'el': a.el, 'margin': a.margin}
         self.params.update({k: v for k, v in flags.items() if v is not None})
         self.scene = os.path.join(folder, own['scene']) if own.get('scene') else None
+        # its own copy of the StarBreaker add-on (ADR 0025), active before its hooks load: they may import it
+        self.addon = os.path.join(folder, own['addon']) if own.get('addon') else None
+        if self.addon:
+            use_addon(self.addon)
         defaults = load_module(default, 'packshot_profile_game_tile')
         mine = defaults if os.path.samefile(folder, default) else load_module(folder, 'packshot_profile')
         self.hooks = {h: getattr(mine, h, None) or getattr(defaults, h) for h in HOOKS}
@@ -212,11 +216,36 @@ def serve(profile):
         run_job(job, profile)
 
 
+ADDON = 'starbreaker_addon'
+
+
+def use_addon(folder):
+    """A profile's own add-on copy (profile.toml `addon`, a folder named starbreaker_addon inside the profile) instead
+    of the installed one, for the whole process (a Blender process belongs to one profile): the installed one is
+    unregistered and its modules dropped, the copy's parent goes first on sys.path and Blender enables the copy under
+    the same name (its preferences entry stays), before the first file opens."""
+    import addon_utils
+    if os.path.basename(os.path.normpath(folder)) != ADDON:
+        sys.exit(f'profile add-on {folder}: the folder must be called {ADDON}')
+    if not os.path.isfile(os.path.join(folder, '__init__.py')):
+        sys.exit(f'profile add-on {folder}: no __init__.py in it')
+    addon_utils.disable(ADDON)
+    for m in [m for m in sys.modules if m == ADDON or m.startswith(ADDON + '.')]:
+        del sys.modules[m]
+    sys.path.insert(0, os.path.dirname(os.path.normpath(folder)))
+    importlib.invalidate_caches()
+    mod = addon_utils.enable(ADDON)
+    if mod is None or not os.path.normcase(os.path.abspath(mod.__file__)).startswith(os.path.normcase(os.path.abspath(folder))):
+        sys.exit(f'profile add-on {folder} did not load (got {getattr(mod, "__file__", None)})')
+    print(f'add-on: {folder}', file=sys.stderr, flush=True)
+
+
 def share_path_indexes():
     """Batch and --stdin mode: the add-on keeps one path index per export root for every file opened (it re-checks
-    a hit and rescans once on a miss); off by default for interactive use, absent in older add-ons."""
+    a hit and rescans once on a miss); off by default for interactive use, absent in older add-ons. Imported by name:
+    the installed add-on or the profile's copy, whichever is active."""
     try:
-        from starbreaker_addon import manifest
+        manifest = importlib.import_module(ADDON + '.manifest')
     except ImportError:
         return
     if hasattr(manifest, 'share_path_indexes'):

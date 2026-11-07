@@ -15,6 +15,7 @@ use anyhow::{Context, Result, bail};
 use crate::engine::{Engine, Kind, Level, Manifest, Pool, RemoteRun, RemoteSel, Scope, Target, blender_version};
 use crate::net::{DiskInfo, Hello, HubEv, Msg, Payload, RunStatus, RunSummary, WorkerStatus, collect_files, safe_name};
 use crate::node::addon_dir;
+use crate::profile::Profile;
 use crate::store::{MAIN, RunInfo, slug};
 
 pub fn load_manifest(store_root: &Path) -> Option<Manifest> {
@@ -485,10 +486,11 @@ impl Engine {
                     self.use_targets(targets);
                 }
             }
-            Msg::StartRun { targets, set, name, filter, scope, line } => {
+            Msg::StartRun { targets, set, name, filter, scope, line, profile, files } => {
                 let from = self.peer_name(conn);
                 let me = self.me.name.clone();
-                match self.start_for(&from, targets, &set, &name, &filter, &scope, &line) {
+                let sent = self.take_profile(&from, &profile, dir.filter(|_| !files.is_empty()));
+                match sent.and_then(|p| self.start_for(&from, targets, &set, &name, &filter, &scope, &line, p)) {
                     Ok(run) => self.reply(conn, Msg::Started { run }, Payload::None),
                     Err(e) => {
                         self.note(Level::Error, format!("No run for {from}: {e:#}"));
@@ -595,10 +597,45 @@ impl Engine {
         }
     }
 
+    /// The profile a starter sent with its StartRun (the starter decides it, as the target list): its folder's files
+    /// in `dir` go into <work>/profile-cache/started/<hash>/<name>/ (the head node need not have it); without files
+    /// it is game-tile, this node's own beside render.py
+    pub(crate) fn take_profile(&mut self, starter: &str, name: &str, dir: Option<PathBuf>) -> Result<Profile> {
+        let script = self.cfg.render_script.clone();
+        let Some(dir) = dir else {
+            if !name.is_empty() && name != crate::profile::BASE {
+                bail!("profile {name:?} came without its files");
+            }
+            return Profile::base(&script).with_context(|| format!("{} not found beside {}", crate::profile::BASE, script.display()));
+        };
+        let taken = (|| -> Result<Profile> {
+            // a folder name only; game-tile is this node's own
+            if !safe_name(name) || name == crate::profile::BASE {
+                bail!("profile name {name:?} not taken");
+            }
+            if !dir.join("profile.toml").is_file() {
+                bail!("profile {name}: no profile.toml in what {starter} sent");
+            }
+            let hash = crate::events::content_hash(&[(name, dir.as_path())]).context("profile not readable")?;
+            let dst = self.cfg.work.join("profile-cache").join("started").join(hash).join(name);
+            if !dst.exists() {
+                fs::create_dir_all(dst.parent().unwrap_or(&dst))?;
+                if fs::rename(&dir, &dst).is_err() {
+                    copy_tree(&dir, &dst)?;
+                }
+            }
+            let mut p = Profile::at(&dst, &script).with_context(|| format!("{} not found beside {}", crate::profile::BASE, script.display()))?;
+            p.from = format!("sent by {starter}");
+            Ok(p)
+        })();
+        let _ = fs::remove_dir_all(&dir);
+        taken
+    }
+
     /// Start a run that another node asked for, with this node as head node: its targets appended, the set
-    /// (created from main if missing) becomes the target set
+    /// (created from main if missing) becomes the target set, the starter's profile the run's
     #[allow(clippy::too_many_arguments)]
-    fn start_for(&mut self, starter: &str, targets: Vec<Target>, set: &str, name: &str, filter: &str, scope: &str, line: &str) -> Result<String> {
+    fn start_for(&mut self, starter: &str, targets: Vec<Target>, set: &str, name: &str, filter: &str, scope: &str, line: &str, profile: Profile) -> Result<String> {
         if self.running() {
             bail!("a run is going here");
         }
@@ -618,13 +655,20 @@ impl Engine {
         }
         let todo = self.add_targets(targets);
         let scope = Scope::parse(scope).unwrap_or(Scope::Missing);
-        self.start_local(&todo, line, filter, scope, name, starter)?;
+        self.start_local_as(&todo, line, filter, scope, name, starter, profile)?;
         Ok(self.record.as_ref().map(|r| r.id.clone()).unwrap_or_default())
     }
 
     /// Start a run with this node as head node, with every connected node: only with the same state everywhere, no
     /// other run going, and someone to export and render
     pub fn start_local(&mut self, todo: &[usize], line: &str, filter: &str, scope: Scope, name: &str, starter: &str) -> Result<()> {
+        let profile = self.cfg.profile.clone().map_err(|e| anyhow::anyhow!("no profile: {e}"))?;
+        self.start_local_as(todo, line, filter, scope, name, starter, profile)
+    }
+
+    /// start_local with the run's profile (the starter's)
+    #[allow(clippy::too_many_arguments)]
+    fn start_local_as(&mut self, todo: &[usize], line: &str, filter: &str, scope: Scope, name: &str, starter: &str, profile: Profile) -> Result<()> {
         if let Some(other) = self.running_elsewhere() {
             bail!("{other} has a run going: the nodes work on one run at a time");
         }
@@ -640,7 +684,7 @@ impl Engine {
             bail!("{p}");
         }
         let nodes: Vec<String> = self.connected_nodes().into_iter().map(|(_, h)| h.name).collect();
-        self.start(todo, line, filter, scope, name, nodes, starter)
+        self.start(todo, line, filter, scope, name, nodes, starter, profile)
     }
 
     /// Ask another head node to start a run over `todo` into the chosen set there
@@ -652,7 +696,16 @@ impl Engine {
         }
         let conn = self.conn_of(&node).with_context(|| format!("{node} is not connected"))?;
         let targets: Vec<Target> = todo.iter().map(|&t| self.targets[t].clone()).collect();
-        self.reply(conn, Msg::StartRun { targets, set: set.clone(), name: name.to_string(), filter: filter.to_string(), scope: scope.key().to_string(), line: line.to_string() }, Payload::None);
+        // the starter decides the profile: its folder goes along (game-tile itself does not: the head node has it)
+        let profile = self.cfg.profile.clone().map_err(|e| anyhow::anyhow!("no profile: {e}"))?;
+        let (files, payload) = if crate::profile::same_dir(&profile.dir, &profile.base) {
+            (Vec::new(), Payload::None)
+        } else {
+            let (files, paths) = collect_files(&profile.dir, "")?;
+            (files, Payload::Files(paths))
+        };
+        let msg = Msg::StartRun { targets, set: set.clone(), name: name.to_string(), filter: filter.to_string(), scope: scope.key().to_string(), line: line.to_string(), profile: profile.name, files };
+        self.reply(conn, msg, payload);
         Ok(())
     }
 
@@ -733,6 +786,8 @@ impl Engine {
             })
             .collect();
         let errors = self.errors.iter().rev().take(50).rev().map(|(t, e)| (self.targets[*t].entity.clone(), e.clone())).collect();
+        // what it renders with: the run record's profile fields, taken once at its start
+        let profile = self.record.as_ref().map(|r| crate::profile::origin_fields(&r.origin)).unwrap_or_default();
         let status = RunStatus {
             run: self.record.as_ref().map(|r| r.id.clone()).unwrap_or_default(),
             head: self.me.name.clone(),
@@ -758,6 +813,7 @@ impl Engine {
             workers,
             errors,
             phase_avg: run.phase_avg(),
+            profile,
         };
         if let Some(h) = self.hub.as_ref() {
             for p in &h.peers {
@@ -925,7 +981,10 @@ mod tests {
         let me = Hello { name: cfg.name.clone(), version: "t".into(), render, export, blender: "5.2.3".into(), addon: Some("a".into()), slots: render as usize, exporters: export as usize, ..Default::default() };
         let hub = Hub::new(cfg, me.clone(), root.join("inbox"));
         let x = root.join("no-such-tool");
-        let config = Config { p4k: x.clone(), starbreaker: x.clone(), blender: x.clone(), render_script: x.clone(), work: root.join("work"), size: None, format: None, profile: Ok(crate::profile::Profile::stub(&x)), chunk: 50, cache_limit: 0 };
+        // game-tile beside the (missing) render.py: a run another node starts uses it
+        fs::create_dir_all(root.join("profiles/game-tile")).unwrap();
+        fs::write(root.join("profiles/game-tile/profile.toml"), "[params]\n").unwrap();
+        let config = Config { p4k: x.clone(), starbreaker: x.clone(), blender: x.clone(), render_script: x.clone(), work: root.join("work"), size: None, format: None, profile: Ok(crate::profile::Profile::base(&x).unwrap()), chunk: 50, cache_limit: 0 };
         let mut e = Engine::new(config, Vec::new(), Tables::default(), store, set, Some(hub), me).unwrap();
         e.max_renderers = render as usize;
         e.max_exporters = export as usize;
@@ -1044,6 +1103,32 @@ mod tests {
         let _ = crate::store::remove_tree(&root);
     }
 
+    /// A starter's profile on the head node: its files into the profile cache (by content, the inbox gone), named
+    /// as sent; game-tile and unsafe names are refused, a profile without files is refused unless it is game-tile
+    #[test]
+    fn profile_from_the_starter() {
+        let root = std::env::temp_dir().join(format!("packshot-takeprofile-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let mut e = engine(&root, NetConfig { name: "h".into(), ..Default::default() }, true, true);
+        let inbox = |n: usize| {
+            let d = root.join(format!("inbox/{n}"));
+            fs::create_dir_all(&d).unwrap();
+            fs::write(d.join("profile.toml"), "[params]\nformat = \"jpeg\"\n").unwrap();
+            d
+        };
+        let p = e.take_profile("a", "studio", Some(inbox(1))).unwrap();
+        assert_eq!((p.name.as_str(), p.from.as_str(), p.param("format").as_deref()), ("studio", "sent by a", Some("jpeg")));
+        assert!(p.dir.starts_with(root.join("work/profile-cache/started")) && !root.join("inbox/1").exists());
+        assert_eq!(e.take_profile("a", "studio", Some(inbox(2))).unwrap().dir, p.dir, "the same content once");
+        for (name, n) in [("game-tile", 3), ("../x", 4), ("", 5)] {
+            assert!(e.take_profile("a", name, Some(inbox(n))).is_err(), "{name:?}");
+            assert!(!root.join(format!("inbox/{n}")).exists(), "the refused files go");
+        }
+        assert!(e.take_profile("a", "studio", None).is_err(), "no files");
+        assert_eq!(e.take_profile("a", "game-tile", None).unwrap().name, "game-tile", "the head node's own");
+        let _ = fs::remove_dir_all(&root);
+    }
+
     /// A node without capabilities chooses another node as head node: gets its sets and the state of its set, starts
     /// a run there (into a new set), follows its status to the end; the selection then sees the result there
     #[test]
@@ -1069,6 +1154,13 @@ mod tests {
         until(&mut [&mut m, &mut a], "state of exp", &|e| e[1].remote_sel().is_some_and(|r| r.loaded));
         let sel = a.select("", Scope::Missing);
         assert_eq!(sel.todo.len(), 2);
+        // the starter's own profile, which m does not have: it goes along and becomes the run's
+        let studio = a.store.root.join("profiles/studio");
+        fs::create_dir_all(&studio).unwrap();
+        fs::write(studio.join("profile.toml"), "[params]\nformat = \"jpeg\"\n").unwrap();
+        let p = crate::profile::resolve("studio", &a.store.root.clone(), &a.cfg.render_script.clone(), &root).unwrap();
+        a.set_profile(p);
+        assert!(crate::profile::resolve("studio", &m.store.root.clone(), &m.cfg.render_script.clone(), &root).is_err());
         a.start_remote_run(&sel.todo, "test", "", Scope::Missing, "remote").unwrap();
         // m runs it (its fake StarBreaker fails every export) and reports the end to a
         until(&mut [&mut m, &mut a], "run over on a", &|e| e[1].remote_run.as_ref().is_some_and(|r| r.status.finished));
@@ -1078,6 +1170,9 @@ mod tests {
         assert_eq!(m.set.name, "exp", "the set was created on m");
         assert_eq!(m.store.load_targets(&m.set).unwrap().len(), 2, "with main's target list");
         assert!(m.record.as_ref().is_some_and(|r| r.origin["starter"] == "a"));
+        let o = &m.record.as_ref().unwrap().origin;
+        assert_eq!((o["profile"].as_str(), o["profile_from"].as_str(), o["format"].as_str()), (Some("studio"), Some("sent by a"), Some("jpeg")), "{o}");
+        assert_eq!(st.profile["profile"], "studio", "the status carries it");
         // the failures are part of m's set now: the selection on a sees them after the end
         until(&mut [&mut m, &mut a], "state after the run", &|e| e[1].remote_sel().is_some_and(|r| r.loaded && r.failed.len() == 2));
         assert_eq!(a.select("", Scope::Failed).todo.len(), 2);
@@ -1207,7 +1302,7 @@ mod tests {
         let mut e = engine(&root, NetConfig { name: "h".into(), ..Default::default() }, true, true);
         let bad = |entity: &str, uuid: &str| Target { uuids: vec!["0000".into(), uuid.into()], entity: entity.into(), ..target("x") };
         for (t, want) in [(bad("../../evil", "0001"), "target \"../../evil\": not a file name"), (bad("a/b", "0001"), "not a file name"), (bad("gun", "../x"), "target gun: UUID \"../x\" is not a file name")] {
-            let err = e.start_for("a", vec![target("gun_ok"), t], MAIN, "x", "", "all", "t").unwrap_err().to_string();
+            let err = e.start_for("a", vec![target("gun_ok"), t], MAIN, "x", "", "all", "t", crate::profile::Profile::stub(&root)).unwrap_err().to_string();
             assert!(err.contains(want), "{err}");
         }
         assert!(!e.running() && e.record.is_none());
@@ -1224,7 +1319,7 @@ mod tests {
         // h renders itself (LOCAL); r stands for a rendering node
         let mut e = engine(&root, NetConfig { name: "h".into(), ..Default::default() }, true, false);
         let todo = e.add_targets(vec![target("gun_a"), target("gun_b")]);
-        e.start(&todo, "t", "", Scope::All, "x", Vec::new(), "h").unwrap();
+        e.start(&todo, "t", "", Scope::All, "x", Vec::new(), "h", crate::profile::Profile::stub(&root)).unwrap();
         let (a, b) = (todo[0], todo[1]);
         {
             let run = e.run.as_mut().unwrap();
@@ -2034,7 +2129,52 @@ mod real_tests {
         let port = crate::net::test_port();
         let a = real(&root, "a", format!("127.0.0.1:{port}"), Vec::new(), false, false);
         let b = real(&root, "b", format!("127.0.0.1:{}", crate::net::test_port()), vec![format!("127.0.0.1:{port}")], true, true);
-        run_with(&mut [a, b], "rock_gold rock_aluminum klwe_pistol_energy_01_tan01", 3);
+        let mut nodes = [a, b];
+        run_with(&mut nodes, "rock_gold rock_aluminum klwe_pistol_energy_01_tan01", 3);
+
+        // then a starts a run on b as its head node with a's own profile, which b does not have: b renders with it
+        // (run_with closed the connections: b dials a again)
+        let [a, b] = &mut nodes;
+        let own = a.store.root.join("profiles/jpeg-look");
+        fs::create_dir_all(&own).unwrap();
+        fs::write(own.join("profile.toml"), "# game-tile as JPEG\n[params]\nformat = \"jpeg\"\n").unwrap();
+        let p = crate::profile::resolve("jpeg-look", &a.store.root.clone(), &a.cfg.render_script.clone(), &root).unwrap();
+        a.set_profile(p);
+        // b's main gets a target list (its state brings it to a)
+        let list: Vec<Target> = b.targets.iter().filter(|t| t.entity == "thumbnailentity_resource_rock_gold").cloned().collect();
+        let file = root.join("rock.json");
+        fs::write(&file, serde_json::to_vec(&list).unwrap()).unwrap();
+        let mut main = b.store.load_set(MAIN).unwrap();
+        b.store.set_targets(&mut main, &file).unwrap();
+        let t0 = Instant::now();
+        let tick = |a: &mut Engine, b: &mut Engine, what: &str, limit: u64| {
+            assert!(t0.elapsed() < Duration::from_secs(limit), "timeout: {what}");
+            a.tick();
+            b.tick();
+            std::thread::sleep(Duration::from_millis(20));
+        };
+        while a.usable_nodes().is_empty() {
+            tick(a, b, "reconnect", 20);
+        }
+        a.set_head(Some("b".into()));
+        while !a.remote_sel().is_some_and(|r| r.loaded) {
+            tick(a, b, "state of b", 30);
+        }
+        let sel = a.select("rock_gold", Scope::All);
+        assert_eq!(sel.todo.len(), 1, "{} matches, own_len {}", sel.matched, a.own_len);
+        a.start_remote_run(&sel.todo, "test", "rock_gold", Scope::All, "starter-profile").unwrap();
+        while b.record.as_ref().is_none_or(|r| r.name != "starter-profile") || b.running() {
+            tick(a, b, "run on b", 240);
+        }
+        let o = &b.record.as_ref().unwrap().origin;
+        assert_eq!((o["profile"].as_str(), o["profile_from"].as_str(), o["format"].as_str()), (Some("jpeg-look"), Some("sent by a"), Some("jpeg")), "{o}");
+        let run = b.run.as_ref().unwrap();
+        assert_eq!((run.ok, run.failed), (1, 0));
+        let img = b.image(*b.history.back().unwrap()).unwrap();
+        assert!(img.extension().is_some_and(|x| x == "jpg") && fs::read(&img).unwrap().starts_with(&[0xFF, 0xD8]), "{}", img.display());
+        for n in nodes.iter_mut() {
+            n.hub.as_mut().unwrap().close_all();
+        }
         let _ = crate::store::remove_tree(&root);
     }
 

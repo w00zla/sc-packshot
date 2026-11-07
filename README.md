@@ -60,7 +60,10 @@ asks for the target list: a JSON file, or one built in the target picker from th
 The look comes from a **profile** (`--profile <name|folder>`, default `game-tile`): a folder with `profile.toml`
 (parameters such as size, samples, format) and `hooks.py`; `game-tile`'s parameters and hooks fill in what a profile
 leaves out. Own profiles go into `profiles/` in the packshot folder (in a bundle: the bundle's `profiles/`) and hide a
-bundled one of the same name. `--size` and `--format png|jpeg|exr` override the profile's values for a run.
+bundled one of the same name. `--size` and `--format png|jpeg|exr` override the profile's values for a run. A profile
+may bring its own copy of the StarBreaker add-on (`addon = "starbreaker_addon"`, a folder in the profile), which its
+Blender processes use instead of the installed one. The run start in the TUI asks for the profile (the last one chosen,
+at first `--profile`'s, preselected); a run started on another node uses the starter's profile, which goes along.
 
 Cluster: copy `packshot.example.json` to `packshot.json` on every node, set the same `token`, open port 47950 (TCP and
 UDP) on the LAN; nodes on another subnet go into `peers`. Process counts default to the node's measured
@@ -81,7 +84,7 @@ render. The image above shows a run on three nodes.
 |---|---|
 | `n` · `s` | head node · target set for the next run |
 | `/` · `x` · `u` | filter · clear it · scope (missing, failed, all) |
-| `Enter` | start a run |
+| `Enter` | start a run: asks for its name and profile |
 | `+` `-` · `<` `>` | more or fewer Blender · export processes on this node |
 | `p` · `a` | pause · abort the run |
 | `←` `→` | browse the latest renders |
@@ -92,7 +95,8 @@ render. The image above shows a run on three nodes.
 <p align="center"><a href="docs/assets/tui-sets.png"><img src="docs/assets/tui-sets.png" alt="The Sets view: sets with their runs, a finished run's images" width="600"></a><br><sub>click for full size</sub></p>
 
 The sets with their runs, newest first; on the right the selected run with its result and images, or the set's
-details.
+details. A run's Profile column shows the profile with its short hash; a `*` after the add-on marks the profile's own
+add-on copy.
 
 | Key | |
 |---|---|

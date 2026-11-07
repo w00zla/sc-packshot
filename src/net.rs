@@ -247,6 +247,9 @@ pub struct RunStatus {
     /// the latest failures: (entity, error)
     pub errors: Vec<(String, String)>,
     pub phase_avg: Option<[f64; 5]>,
+    /// what the run renders with (render.py, profile, size, format, add-on: the run record's fields)
+    #[serde(default)]
+    pub profile: serde_json::Value,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -312,8 +315,20 @@ pub enum Msg {
     /// starting node -> head node: the sets there and the state and target list of one set (for the selection)
     GetState { set: String },
     State { set: String, sets: Vec<crate::store::SetSummary>, images: Vec<String>, failed: Vec<String>, targets: Vec<Target>, stats: Option<crate::store::RunStats> },
-    /// starting node -> head node: start a run over these targets into the set (created from main if missing)
-    StartRun { targets: Vec<Target>, set: String, name: String, filter: String, scope: String, line: String },
+    /// starting node -> head node: start a run over these targets into the set (created from main if missing), with the
+    /// starter's profile: its folder's files (none: game-tile, the head node's own)
+    StartRun {
+        targets: Vec<Target>,
+        set: String,
+        name: String,
+        filter: String,
+        scope: String,
+        line: String,
+        #[serde(default)]
+        profile: String,
+        #[serde(default)]
+        files: Vec<FileEntry>,
+    },
     Started { run: String },
     /// any node -> head node: abort the run
     AbortRun,
@@ -529,7 +544,7 @@ fn read_frame(r: &mut impl Read, inbox: &Path, seq: &mut u64) -> Result<(Msg, Ve
     r.read_exact(&mut b8)?;
     let total = u64::from_le_bytes(b8);
     let files = match &msg {
-        Msg::Render { files, .. } | Msg::FetchData { files, .. } | Msg::RunFiles { files, .. } => Some(files.clone()),
+        Msg::Render { files, .. } | Msg::FetchData { files, .. } | Msg::RunFiles { files, .. } | Msg::StartRun { files, .. } => Some(files.clone()),
         _ => None,
     };
     let Some(files) = files else {

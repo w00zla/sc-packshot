@@ -177,9 +177,14 @@ The look is a **profile** ([ADR 0022](adr/0022-modular-profiles.md), [0041](adr/
 [0042](adr/0042-profile-folder-and-hook-signatures.md)): a folder with `profile.toml` (parameters such as size,
 samples, format) and `hooks.py` (`before_open`, `after_open`, `stage`, `post`). `render.py` is the core; the bundled
 `game-tile` is the default and the base of every profile: its parameters lie under a profile's, its hooks run where a
-profile has none. A run's profile comes from `--profile` (a name: an own one in the packshot folder's `profiles/` hides a
-bundled one; or a folder); `--size` and `--format` override its values. The head node sends `render.py`, `game-tile` and
-the run's profile with every render chunk ([ADR 0024](adr/0024-head-node-distributes-profiles.md)); a node keeps them in
-its work folder by content hash and starts a Blender per `render.py` and profile. The run records the profile's name and
-hash. The assessment always measures `game-tile` as PNG. Cluster, chunks, runs, sets and assessment do not depend on the
+profile has none. A profile may bring a `scene` template and its own copy of the StarBreaker add-on (`addon`, ADR
+[0025](adr/0025-material-module.md)), which `render.py` enables instead of the installed one for its whole process; the
+equality check still compares the installed add-on. A run's profile is the starter's: `--profile` (a name: an own one in
+the packshot folder's `profiles/` hides a bundled one; or a folder) or the TUI's start dialog; a start on another node
+sends the profile's folder with it, so the head node need not have it (game-tile and `render.py` are the head node's).
+`--size` and `--format` override its values. The head node sends `render.py`, `game-tile` and the run's profile with
+every render chunk ([ADR 0024](adr/0024-head-node-distributes-profiles.md)); a node keeps them in its work folder by
+content hash and starts a Blender per `render.py` and profile. The run records `render.py`'s hash, the profile (name,
+origin, hash, template), size and format with their source, and the add-on it used. The assessment always measures
+`game-tile` as PNG. Cluster, chunks, runs, sets and assessment do not depend on the
 look.
