@@ -204,8 +204,23 @@ A profile is a folder with two files. Anything it does not set falls back to `ga
 
 | File | |
 |---|---|
-| `profile.toml` | `[params]`: `size` (px), `samples`, `format` (`png` · `jpeg` · `exr`), for JPEG `quality` (0-100) and `background` (the colour under the item, sRGB `[r, g, b]` from 0 to 1), `fit`, `margin`, `light_scale`. Optional `scene = "<file>.blend"`, a template whose world, cameras and lights the `stage` hook may take; optional `addon = "starbreaker_addon"`, the profile's own copy of the add-on, used instead of the installed one |
+| `profile.toml` | `[params]` (below), and optionally `scene = "<file>.blend"`, a template whose world, cameras and lights the `stage` hook may take, and `addon = "starbreaker_addon"`, the profile's own copy of the add-on, used instead of the installed one |
 | `hooks.py` | up to four functions, each taking one context `ctx` (`job`, `params`, `scene`, paths, `use_template()`) |
+
+A profile's parameters lie over `game-tile`'s; `--size` and `--format` lie over both:
+
+| Parameter | `game-tile` | |
+|---|---|---|
+| `size` | `256` | image width and height in px |
+| `format` | `"png"` | `png`: sRGB with transparency · `jpeg`: the same over `background` · `exr`: linear with the bloom, no tone curve, for your own grading |
+| `samples` | `16` | Eevee render samples |
+| `quality` | `90` | JPEG quality, 0 to 100 |
+| `background` | `[0.0, 0.0, 0.0]` | JPEG: the colour under the item, sRGB `[r, g, b]` from 0 to 1 |
+| `fit` | `0.7` | with a game pose the item is scaled so its largest edge is this many metres (the game's light rig is made for that) |
+| `margin` | `1.06` | room around the item in the image (`1.0`: it touches the edges) |
+| `light_scale` | `30.0` | watts per intensity unit of the game's lights |
+| `mirror` | `false` | the camera from the other side (a mirrored image) |
+| `az` · `el` | `20.0` · `15.0` | without a game pose: camera azimuth and elevation in degrees |
 
 `render.py` calls the hooks in this order for every item; a hook the profile does not define runs `game-tile`'s:
 
@@ -215,9 +230,6 @@ A profile is a folder with two files. Anything it does not set falls back to `ga
 | `after_open(ctx)` | after the add-on built the materials | sharper gloss on metal and glass, stronger emission, hides empty UI screens |
 | `stage(ctx)` | then | the game's pose, the camera fit, the game's light rig, a studio world, Eevee settings |
 | `post(ctx, exr_paths)` | after the render, a linear multi-layer EXR | bloom, contrast, tone curve, a second pass for glow behind glass; writes the image, returns its path |
-
-Parameters stack: `game-tile`'s, then the profile's, then `--size` / `--format`. Formats: `png` is sRGB with
-transparency; `jpeg` the same over `background`; `exr` is linear with the bloom but no tone curve, for your own grading.
 
 A profile that renders large JPEGs on white needs only a `profile.toml`:
 
