@@ -16,7 +16,7 @@
   their own look.
 </p>
 
-<p align="center"><img src="docs/assets/tui-run.png" alt="The Run view: a run on three nodes with its workers, throughput, pool and the latest render" width="900"></p>
+<p align="center"><a href="docs/assets/tui-run.png"><img src="docs/assets/tui-run.png" alt="The Run view: a run on three nodes with its workers, throughput, pool and the latest render" width="600"></a><br><sub>click for full size</sub></p>
 
 - **Bulk:** thousands of entities per run; long-lived exporter and Blender processes, fed one job per line.
 - **One PC or a cluster:** nodes find each other on the LAN, any node can start a run, files move by content hash.
@@ -71,7 +71,7 @@ render. The image above shows a run on three nodes.
 
 ### 2 Sets
 
-<p align="center"><img src="docs/assets/tui-sets.png" alt="The Sets view: sets with their runs, a finished run's images" width="900"></p>
+<p align="center"><a href="docs/assets/tui-sets.png"><img src="docs/assets/tui-sets.png" alt="The Sets view: sets with their runs, a finished run's images" width="600"></a><br><sub>click for full size</sub></p>
 
 The sets with their runs, newest first; on the right the selected run with its result and images, or the set's
 details.
@@ -86,7 +86,7 @@ details.
 
 ### 3 Nodes
 
-<p align="center"><img src="docs/assets/tui-nodes.png" alt="The Nodes view: the nodes with their workers and assessment, one node's details, the next run" width="900"></p>
+<p align="center"><a href="docs/assets/tui-nodes.png"><img src="docs/assets/tui-nodes.png" alt="The Nodes view: the nodes with their workers and assessment, one node's details, the next run" width="600"></a><br><sub>click for full size</sub></p>
 
 Every node with its workers and assessed speed, its share of the run, runs to fetch, free disk and whether its state
 matches; below the selected node's details and where and how the next run would start.
