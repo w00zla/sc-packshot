@@ -1919,7 +1919,7 @@ fn draw_sets(f: &mut Frame, app: &mut App, area: Rect) {
         draw_remote_sets(f, app, area);
         return;
     }
-    let [left, right] = Layout::horizontal([Constraint::Min(60), Constraint::Length(52)]).areas(area);
+    let [left, right] = Layout::horizontal([Constraint::Min(60), Constraint::Length(76)]).areas(area);
     let block = boxed("Sets and runs");
     let inner = block.inner(left);
     f.render_widget(block, left);
