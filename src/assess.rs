@@ -12,7 +12,7 @@
 // the best, capped by memory. An exporting node then runs export-batch with e = 1 … EXPORT_MAX while the chosen n
 // Blender render alongside (export-batch --stdin as in a run when StarBreaker has it) and takes the e where the
 // smaller of export and render rate stops improving, capped by RAM with the most an export process took. The result
-// goes into its own file, assessment-<os>.json in the packshot folder, with what it was measured with; it stays in use until a
+// goes into its own file, assessment.json in the packshot folder (one entry per OS), with what it was measured with; it stays in use until a
 // new one replaces it, shown as stale when that differs (ADR 0046).
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::fs::{self, File, OpenOptions};
@@ -147,7 +147,7 @@ pub struct Step {
     pub secs: f64,
 }
 
-/// The result of an assessment: assessment-<os>.json in the packshot folder
+/// The result of an assessment: this OS's entry in assessment.json in the packshot folder
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
 pub struct Assessment {
     pub date: String,
@@ -193,22 +193,33 @@ impl Assessment {
     }
 }
 
-/// The node's assessment file in the packshot folder, one per operating system (ADR 0047): a PC that boots Windows
-/// and Linux into the same packshot folder measures each on its own (one PC measured 48 items/s on Linux and 23 on
-/// Windows at 8-10 Blender)
-pub fn file() -> String {
-    format!("assessment-{}.json", std::env::consts::OS)
+/// The node's assessment file in the packshot folder: one entry per operating system (ADR 0047), so a PC that boots
+/// Windows and Linux into the same packshot folder keeps both (one PC measured 48 items/s on Linux and 23 on Windows
+/// at 8-10 Blender)
+pub const FILE: &str = "assessment.json";
+
+/// This OS's entry in the file
+fn os() -> &'static str {
+    std::env::consts::OS
 }
 
-/// The assessment in its file, if there is one
+/// The file's entries by OS; nothing for a missing file or one of the older layout (a single assessment, measured on an
+/// unknown OS)
+fn entries(path: &Path) -> BTreeMap<String, Assessment> {
+    fs::read(path).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default()
+}
+
+/// This OS's assessment in the file, if there is one
 pub fn load(path: &Path) -> Option<Assessment> {
-    serde_json::from_slice(&fs::read(path).ok()?).ok()
+    entries(path).remove(os())
 }
 
-/// The assessment into its file (replaced as a whole), written atomically
+/// This OS's assessment into the file (its entry replaced as a whole, the other OS's kept), written atomically
 pub fn save(path: &Path, a: &Assessment) -> Result<()> {
+    let mut all = entries(path);
+    all.insert(os().to_string(), a.clone());
     let tmp = path.with_extension("json.tmp");
-    fs::write(&tmp, serde_json::to_vec_pretty(a)?).with_context(|| tmp.display().to_string())?;
+    fs::write(&tmp, serde_json::to_vec_pretty(&all)?).with_context(|| tmp.display().to_string())?;
     fs::rename(&tmp, path).with_context(|| path.display().to_string())
 }
 
@@ -1550,7 +1561,7 @@ impl Engine {
                 let _ = writeln!(f, "{l}");
             }
         }
-        let path = self.store.root.join(file());
+        let path = self.store.root.join(FILE);
         match save(&path, &a) {
             Ok(()) => self.assess_note(Level::Ok, format!("Assessment saved in {}: {}", path.display(), summary(&a))),
             Err(e) => self.assess_note(Level::Error, format!("Assessment not saved: {e:#}")),
@@ -1726,15 +1737,47 @@ mod tests {
         fs::create_dir_all(&dir).unwrap();
         let cfg = r#"{"token": "s3cret", "peers": ["servbox"], "discovery": false}"#;
         fs::write(dir.join("packshot.json"), cfg).unwrap();
-        let path = dir.join(file());
+        let path = dir.join(FILE);
         assert_eq!(load(&path), None);
         let a = Assessment { workers: 6, render: 6.3, keys: keys(), ..Default::default() };
         save(&path, &a).unwrap();
         assert_eq!(load(&path), Some(a.clone()));
-        let b = Assessment { workers: 4, ..a };
+        let b = Assessment { workers: 4, ..a.clone() };
         save(&path, &b).unwrap();
         assert_eq!(load(&path).unwrap().workers, 4);
-        assert!(!dir.join(format!("{}.tmp", file())).exists());
+        assert!(!dir.join("assessment.json.tmp").exists());
+        assert_eq!(fs::read_to_string(dir.join("packshot.json")).unwrap(), cfg, "packshot.json untouched");
+    }
+
+    /// One entry per OS: a save replaces only this OS's entry; an entry of another OS stays and is not read here; a file
+    /// of the older layout (one assessment, OS unknown) reads as none
+    #[test]
+    fn one_entry_per_os() {
+        let dir = std::env::temp_dir().join(format!("packshot-assess-os-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join(FILE);
+        let other = if os() == "windows" { "linux" } else { "windows" };
+        let theirs = Assessment { workers: 10, render: 48.2, keys: keys(), ..Default::default() };
+        fs::write(&path, serde_json::to_vec(&BTreeMap::from([(other.to_string(), theirs.clone())])).unwrap()).unwrap();
+        assert_eq!(load(&path), None, "the other OS's entry is not this one's");
+        let mine = Assessment { workers: 8, render: 23.7, keys: keys(), ..Default::default() };
+        save(&path, &mine).unwrap();
+        assert_eq!(load(&path), Some(mine));
+        assert_eq!(entries(&path).get(other), Some(&theirs), "the other OS's entry stays");
+        fs::write(&path, serde_json::to_vec(&theirs).unwrap()).unwrap();
+        assert_eq!(load(&path), None, "the older layout");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn own_file_untouched_cfg() {
+        let dir = std::env::temp_dir().join(format!("packshot-assess-cfg-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let cfg = r#"{"token": "s3cret"}"#;
+        fs::write(dir.join("packshot.json"), cfg).unwrap();
+        save(&dir.join(FILE), &Assessment { workers: 2, keys: keys(), ..Default::default() }).unwrap();
         assert_eq!(fs::read_to_string(dir.join("packshot.json")).unwrap(), cfg, "packshot.json untouched");
     }
 

@@ -337,7 +337,7 @@ fn real_main() -> Result<()> {
     let mut me = cluster::own_hello(&net_cfg.name, caps, 0, 0, auto.2, cluster::disk_info(&disk_paths));
     // the node's assessment: its counts are the defaults, whatever changed since (ADR 0046); what differs from what it
     // was measured with only shows it as stale
-    let assessment = assess::load(&store_dir.join(assess::file()));
+    let assessment = assess::load(&store_dir.join(assess::FILE));
     let stale = assessment.as_ref().map(|a| a.keys.diff(&assess::Keys::of(&me, &render_script))).unwrap_or_default();
     let workers = assessment.as_ref().map(|a| a.workers).unwrap_or(auto.0);
     let exporters = assessment.as_ref().and_then(|a| a.exporters).unwrap_or(auto.1);

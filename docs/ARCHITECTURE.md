@@ -55,7 +55,7 @@ assessment's sweep and sampler and the GPU sampling have threads of their own, w
 | `engine.rs` | a run: selection by filter and scope, chunks, pool, assignment, backlog, timeouts and requeues, results into run and set |
 | `cluster.rs` | the engine's multi-node part: capabilities instead of roles, head node, state check, status every second, runs and manifests from other nodes |
 | `node.rs` | the work on every node, the head node too: export chunks exported and held, render chunks fetched, linked and fed to Blender |
-| `assess.rs` | the compute assessment: test set, render ladder, export sweep, CPU/GPU/VRAM/RAM sampling, `assessment-<os>.json` |
+| `assess.rs` | the compute assessment: test set, render ladder, export sweep, CPU/GPU/VRAM/RAM sampling, `assessment.json` (one entry per OS) |
 | `store.rs` | runs as immutable folders, sets as hard links to the newest image of their chain, a target list per set |
 | `events.rs` | the event log per run (`events.jsonl`) and `--report` |
 | `net.rs` | TCP frames of JSON plus payload, hello with token and versions, UDP discovery, checks on all data from other nodes |
@@ -131,7 +131,7 @@ the newest run in its chain. Experiments branch off `main` and are adopted by ap
 
 ```
 packshot.json      cluster: token, port, peers
-assessment-<os>.json   measured process counts, one per OS (windows, linux)
+assessment.json    measured process counts, one entry per OS (windows, linux)
 targets/
   targets.json     the list the dialog offers first
   <name>.json      lists from the picker or by hand (subfolders are listed too)
@@ -183,7 +183,7 @@ Hardware differs a lot: a node with 16 GB VRAM, one with four cores, a server wi
 thumb the assessment measures, on request (`--assess`, key `b`), how many processes a node carries: a 48-item test
 set stratified by type, exported once; one unmeasured warm-up; a render ladder of 1, 2, 3, 4, 6, 8 … Blenders until
 the gain drops below 5 % or RAM or VRAM run out; then an export sweep with the Blenders alongside. Samples every 0.5 s
-(CPU per core, GPU, VRAM, RAM). The result goes into `assessment-<os>.json`, one per operating system, so a PC booting
+(CPU per core, GPU, VRAM, RAM). The result goes into `assessment.json`, one entry per operating system, so a PC booting
 both keeps two ([ADR 0047](adr/0047-assessment-per-os.md)); it sets the default counts and the chunk sizes until a new
 one replaces it ([ADR 0046](adr/0046-assessment-never-stale.md)). When CPU, RAM, GPU, Blender, `render.py` or
 StarBreaker differ from what it was measured with, it shows as stale, with what differs, and stays in use.
