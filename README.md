@@ -87,7 +87,7 @@ render. The image above shows a run on three nodes.
 
 The sets with their runs, newest first: per set its size and format (greyed after its image count), per run its
 profile. On the right the selected set's tile, or the selected run's: node, selection, result, workers, `Data.p4k`; its
-profile (where it came from, its hash), add-on (the installed one or the profile's copy), template;
+profile (where it came from, its hash), add-on (the installed one or the profile's copy), scene;
 its components `render.py` (beside the tool, or from `--render-script`), StarBreaker and Blender; its images below.
 
 | Key | |

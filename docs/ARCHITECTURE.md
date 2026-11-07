@@ -211,6 +211,6 @@ sets and assessment do not depend on it.
   chunk ([ADR 0024](adr/0024-head-node-distributes-profiles.md)); a node keeps them in `work/profile-cache/` by content
   hash and starts a Blender per `render.py` and profile.
 - **Record:** the run records `render.py`'s hash (and whether it came from `--render-script`), the profile (name,
-  origin, hash, template), the set's size and format, and the add-on it used; the Sets view shows the profile and
+  origin, hash, scene), the set's size and format, and the add-on it used; the Sets view shows the profile and
   the add-on in the run's tile, size and format on the set. The assessment always measures
   `game-tile` as PNG.

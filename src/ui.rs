@@ -144,7 +144,7 @@ enum Input {
     Profile { choices: Vec<(Profile, String)>, sel: usize },
 }
 
-/// A profile's line in the start dialog: where it is, its hash, its add-on copy and template
+/// A profile's line in the start dialog: where it is, its hash, its add-on copy and scene
 fn profile_choice(p: &Profile) -> String {
     let hash = p.hash().map(|h| h.chars().take(8).collect::<String>()).unwrap_or_else(|| "–".into());
     let mut parts = vec![p.from.clone(), hash];
@@ -152,7 +152,7 @@ fn profile_choice(p: &Profile) -> String {
         parts.push("own add-on".into());
     }
     if let Some(s) = p.scene() {
-        parts.push(format!("template {s}"));
+        parts.push(format!("scene {s}"));
     }
     parts.join(" · ")
 }
@@ -2325,7 +2325,7 @@ fn draw_run_detail(f: &mut Frame, app: &mut App, area: Rect, id: &str) {
         block("Profile"),
         row("Profile", profile),
         row("Add-on", addon),
-        row("Template", o["scene"].as_str().map(String::from).unwrap_or_else(|| "none".into())),
+        row("Scene", o["scene"].as_str().map(String::from).unwrap_or_else(|| "default".into())),
         block("Components"),
         row("render.py", render_py),
         row("StarBreaker", s("starbreaker")),
@@ -3086,7 +3086,7 @@ mod tests {
         // the selected run: its tile on the right, Blender there now
         app.set_sel = app.set_rows.iter().position(|r| matches!(r, SetRow::Run { .. })).unwrap();
         let s = screen(&mut app);
-        for want in ["Run 11-04 10:00", "Blender     5.2.3", "Profile     studio", "render.py   6da3cb0c · beside the tool", "── Profile", "── Components", "Add-on      1a2b3c4d · the profile's copy", "Template    none"] {
+        for want in ["Run 11-04 10:00", "Blender     5.2.3", "Profile     studio", "render.py   6da3cb0c · beside the tool", "── Profile", "── Components", "Add-on      1a2b3c4d · the profile's copy", "Scene       default"] {
             assert!(s.contains(want), "{want}: {s}");
         }
 
