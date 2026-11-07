@@ -2037,6 +2037,9 @@ fn draw_keys(f: &mut Frame, app: &App, area: Rect) {
 }
 
 #[cfg(test)]
+mod shots;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::engine::{Config, RemoteRun, RemoteSel, Target};

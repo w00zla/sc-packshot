@@ -18,3 +18,7 @@ twox-hash = { version = "2.1.5", default-features = false, features = ["std", "x
 
 [profile.release]
 debug = false
+
+[dev-dependencies]
+ab_glyph = "0.2.32"
+png = "0.18"

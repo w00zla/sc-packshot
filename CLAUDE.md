@@ -18,6 +18,8 @@ Technical documentation (export, render look, scheduler, runs and sets, cluster,
 - **Pull requests only** ([0034](docs/adr/0034-changes-through-pull-requests.md)): branch from `main`, open a pull
   request, squash merge. A ruleset on `main` enforces it.
 - Shell scripts must pass `shellcheck`. Text files are LF (`.gitattributes`).
+- Doc images: flat graphics (screenshots, diagrams) as optimized PNG, photographic ones (renders, banner) as JPEG 4:4:4,
+  q≈88; no WebP/AVIF.
 
 ## Commands
 

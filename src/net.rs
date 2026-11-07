@@ -665,6 +665,21 @@ fn bind_listener(addr: &str, port: u16) -> io::Result<TcpListener> {
     TcpListener::bind(addr)
 }
 
+#[cfg(test)]
+impl Hub {
+    /// A connected node with nothing behind it (the README screenshots): a loopback connection nobody reads, so
+    /// sending to it goes nowhere
+    pub(crate) fn add_fake_peer(&mut self, hello: Hello, addr: &str, ip: &str, outbound: bool) -> u64 {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("loopback");
+        let stream = TcpStream::connect(listener.local_addr().expect("loopback address")).expect("loopback connect");
+        let (tx, _) = channel();
+        let conn = self.next_conn;
+        self.next_conn += 1;
+        self.peers.push(PeerConn { conn, hello, outbound, addr: addr.into(), ip: ip.into(), tx, stream });
+        conn
+    }
+}
+
 impl Hub {
     /// Listens and announces itself when the config has a token (and discovery is on)
     pub fn new(cfg: NetConfig, mut me: Hello, inbox: PathBuf) -> Self {
