@@ -20,8 +20,13 @@ records which run each of its images came from.
 - Profiles live in `profiles/<name>/` next to the tool (repository and bundle; `game-tile` is bundled) and in
   `<store>/profiles/<name>/`; one of the store's hides a bundled one of the same name. A store profile may not be
   called `game-tile`: it travels next to the bundled one.
+- The profile is chosen when a run starts (TUI: after its name; console: `--profile`). The starter decides, not the
+  head node, as with the target list: a run started on another node carries the starter's profile with its files;
+  render.py and game-tile come from the head node ([0038](0038-render-script-distributed-not-compared.md)).
 - The head node sends render.py, game-tile and the run's profile with every render chunk; a node keeps them in
   `<work>/profile-cache/<hash>/` while it runs (cleared at start), and a Blender process belongs to one such hash.
+- A profile may bring its own add-on copy (`addon` in profile.toml, [0025](0025-material-module.md)); the process then
+  uses it instead of the installed add-on. The run record names the add-on actually used.
 
 ## Alternatives
 - Profile per set (0022 as written, a `profile` field in `set.json` inherited on branching): one more piece of set
@@ -29,5 +34,4 @@ records which run each of its images came from.
 
 ## Consequences
 - Whether a set is all one look is visible only from its runs, not enforced.
-- A run another node starts on this head node uses the head node's `--profile`; the start message carries none yet.
-- Choosing the profile in the TUI per run is not built; it is a start option today.
+- The equality check ([0014](0014-same-state-or-no-run.md)) still compares the installed add-on, not a profile's copy.
