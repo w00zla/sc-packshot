@@ -43,3 +43,4 @@ supersedes the old one. 0001–0020 were recorded afterwards (2026-11-05) from t
 | [0036](0036-releases-without-blender-and-workflows.md) | Releases are bundles without Blender; test and release workflows | accepted | 2026-11-07 |
 | [0037](0037-renders-allowed-in-example-screenshots.md) | Renders are allowed in example screenshots | accepted | 2026-11-07 |
 | [0038](0038-render-script-distributed-not-compared.md) | The render script is distributed, not compared | accepted | 2026-11-07 |
+| [0039](0039-target-lists-owned-by-packshot.md) | packshot owns the target-list format and builds lists from the DataCore | accepted | 2026-11-07 |
