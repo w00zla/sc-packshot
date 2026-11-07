@@ -17,7 +17,7 @@ changes barely move the throughput, and a sweep takes minutes and the whole mach
 - The keys are still recorded; when one differs the assessment is shown as stale, with what differs, but still used. A new
   assessment (`--assess` or `b`) replaces the old one.
 - Profile parts are no keys: neither `game-tile` (the look the assessment renders) nor the add-on (the profile's
-  material module, [0025](0025-material-module.md)), and no host name. The keys are CPU, Blender version, GPU, `render.py` and
+  material module, [0025](0025-material-module.md)), and no host name. The keys are CPU, RAM (total, in GB), Blender version, GPU, `render.py` and
   StarBreaker.
 
 ## Alternatives
@@ -26,4 +26,4 @@ changes barely move the throughput, and a sweep takes minutes and the whole mach
 
 ## Consequences
 - An assessment measured on other hardware (e.g. a store copied to another machine) stays in use until reassessed;
-  it shows as stale when CPU or GPU differ.
+  it shows as stale when CPU, RAM or GPU differ.
