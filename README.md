@@ -62,8 +62,7 @@ On Linux run the check first: a headless Blender depends on the GPU driver and i
 
 ## The terminal UI
 
-Three views, switched with `1` `2` `3` or `Tab`; the last line always lists the keys that work right now. Images show
-in full on terminals with Sixel, Kitty or iTerm2 graphics, else as half blocks (`PACKSHOT_GRAPHICS` forces one).
+Three views, switched with `1` `2` `3` or `Tab`; the last line always lists the keys that work right now.
 
 ### Run
 
@@ -110,6 +109,11 @@ matches; below the selected node's details and where and how the next run would 
 | `h` | fetch the selected node's runs that are missing here |
 | `m` | fetch its `main` manifest, so "missing" counts what it has (on this node: drop it) |
 | `r` | ask the node for its state again |
+
+### Images in the terminal
+
+Renders show in full on terminals with Sixel, Kitty or iTerm2 graphics (Windows Terminal, WezTerm, kitty, iTerm2, …),
+else as half blocks. packshot detects the protocol; `PACKSHOT_GRAPHICS=sixel|kitty|iterm2|halfblocks` forces one.
 
 ## How it works
 
