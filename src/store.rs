@@ -4,7 +4,7 @@
 // the images of the runs (per entity the newest run in the chain with an image), set.json (base, chain, files in the folder,
 // where its target list came from) and targets.json, the set's target list (taken from the base when branching,
 // replaceable; the game's items change with its updates).
-// `main` is the set consumers read (named live until ADR 0035); experiments branch off main and are adopted
+// `main` is the set consumers read; experiments branch off main and are adopted
 // by appending their runs to main's chain. No storage by content hash: renders are not bit-identical.
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
@@ -16,8 +16,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 pub const MAIN: &str = "main";
-/// The main set's name until 2026-11-07 (ADR 0035): stores and runs from before still carry it
-pub const OLD_MAIN: &str = "live";
 /// The target list in a set's folder
 pub const TARGETS: &str = "targets.json";
 
@@ -194,43 +192,11 @@ impl Store {
             fs::create_dir_all(root.join(d)).with_context(|| root.join(d).display().to_string())?;
         }
         let store = Self { root: root.to_path_buf(), runs: HashMap::new() };
-        store.migrate_live()?;
         if !store.set_dir(MAIN).join("set.json").exists() {
             fs::create_dir_all(store.set_dir(MAIN))?;
             store.save_set(&SetInfo { name: MAIN.into(), ..Default::default() })?;
         }
         Ok(store)
-    }
-
-    /// The main set was called live until 2026-11-07 (ADR 0035): its folder and name become main once, and sets
-    /// branched off it point at main. Runs stay as they are (run.json is never changed); `run` reads their set
-    /// "live" as main.
-    fn migrate_live(&self) -> Result<()> {
-        let old = self.set_dir(OLD_MAIN);
-        if !old.join("set.json").exists() || self.set_dir(MAIN).exists() {
-            return Ok(());
-        }
-        fs::rename(&old, self.set_dir(MAIN)).with_context(|| format!("{} -> {}", old.display(), self.set_dir(MAIN).display()))?;
-        for name in self.sets()? {
-            let mut set = self.load_set(&name)?;
-            let mut changed = false;
-            if set.name == OLD_MAIN {
-                set.name = MAIN.into();
-                changed = true;
-            }
-            if set.base.as_deref() == Some(OLD_MAIN) {
-                set.base = Some(MAIN.into());
-                changed = true;
-            }
-            if let Some(t) = set.targets.as_mut().filter(|t| t.source == format!("<{OLD_MAIN}>")) {
-                t.source = format!("<{MAIN}>");
-                changed = true;
-            }
-            if changed {
-                self.save_set(&set)?;
-            }
-        }
-        Ok(())
     }
 
     /// The packshot folder as it is, without creating anything (--report only reads)
@@ -269,11 +235,7 @@ impl Store {
     pub fn run(&mut self, id: &str) -> Result<&RunInfo> {
         if !self.runs.contains_key(id) {
             let path = self.run_dir(id).join("run.json");
-            let mut info: RunInfo = serde_json::from_slice(&fs::read(&path).with_context(|| path.display().to_string())?).with_context(|| path.display().to_string())?;
-            // runs from before ADR 0035 name the main set live
-            if info.set == OLD_MAIN {
-                info.set = MAIN.into();
-            }
+            let info: RunInfo = serde_json::from_slice(&fs::read(&path).with_context(|| path.display().to_string())?).with_context(|| path.display().to_string())?;
             self.runs.insert(id.to_string(), info);
         }
         Ok(&self.runs[id])
@@ -604,38 +566,6 @@ mod tests {
 
     fn read(store: &Store, set: &str, entity: &str) -> Option<String> {
         fs::read_to_string(store.set_dir(set).join(format!("{entity} 0000.png"))).ok()
-    }
-
-    /// A store from before ADR 0035: sets/live becomes sets/main with its images, a set branched off it points at
-    /// main, its runs keep "live" in run.json and read as main; a second open changes nothing
-    #[test]
-    fn live_becomes_main() {
-        let root = tmp("migrate");
-        let mut store = Store::open(&root).unwrap();
-        let mut main = store.load_set(MAIN).unwrap();
-        add_run(&mut store, &mut main, "r1", &[("a", true, "a1")]);
-        store.create_set("exp", MAIN).unwrap();
-        // turn it back into an old store
-        fs::rename(store.set_dir(MAIN), store.set_dir(OLD_MAIN)).unwrap();
-        let rewrite = |path: PathBuf| {
-            let text = fs::read_to_string(&path).unwrap().replace("\"main\"", "\"live\"").replace("<main>", "<live>");
-            fs::write(&path, text).unwrap();
-        };
-        rewrite(store.set_dir(OLD_MAIN).join("set.json"));
-        rewrite(store.set_dir("exp").join("set.json"));
-        rewrite(store.run_dir("r1").join("run.json"));
-
-        let mut store = Store::open(&root).unwrap();
-        assert!(!store.set_dir(OLD_MAIN).exists() && store.set_dir(MAIN).join("set.json").exists());
-        assert_eq!(store.load_set(MAIN).unwrap().name, MAIN);
-        assert_eq!(store.load_set("exp").unwrap().base.as_deref(), Some(MAIN));
-        assert_eq!(read(&store, MAIN, "a").as_deref(), Some("a1"), "the images moved with the folder");
-        assert!(fs::read_to_string(store.run_dir("r1").join("run.json")).unwrap().contains("\"live\""), "run.json untouched");
-        assert_eq!(store.run("r1").unwrap().set, MAIN);
-        assert_eq!(store.sets().unwrap(), vec!["exp".to_string(), MAIN.to_string()]);
-        Store::open(&root).unwrap();
-        assert_eq!(store.sets().unwrap(), vec!["exp".to_string(), MAIN.to_string()]);
-        let _ = remove_tree(&root);
     }
 
     /// A set's target list: none in a new store, set from a file, inherited when branching, replaced per set, kept
