@@ -57,9 +57,19 @@ struct Ready {
     pose: [f64; 3],
 }
 
+/// What a render chunk renders with: render.py, the profile folder it gets as --profile (empty: render.py's default,
+/// game-tile), and the size and format the run sets (None: the profile's)
+#[derive(Clone, Default)]
+struct Look {
+    script: PathBuf,
+    profile: PathBuf,
+    size: Option<u32>,
+    format: Option<String>,
+}
+
 enum Work {
     Export(Vec<ItemJob>),
-    Render { dir: PathBuf, script: PathBuf, script_dir: Option<PathBuf>, size: u32, jobs: Vec<Ready> },
+    Render { dir: PathBuf, look: Look, jobs: Vec<Ready> },
 }
 
 /// Work waiting for a free process
@@ -86,7 +96,8 @@ struct ExportState {
 /// What a process is
 #[derive(Clone, PartialEq, Debug)]
 enum ProcKind {
-    /// render.py --stdin (the content hash of its render.py: a chunk with another one gets another process)
+    /// render.py --stdin (the content hash of its render.py and profile: a chunk with another one gets another
+    /// process)
     Blender(String),
     /// export-batch --stdin
     Export,
@@ -132,14 +143,12 @@ struct Running {
     export: Option<ExportState>,
     /// the head node cancelled it: nothing of it is kept
     cancelled: bool,
-    /// the inbox folder render.py came in (deleted with the chunk)
-    script_dir: Option<PathBuf>,
     /// a render chunk: its jobs (item, JSON line) not fed yet, those fed and not answered yet (in order), its
-    /// render.py and that file's content hash
+    /// render.py and profile and their content hash
     todo: VecDeque<(usize, String)>,
     fed: VecDeque<(usize, String)>,
-    script: PathBuf,
-    script_hash: String,
+    look: Look,
+    look_key: String,
 }
 
 /// An exported item held here: package folder, rig (relative to the chunk's folder) and pose
@@ -172,9 +181,7 @@ struct Pending {
     head: u64,
     id: u64,
     dir: PathBuf,
-    script: PathBuf,
-    script_dir: Option<PathBuf>,
-    size: u32,
+    look: Look,
     ready: Vec<Ready>,
     groups: Vec<Group>,
     started: Instant,
@@ -263,7 +270,10 @@ pub struct Renderer {
     name: String,
     work: PathBuf,
     script: PathBuf,
-    /// copy of the latest image rendered here and its class name (the preview of a node that is not the head node)
+    /// the profile folder of this node's runs (for the head node's own work; empty: render.py's default)
+    pub profile: PathBuf,
+    /// copy of the latest image rendered here (preview.<ext>) and its class name (the preview of a node that is not
+    /// the head node)
     preview: PathBuf,
     pub last: Option<(PathBuf, String)>,
     queue: VecDeque<Queued>,
@@ -317,7 +327,8 @@ impl Renderer {
             name: name.to_string(),
             work: work.to_path_buf(),
             script,
-            preview: work.join("preview.png"),
+            profile: PathBuf::new(),
+            preview: work.join("preview"),
             last: None,
             queue: VecDeque::new(),
             running: HashMap::new(),
@@ -384,8 +395,7 @@ impl Renderer {
     /// Fetch items held on other nodes into `dir` as a render chunk would (an assessment's test set), without
     /// rendering them; take_kept gives the result
     pub fn fetch_keep(&mut self, hub: Option<&Hub>, id: u64, jobs: Vec<RenderJob>, dir: PathBuf, log: &mut dyn FnMut(String)) {
-        let script = self.script.clone();
-        self.start_fetch(hub, LOCAL, id, 0, jobs, script, None, Some(dir), log);
+        self.start_fetch(hub, LOCAL, id, jobs, Look::default(), Some(dir), log);
     }
 
     /// The test set fetched as `id`, once all of it is here
@@ -419,11 +429,8 @@ impl Renderer {
             || self.cache_head == Some(conn);
         self.queue.retain(|q| {
             let keep = q.head != conn;
-            if !keep && let Work::Render { dir, script_dir, .. } = &q.work {
+            if !keep && let Work::Render { dir, .. } = &q.work {
                 let _ = fs::remove_dir_all(dir);
-                if let Some(d) = script_dir {
-                    let _ = fs::remove_dir_all(d);
-                }
             }
             keep
         });
@@ -431,9 +438,6 @@ impl Renderer {
             let keep = p.head != conn;
             if !keep {
                 let _ = fs::remove_dir_all(&p.dir);
-                if let Some(d) = &p.script_dir {
-                    let _ = fs::remove_dir_all(d);
-                }
             }
             keep
         });
@@ -503,21 +507,25 @@ impl Renderer {
                 }
                 self.queue.push_back(Queued { head: conn, id, work: Work::Export(jobs) });
             }
-            Msg::Render { id, size, jobs, .. } => {
-                let (script, script_dir) = match dir {
-                    Some(d) => (d.join("render.py"), Some(d)),
-                    None => (self.script.clone(), None),
+            Msg::Render { id, size, format, profile, jobs, .. } => {
+                let (script, profile) = match dir {
+                    Some(d) => match self.keep_look(&d, &profile) {
+                        Ok(x) => x,
+                        Err(e) => {
+                            let _ = fs::remove_dir_all(&d);
+                            self.not_started(hub, conn, id, false, &format!("{e:#}"), log);
+                            return true;
+                        }
+                    },
+                    None => (self.script.clone(), self.profile.clone()),
                 };
-                self.start_fetch(hub, conn, id, size, jobs, script, script_dir, None, log);
+                self.start_fetch(hub, conn, id, jobs, Look { script, profile, size, format }, None, log);
             }
             Msg::Cancel { id } => {
                 self.queue.retain(|q| {
                     let keep = !(q.head == conn && q.id == id);
-                    if let (false, Work::Render { dir, script_dir, .. }) = (keep, &q.work) {
+                    if let (false, Work::Render { dir, .. }) = (keep, &q.work) {
                         let _ = fs::remove_dir_all(dir);
-                        if let Some(d) = script_dir {
-                            let _ = fs::remove_dir_all(d);
-                        }
                     }
                     keep
                 });
@@ -682,13 +690,13 @@ impl Renderer {
     /// A render chunk arrives: items held here are ready at once, the others' holders are asked for their files.
     /// `keep`: only fetch them into that folder (an assessment's test set)
     #[allow(clippy::too_many_arguments)]
-    fn start_fetch(&mut self, hub: Option<&Hub>, conn: u64, id: u64, size: u32, jobs: Vec<RenderJob>, script: PathBuf, script_dir: Option<PathBuf>, keep: Option<PathBuf>, log: &mut dyn FnMut(String)) {
+    fn start_fetch(&mut self, hub: Option<&Hub>, conn: u64, id: u64, jobs: Vec<RenderJob>, look: Look, keep: Option<PathBuf>, log: &mut dyn FnMut(String)) {
         let head = self.peer_name(hub, conn);
         self.next_key += 1;
         let dir = keep.clone().unwrap_or_else(|| self.work.join("fetch").join(format!("{id}-{}", self.next_key)));
         let keep = keep.is_some();
         let remote = jobs.iter().any(|j| j.holder != self.name);
-        let mut p = Pending { head: conn, id, dir, script, script_dir, size, ready: Vec::new(), groups: Vec::new(), started: Instant::now(), holders: Vec::new(), bytes: 0, cached: 0, files: 0, seen: HashSet::new(), keep, remote };
+        let mut p = Pending { head: conn, id, dir, look, ready: Vec::new(), groups: Vec::new(), started: Instant::now(), holders: Vec::new(), bytes: 0, cached: 0, files: 0, seen: HashSet::new(), keep, remote };
         let mut failed = Vec::new();
         let mut unreachable = Vec::new();
         // held here once, the chunk gone since (released, or this node restarted): exported again, as when another
@@ -928,9 +936,6 @@ impl Renderer {
             }
             if p.ready.is_empty() {
                 let _ = fs::remove_dir_all(&p.dir);
-                if let Some(d) = &p.script_dir {
-                    let _ = fs::remove_dir_all(d);
-                }
                 post(&mut self.local, hub, p.head, Msg::BlockDone { id: p.id, exit: None, error: String::new() }, Payload::None);
                 continue;
             }
@@ -938,7 +943,7 @@ impl Renderer {
                 let msg = Msg::Fetched { id: p.id, holders: p.holders.clone(), bytes: p.bytes, cached: p.cached, files: p.files, secs: p.started.elapsed().as_secs_f64() };
                 post(&mut self.local, hub, p.head, msg, Payload::None);
             }
-            self.queue.push_back(Queued { head: p.head, id: p.id, work: Work::Render { dir: p.dir, script: p.script, script_dir: p.script_dir, size: p.size, jobs: p.ready } });
+            self.queue.push_back(Queued { head: p.head, id: p.id, work: Work::Render { dir: p.dir, look: p.look, jobs: p.ready } });
         }
         for (conn, hashes) in ask {
             for h in &hashes {
@@ -1010,6 +1015,31 @@ impl Renderer {
         post(&mut self.local, hub, head, msg, Payload::None);
     }
 
+    /// A render chunk's render.py and profiles (the folder they came in: render.py, profiles/game-tile/...,
+    /// profiles/<profile>/...) into <work>/profile-cache/<content hash>/, kept there: the Blender processes started
+    /// for the chunk outlive it and may read the profile's files (a scene template) per job. Returns render.py and the
+    /// profile folder there
+    fn keep_look(&self, inbox: &Path, profile: &str) -> Result<(PathBuf, PathBuf)> {
+        if !crate::net::safe_name(profile) {
+            anyhow::bail!("the head node named no profile folder ({profile:?}): another packshot build?");
+        }
+        let script = inbox.join("render.py");
+        let key = crate::profile::Profile::at(&inbox.join("profiles").join(profile), &script)
+            .and_then(|p| p.key(&script))
+            .with_context(|| format!("render.py, game-tile or {profile} missing in what the head node sent"))?;
+        let dst = self.work.join("profile-cache").join(key);
+        if dst.exists() {
+            let _ = fs::remove_dir_all(inbox);
+        } else {
+            fs::create_dir_all(self.work.join("profile-cache"))?;
+            if fs::rename(inbox, &dst).is_err() {
+                crate::cluster::copy_tree(inbox, &dst)?;
+                let _ = fs::remove_dir_all(inbox);
+            }
+        }
+        Ok((dst.join("render.py"), dst.join("profiles").join(profile)))
+    }
+
     /// Whether this node's export-batch has the persistent --stdin mode (probed once)
     fn export_stdin(&mut self, log: &mut dyn FnMut(String)) -> bool {
         if let Some(v) = self.export_stdin {
@@ -1033,21 +1063,18 @@ impl Renderer {
             let kind = match self.running[&key].export.is_some() {
                 true if self.export_stdin(log) => ProcKind::Export,
                 true => ProcKind::ExportOnce,
-                false => ProcKind::Blender(self.running[&key].script_hash.clone()),
+                false => ProcKind::Blender(self.running[&key].look_key.clone()),
             };
             let idle = if kind == ProcKind::ExportOnce { None } else { self.procs.iter().filter(|(_, p)| p.chunk.is_none() && p.quit_at.is_none() && p.ready && p.kind == kind).map(|(k, _)| *k).min() };
             let pk = match idle {
                 Some(pk) => pk,
                 None => {
-                    let (script, jobs) = (self.running[&key].script.clone(), self.running[&key].dir.join("jobs.json"));
-                    match self.spawn(&kind, &script, &jobs) {
+                    let (look, jobs) = (self.running[&key].look.clone(), self.running[&key].dir.join("jobs.json"));
+                    match self.spawn(&kind, &look, &jobs) {
                         Ok(pk) => pk,
                         Err(e) => {
                             let Some(r) = self.running.remove(&key) else { continue };
                             let _ = fs::remove_dir_all(&r.dir);
-                            if let Some(d) = &r.script_dir {
-                                let _ = fs::remove_dir_all(d);
-                            }
                             self.not_started(hub, r.head, r.id, r.export.is_some(), &format!("{e:#}"), log);
                             continue;
                         }
@@ -1271,9 +1298,6 @@ impl Renderer {
         }
         post(&mut self.local, hub, r.head, Msg::BlockDone { id: r.id, exit, error }, Payload::None);
         let _ = fs::remove_dir_all(&r.dir);
-        if let Some(d) = &r.script_dir {
-            let _ = fs::remove_dir_all(d);
-        }
     }
 
     fn on_line(&mut self, hub: Option<&Hub>, key: u64, line: String, stderr: bool) {
@@ -1363,7 +1387,7 @@ impl Renderer {
             post(&mut self.local, hub, r.head, msg, Payload::None);
             return;
         }
-        // render.py: "icon: <png> <info>" / "failed: <png> <error>"
+        // render.py: "icon: <image> <info>" / "failed: <out> <error>" (the image with its format's extension)
         let (ok, rest) = if let Some(x) = line.trim().strip_prefix("icon: ") {
             (true, x)
         } else if let Some(x) = line.trim().strip_prefix("failed: ") {
@@ -1372,10 +1396,10 @@ impl Renderer {
             keep(&mut r.stderr_tail, &line);
             return;
         };
-        let Some(end) = rest.to_lowercase().find(".png") else { return };
-        let path = rest[..end + 4].to_string();
-        let mut info = rest[end + 4..].trim().to_string();
-        let Some(&item) = r.outs.get(&path.to_lowercase()) else { return };
+        let Some((end, ext)) = image_end(rest) else { return };
+        let path = rest[..end + ext].to_string();
+        let mut info = rest[end + ext..].trim().to_string();
+        let Some(&item) = r.outs.get(&rest[..end].to_lowercase()) else { return };
         let output = std::mem::take(&mut r.stderr_tail);
         if !ok {
             info = crate::engine::with_trace(&info, &output);
@@ -1384,8 +1408,10 @@ impl Renderer {
         r.fed.retain(|(i, _)| *i != item);
         let data = if ok { fs::read(&path).ok() } else { None };
         let ok = ok && data.is_some();
-        if ok && fs::copy(&path, &self.preview).is_ok() {
-            self.last = Some((self.preview.clone(), r.names.get(&item).cloned().unwrap_or_default()));
+        // the preview keeps the extension (the TUI decodes by it); an EXR has none
+        let preview = self.preview.with_extension(path[end + 1..end + ext].to_ascii_lowercase());
+        if ok && !path[end..].eq_ignore_ascii_case(".exr") && fs::copy(&path, &preview).is_ok() {
+            self.last = Some((preview, r.names.get(&item).cloned().unwrap_or_default()));
         }
         post(&mut self.local, hub, r.head, Msg::Item { block: r.id, item, ok, info }, data.map(Payload::Bytes).unwrap_or(Payload::None));
         // restarted after BLENDER_JOBS jobs or over BLENDER_RSS: it quits after the jobs fed to it already
@@ -1484,7 +1510,7 @@ impl Renderer {
     fn start(&self, q: Queued) -> std::result::Result<Running, (anyhow::Error, bool)> {
         match q.work {
             Work::Export(jobs) => self.start_export(q.head, q.id, jobs).map_err(|e| (e, true)),
-            Work::Render { dir, script, script_dir, size, jobs } => self.start_render(q.head, q.id, dir, script, script_dir, size, jobs).map_err(|e| (e, false)),
+            Work::Render { dir, look, jobs } => self.start_render(q.head, q.id, dir, look, jobs).map_err(|e| (e, false)),
         }
     }
 
@@ -1502,11 +1528,10 @@ impl Renderer {
             started: Instant::now(),
             export: None,
             cancelled: false,
-            script_dir: None,
             todo: VecDeque::new(),
             fed: VecDeque::new(),
-            script: PathBuf::new(),
-            script_hash: String::new(),
+            look: Look::default(),
+            look_key: String::new(),
         }
     }
 
@@ -1526,33 +1551,47 @@ impl Renderer {
         Ok(r)
     }
 
-    /// A render chunk whose files are here: one job line per item for a Blender, the PNGs into its folder
-    #[allow(clippy::too_many_arguments)]
-    fn start_render(&self, head: u64, id: u64, dir: PathBuf, script: PathBuf, script_dir: Option<PathBuf>, size: u32, jobs: Vec<Ready>) -> Result<Running> {
+    /// A render chunk whose files are here: one job line per item for a Blender, the images into its folder (render.py
+    /// gives an output the extension of its format: the results are matched by the path without it)
+    fn start_render(&self, head: u64, id: u64, dir: PathBuf, look: Look, jobs: Vec<Ready>) -> Result<Running> {
         let out_dir = dir.join("out");
         fs::create_dir_all(&out_dir)?;
-        let script_hash = crate::events::file_hash(&script).with_context(|| format!("{} not readable", script.display()))?;
+        let key = match look.profile.as_os_str().is_empty() {
+            true => crate::events::file_hash(&look.script),
+            false => crate::profile::Profile::at(&look.profile, &look.script).and_then(|p| p.key(&look.script)),
+        };
+        let look_key = key.with_context(|| format!("{} or profile {} not readable", look.script.display(), look.profile.display()))?;
         let mut r = Self::running(head, id, dir, jobs.iter().map(|j| (j.item, j.entity.clone())).collect(), jobs.len());
         for j in &jobs {
             let out = out_dir.join(format!("{}.png", j.item));
-            r.outs.insert(out.to_string_lossy().to_lowercase(), j.item);
-            r.todo.push_back((j.item, json!({ "src": j.src, "out": out, "pose": j.pose, "rig": j.rig, "size": size }).to_string()));
+            r.outs.insert(out.with_extension("").to_string_lossy().to_lowercase(), j.item);
+            // size and format only when the run sets them: else the profile's
+            let mut job = json!({ "src": j.src, "out": out, "pose": j.pose, "rig": j.rig });
+            if let Some(s) = look.size {
+                job["size"] = json!(s);
+            }
+            if let Some(f) = &look.format {
+                job["format"] = json!(f);
+            }
+            r.todo.push_back((j.item, job.to_string()));
         }
-        r.script = script;
-        r.script_hash = script_hash;
-        r.script_dir = script_dir;
+        r.look = look;
+        r.look_key = look_key;
         Ok(r)
     }
 
-    /// A process of `kind`: a Blender with render.py --stdin, a persistent export-batch --stdin, or export-batch over
-    /// the chunk's jobs file
-    fn spawn(&mut self, kind: &ProcKind, script: &Path, jobs_file: &Path) -> Result<u64> {
+    /// A process of `kind`: a Blender with render.py --stdin (and its profile), a persistent export-batch --stdin, or
+    /// export-batch over the chunk's jobs file
+    fn spawn(&mut self, kind: &ProcKind, look: &Look, jobs_file: &Path) -> Result<u64> {
         let mut cmd = match kind {
             // Vulkan: under OpenGL the render phase (shader compilation) grew with 8 Blenders from 0.21 to 0.86 s,
             // under Vulkan it stayed at 0.30 s; the images differ by 0.04/255 on average (2026-11-02)
             ProcKind::Blender(_) => {
                 let mut c = crate::blender::command(&self.blender);
-                c.arg("--gpu-backend").arg("vulkan").arg("--python").arg(script).arg("--").arg("--stdin");
+                c.arg("--gpu-backend").arg("vulkan").arg("--python").arg(&look.script).arg("--").arg("--stdin");
+                if !look.profile.as_os_str().is_empty() {
+                    c.arg("--profile").arg(&look.profile);
+                }
                 c
             }
             ProcKind::Export | ProcKind::ExportOnce => {
@@ -1588,6 +1627,19 @@ impl Renderer {
         self.procs.insert(key, Proc { kind: kind.clone(), child, stdin, ready: once, jobs: 0, eof: 0, chunk: None, quit_at: None, idle_since: now, tail: String::new() });
         Ok(key)
     }
+}
+
+/// Where the image path in a render.py line ends: (the position of its extension's dot, the extension's length with
+/// the dot), the first .png, .jpg or .exr that ends the path (followed by a space or the line's end)
+pub(crate) fn image_end(rest: &str) -> Option<(usize, usize)> {
+    let lower = rest.to_ascii_lowercase();
+    crate::profile::IMAGE_EXTS
+        .iter()
+        .filter_map(|e| {
+            let dot = format!(".{e}");
+            lower.match_indices(&dot).map(|(i, _)| i).find(|&i| lower[i + dot.len()..].chars().next().is_none_or(char::is_whitespace)).map(|i| (i, dot.len()))
+        })
+        .min()
 }
 
 /// Whether a StarBreaker's export-batch has the persistent --stdin mode (its --help names it)
@@ -1628,11 +1680,43 @@ mod tests {
         root
     }
 
+    /// A render chunk's render.py and profiles go into the profile cache by content hash (the same content once, the
+    /// chunk's folder gone), the Blender gets them from there; a chunk without its profile fails; an icon: line's image
+    /// path ends at its extension
+    #[test]
+    fn look_cache_and_image_lines() {
+        let root = scratch("look");
+        let r = Renderer::new("me", &root.join("work"), PathBuf::new(), PathBuf::new(), 1);
+        let chunk = |n: usize, studio: &str| {
+            let d = root.join(format!("inbox/{n}"));
+            for (rel, text) in [("render.py", "# core"), ("profiles/game-tile/profile.toml", "[params]\nsize = 256\n"), ("profiles/studio/profile.toml", studio)] {
+                fs::create_dir_all(d.join(rel).parent().unwrap()).unwrap();
+                fs::write(d.join(rel), text).unwrap();
+            }
+            d
+        };
+        let (s1, p1) = r.keep_look(&chunk(1, "[params]\n"), "studio").unwrap();
+        assert!(s1.is_file() && p1.join("profile.toml").is_file() && s1.starts_with(root.join("work/profile-cache")), "{}", s1.display());
+        assert!(!root.join("inbox/1").exists());
+        assert_eq!(r.keep_look(&chunk(2, "[params]\n"), "studio").unwrap(), (s1.clone(), p1.clone()), "the same content once");
+        assert!(!root.join("inbox/2").exists());
+        let (s3, _) = r.keep_look(&chunk(3, "[params]\nformat = \"jpeg\"\n"), "studio").unwrap();
+        assert_ne!(s3, s1, "another profile: another folder (and another Blender)");
+        for name in ["", "../studio", "missing"] {
+            assert!(r.keep_look(&chunk(4, "[params]\n"), name).is_err(), "{name:?}");
+        }
+        assert_eq!(image_end("/w/out/12.jpg timing load=0.1"), Some((9, 4)));
+        assert_eq!(image_end("/w/a.png.d/out/3.EXR"), Some((16, 4)), "a .png inside the path does not end it");
+        assert_eq!(image_end("C:\\w\\out\\3.png missing file"), Some((10, 4)));
+        assert_eq!(image_end("/w/out/3 no image"), None);
+        let _ = fs::remove_dir_all(&root);
+    }
+
     /// A render chunk `id` of this node's own run waiting for `items` of export chunk `chunk` from `holder` (`conn`)
     fn waiting(r: &mut Renderer, id: u64, conn: u64, holder: &str, chunk: u64, items: &[usize]) {
         let dir = r.work.join("fetch").join(format!("{id}"));
         let groups = vec![Group { holder: holder.into(), conn, chunk, entities: items.iter().map(|&i| (i, format!("e{i}"))).collect(), info: None }];
-        r.pending.push(Pending { head: LOCAL, id, dir, script: PathBuf::new(), script_dir: None, size: 64, ready: Vec::new(), groups, started: Instant::now(), holders: vec![holder.into()], bytes: 0, cached: 0, files: 0, seen: HashSet::new(), keep: false, remote: true });
+        r.pending.push(Pending { head: LOCAL, id, dir, look: Look::default(), ready: Vec::new(), groups, started: Instant::now(), holders: vec![holder.into()], bytes: 0, cached: 0, files: 0, seen: HashSet::new(), keep: false, remote: true });
     }
 
     fn file(path: &str, hash: &str) -> HashedFile {
@@ -1878,7 +1962,7 @@ mod tests {
         let info = HeldInfo { package: "Packages/p1".into(), rig: "rigs/r.json".into(), pose: [0.0; 3] };
         r.held.insert(("me".into(), 1), Held { root: x, items: HashMap::from([(1, info)]), index: None, hashes: HashMap::new() });
         let jobs = vec![RenderJob { item: 1, entity: "e1".into(), holder: "me".into(), chunk: 1 }, RenderJob { item: 2, entity: "e2".into(), holder: "far".into(), chunk: 2 }];
-        r.start_fetch(None, LOCAL, 10, 64, jobs, PathBuf::new(), None, None, &mut |_| {});
+        r.start_fetch(None, LOCAL, 10, jobs, Look::default(), None, &mut |_| {});
         let order: Vec<&str> = r.local.iter().map(|(m, _)| match m {
             Msg::Unfetched { .. } => "unfetched",
             Msg::Fetched { .. } => "fetched",
@@ -1954,7 +2038,7 @@ mod tests {
         let info = |p: &str| HeldInfo { package: p.into(), rig: "rigs/r.json".into(), pose: [0.0; 3] };
         r.held.insert(("me".into(), 1), Held { root: x, items: HashMap::from([(1, info("Packages/p1")), (2, info("Packages/p2"))]), index: None, hashes: HashMap::new() });
         let jobs = (1..=2).map(|i| RenderJob { item: i, entity: format!("e{i}"), holder: "me".into(), chunk: 1 }).collect();
-        r.start_fetch(None, LOCAL, 10, 64, jobs, PathBuf::new(), None, None, &mut |_| {});
+        r.start_fetch(None, LOCAL, 10, jobs, Look::default(), None, &mut |_| {});
         let (failed, _) = sent(&mut r);
         assert_eq!(failed.iter().map(|f| f.0).collect::<Vec<_>>(), vec![1], "{failed:?}");
         assert!(failed[0].1.contains("over 259"), "{}", failed[0].1);
@@ -2010,11 +2094,12 @@ mod tests {
                 match ev {
                     HubEv::Msg { msg: Msg::ItemExported { item, ok, .. }, .. } => exported.push((item, ok)),
                     HubEv::Msg { msg: Msg::ExportDone { .. }, .. } => {
-                        // render the exported item where it is held, with the repo's render.py
+                        // render the exported item where it is held, with the repo's render.py and game-tile
                         let script = repo.join("blender/render.py");
-                        let files = vec![FileEntry { path: "render.py".into(), size: fs::metadata(&script).unwrap().len() }];
+                        let (files, paths) = crate::profile::Profile::base(&script).unwrap().payload(&script).unwrap();
                         let jobs = vec![RenderJob { item: 7, entity: "thumbnailentity_resource_rock_gold".into(), holder: "b".into(), chunk: 1 }];
-                        a.send(conn_a, Msg::Render { id: 2, size: 128, jobs, files }, Payload::Files(vec![script]));
+                        let msg = Msg::Render { id: 2, size: Some(128), format: None, profile: crate::profile::BASE.into(), jobs, files };
+                        a.send(conn_a, msg, Payload::Files(paths));
                         stage = 1;
                     }
                     HubEv::Msg { msg: Msg::Item { item, ok, info, .. }, data, .. } => items.push((item, ok, data.len(), info)),

@@ -18,6 +18,7 @@ mod entities;
 mod events;
 mod net;
 mod node;
+mod profile;
 mod store;
 mod tables;
 mod ui;
@@ -50,6 +51,8 @@ What to render
   --set <name>           target set (default main; a new name branches off main)
   --targets <file>       give the target set this target list
   --name <name>          run name (default: filter and scope)
+  --profile <p>          the look: a profile name (own ones in profiles/ of the packshot folder) or
+                         a profile folder (default game-tile)
 
 Modes
   --plain                no TUI: run here, one line per item
@@ -63,7 +66,8 @@ Tuning
   --exporters <n>        export processes (default: the assessment, else ¼ of the cores, at least 2)
   --chunk <n>            at most n items per chunk (default 50)
   --cache-limit <GB>     cache of files fetched from other nodes (default 20, 0 = no limit)
-  --size <px>            icon edge length (default 256)
+  --size <px>            icon edge length (default: the profile's)
+  --format <f>           png · jpeg · exr (default: the profile's)
   --refresh-tables       read the pose and light tables from the DataCore again
 
 Paths
@@ -204,7 +208,7 @@ fn real_main() -> Result<()> {
                     it.next();
                 }
             }
-            "filter" | "scope" | "set" | "name" | "workers" | "exporters" | "chunk" | "cache-limit" | "size" | "targets" | "p4k" | "starbreaker" | "blender" | "render-script" | "store" | "work" => {
+            "filter" | "scope" | "set" | "name" | "workers" | "exporters" | "chunk" | "cache-limit" | "size" | "format" | "profile" | "targets" | "p4k" | "starbreaker" | "blender" | "render-script" | "store" | "work" => {
                 let v = it.next().ok_or_else(|| anyhow!("--{key} needs a value"))?;
                 opt.insert(key.to_string(), v.clone());
             }
@@ -315,6 +319,15 @@ fn real_main() -> Result<()> {
     let render_script = path("render-script")
         .or_else(|| first_existing(&[root.join("blender/render.py"), root.join("cli/render.py")]))
         .ok_or_else(|| anyhow!("render.py not found (--render-script)"))?;
+    // the run's profile: without one this node renders for other nodes' runs but starts none
+    let profile = profile::resolve(opt.get("profile").map(String::as_str).unwrap_or(profile::BASE), &store_dir, &render_script, &root);
+    let profile_res = match &profile {
+        Ok(p) => Ok(format!("{} · {}", p.name, p.dir.display())),
+        Err(e) => Err((e.clone(), "Give --profile a profile name or folder; runs do not start here.".to_string())),
+    };
+    check("Profile", profile_res)?;
+    let format = opt.get("format").map(|f| if profile::FORMATS.contains(&f.as_str()) { Ok(f.clone()) } else { Err(anyhow!("--format {f}: png, jpeg or exr")) }).transpose()?;
+    let size = opt.get("size").map(|v| v.parse::<u32>().with_context(|| format!("--size {v}"))).transpose()?;
 
     let scope = match opt.get("scope") {
         Some(s) => Scope::parse(s).ok_or_else(|| anyhow!("--scope {s}: missing, failed or all"))?,
@@ -390,15 +403,15 @@ fn real_main() -> Result<()> {
         bail!("--plain and --dry-run need a target list in set {} (--targets <file>)", set.name);
     }
     let tables = if export && !tables_later { Tables::load(starbreaker.as_deref().unwrap_or(Path::new("")), &p4k, &work, flags.contains("refresh-tables"), |s| println!("{s}"))? } else { Tables::default() };
-    let cfg = Config { p4k, starbreaker: starbreaker.unwrap_or_default(), blender: blender.unwrap_or_default(), render_script, work: work.clone(), size: num("size", 256)? as u32, chunk: num("chunk", 50)?.max(1), cache_limit: num("cache-limit", 20)? as u64 * (1 << 30) };
+    let cfg = Config { p4k, starbreaker: starbreaker.unwrap_or_default(), blender: blender.unwrap_or_default(), render_script, work: work.clone(), size, format, profile, chunk: num("chunk", 50)?.max(1), cache_limit: num("cache-limit", 20)? as u64 * (1 << 30) };
     // Network only with a token and not for a dry run; files of an earlier session in the inbox are stale
     if net_cfg.enabled() && !args.dry_run {
         let _ = fs::remove_dir_all(work.join("inbox"));
     }
-    // exports, fetched files and render folders of an earlier session are stale too (a run that ended early leaves
-    // them; its failures are in its run.log)
+    // exports, fetched files, received profiles and render folders of an earlier session are stale too (a run that
+    // ended early leaves them; its failures are in its run.log)
     if !args.dry_run {
-        for d in ["export", "cas", "fetch", "send"] {
+        for d in ["export", "cas", "fetch", "send", "profile-cache"] {
             let _ = fs::remove_dir_all(work.join(d));
         }
     }

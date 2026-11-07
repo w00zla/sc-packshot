@@ -37,9 +37,9 @@
 
 Download the bundle for your OS from the [releases](https://github.com/w00zla/sc-packshot/releases)
 (`packshot-<version>-windows-x64.zip` or `packshot-<version>-linux-x64.tar.gz`; `SHA256SUMS` lists their checksums) and
-unpack it anywhere. It carries packshot, StarBreaker with its Blender add-on and `render.py`, and needs nothing
-installed. Blender is not in it: the setup takes the version `blender.pin` names, from the bundle's folder if you put
-the official archive there, else downloaded from blender.org, and checks its SHA256.
+unpack it anywhere. It carries packshot, StarBreaker with its Blender add-on, `render.py` and the bundled profiles, and
+needs nothing installed. Blender is not in it: the setup takes the version `blender.pin` names, from the bundle's folder
+if you put the official archive there, else downloaded from blender.org, and checks its SHA256.
 
 ```bat
 setup.cmd                     :: Blender into .\blender, the add-on enabled (Linux: bash setup.sh)
@@ -56,6 +56,11 @@ Blender, StarBreaker, `Data.p4k`, the DataCore tables and the entity list, each 
 what to do and turns off only what needs it (no Blender: no rendering; no `Data.p4k`: no exports). The first run start
 asks for the target list: a JSON file, or one built in the target picker from the game's entities
 ([Target lists](#target-lists)).
+
+The look comes from a **profile** (`--profile <name|folder>`, default `game-tile`): a folder with `profile.toml`
+(parameters such as size, samples, format) and `hooks.py`; `game-tile`'s parameters and hooks fill in what a profile
+leaves out. Own profiles go into `profiles/` in the packshot folder (in a bundle: the bundle's `profiles/`) and hide a
+bundled one of the same name. `--size` and `--format png|jpeg|exr` override the profile's values for a run.
 
 Cluster: copy `packshot.example.json` to `packshot.json` on every node, set the same `token`, open port 47950 (TCP and
 UDP) on the LAN; nodes on another subnet go into `peers`. Process counts default to the node's measured
@@ -95,7 +100,7 @@ details.
 | `n` · `t` | new set (branches off `main`) · its target list (a file, or the target picker) |
 | `l` | adopt an experiment into `main` |
 | `x` | delete a run or a set |
-| `i` | the run's details: add-on, `render.py`, Blender, StarBreaker, `Data.p4k`, workers |
+| `i` | the run's details: add-on, `render.py`, Blender, StarBreaker, profile, `Data.p4k`, workers |
 
 ### Nodes
 
@@ -120,8 +125,8 @@ packshot renders nothing itself. It cuts the selected targets into chunks and ha
 | Stage | Process | Result |
 |---|---|---|
 | Export | `starbreaker entity export-batch --stdin`, one per export slot | a decomposed package per entity: `scene.blend`, meshes, PNG textures, material sidecars |
-| Render | `blender -b --python render.py -- --stdin`, one per render slot | the add-on builds the materials, `render.py` stages and renders one PNG per entity |
-| Store | packshot | the PNG in the run's folder, hard-linked into the target set |
+| Render | `blender -b --python render.py -- --stdin`, one per render slot | the add-on builds the materials, the profile stages and renders one image per entity |
+| Store | packshot | the image in the run's folder, hard-linked into the target set |
 
 Between the stages every exported item waits in the **pool**, held on the node that exported it; a render chunk may
 take items from any holder and fetches their files from there. Chunks shrink towards the end of a run, so all
@@ -149,9 +154,9 @@ Every render slot runs one portable Blender of the version `deps.toml` pins (5.2
 
 | | |
 |---|---|
-| Renderer | Eevee on the **Vulkan** backend, 16 samples, transparent film, 256 px (`--size`) |
+| Renderer | Eevee on the **Vulkan** backend, 16 samples, transparent film, 256 px PNG (`game-tile`; `--size`, `--format`) |
 | Staging | pose and light rig from the game's inventory data (per item type), the item scaled to 0.7 m |
-| Look | linear EXR mapped by `render.py`'s own tone curve, a studio world, boosted emission with bloom, a second pass for light behind glass |
+| Look | (`game-tile`) linear EXR mapped by its own tone curve, a studio world, boosted emission with bloom, a second pass for light behind glass |
 
 ### Runs and sets
 
@@ -197,14 +202,16 @@ The entity list behind it is read once per game build (a few seconds) and cached
 Every node starts with what it can do now (`--render`, `--export`, both or neither). Any node can start a run, on
 itself or on another node, which then holds it as the **head node** and assigns the chunks. One run at a time in the
 cluster. Every node must run the same packshot build, Blender, add-on and StarBreaker, and the exporting nodes the same
-`Data.p4k`; otherwise no run starts and the TUI shows what differs.
+`Data.p4k`; otherwise no run starts and the TUI shows what differs. `render.py` and the run's profile come from the head
+node with every render chunk.
 
 ## Develop
 
 | Path | What |
 |---|---|
 | `src/` | the orchestrator (Rust): selection, scheduler, cluster, runs and sets, assessment, TUI |
-| `blender/render.py` | runs inside Blender: pose, fit, light rig, material tweaks, Eevee render, tone curve, PNG |
+| `blender/render.py` | runs inside Blender: opens the item, calls the profile's hooks, renders a linear EXR for its `post` hook |
+| `profiles/` | the bundled profiles: `game-tile` (pose, fit, light rig, material tweaks, tone curve; PNG, JPEG or EXR) |
 | `shim/` | RDSEED shim for Blender on Linux (built by `build.rs`, embedded in the binary) |
 | `templates/bundle/` | templates of the per-OS bundles (setup, check, run, README, cluster config) |
 | `deps.toml` | the pins: Blender version and archive SHA256s, the StarBreaker release with its SHA256s and commit |

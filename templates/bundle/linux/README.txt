@@ -1,7 +1,8 @@
 packshot bundle, Linux
 
 Contents: packshot (static binary), starbreaker/ (StarBreaker CLI, our fork), addon/ (its Blender add-on),
-cli/render.py, blender.pin (the Blender version and its SHA256), targets/ (targets.json, the target list, if one was bundled),
+cli/render.py, profiles/ (game-tile, the default look; own profiles go there too, --profile picks one), blender.pin
+(the Blender version and its SHA256), targets/ (targets.json, the target list, if one was bundled),
 setup.sh, check.sh, run.sh, packshot.example.json (cluster settings). Blender is not in the bundle: setup.sh gets it.
 The first run start (Enter) asks for main's target list: choose targets/targets.json in the dialog; every set keeps its
 own (t in view 2 replaces it).

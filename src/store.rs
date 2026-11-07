@@ -375,7 +375,8 @@ impl Store {
         Ok(r)
     }
 
-    /// Builds the set folder from the chain: create, replace and remove hardlinks, foreign PNGs gone.
+    /// Builds the set folder from the chain: create, replace and remove hardlinks, foreign images gone (an entity keeps
+    /// only its newest run's files, whatever their format).
     /// Returns (created, removed)
     pub fn sync(&mut self, set: &mut SetInfo) -> Result<(usize, usize)> {
         let resolved = self.resolve(set)?;
@@ -397,7 +398,7 @@ impl Store {
         }
         for e in fs::read_dir(&dir)?.flatten() {
             let f = e.file_name().to_string_lossy().to_string();
-            if f.to_lowercase().ends_with(".png") && !want.contains_key(&f) && !set.files.contains_key(&f) {
+            if crate::profile::is_image(Path::new(&f)) && !want.contains_key(&f) && !set.files.contains_key(&f) {
                 remove_link(&e.path(), None)?;
                 removed += 1;
             }

@@ -813,7 +813,7 @@ impl Engine {
         info.id = new_id.clone();
         self.store.save_run(&info)?;
         for e in fs::read_dir(&target)?.flatten() {
-            if e.path().extension().is_some_and(|x| x.eq_ignore_ascii_case("png")) {
+            if crate::profile::is_image(&e.path()) {
                 let mut p = fs::metadata(e.path())?.permissions();
                 p.set_readonly(true);
                 fs::set_permissions(e.path(), p)?;
@@ -925,7 +925,7 @@ mod tests {
         let me = Hello { name: cfg.name.clone(), version: "t".into(), render, export, blender: "5.2.3".into(), addon: Some("a".into()), slots: render as usize, exporters: export as usize, ..Default::default() };
         let hub = Hub::new(cfg, me.clone(), root.join("inbox"));
         let x = root.join("no-such-tool");
-        let config = Config { p4k: x.clone(), starbreaker: x.clone(), blender: x.clone(), render_script: x, work: root.join("work"), size: 256, chunk: 50, cache_limit: 0 };
+        let config = Config { p4k: x.clone(), starbreaker: x.clone(), blender: x.clone(), render_script: x.clone(), work: root.join("work"), size: None, format: None, profile: Ok(crate::profile::Profile::stub(&x)), chunk: 50, cache_limit: 0 };
         let mut e = Engine::new(config, Vec::new(), Tables::default(), store, set, Some(hub), me).unwrap();
         e.max_renderers = render as usize;
         e.max_exporters = export as usize;
@@ -1418,6 +1418,8 @@ else:
         let rig = dir.join("rig.json");
         fs::write(&rig, "{}").unwrap();
         fs::write(dir.join("render.py"), "# render").unwrap();
+        fs::create_dir_all(dir.join("profiles/game-tile")).unwrap();
+        fs::write(dir.join("profiles/game-tile/profile.toml"), "[params]\nsize = 256\n").unwrap();
         fs::write(dir.join("Data.p4k"), "").unwrap();
         let config = Config {
             p4k: dir.join("Data.p4k"),
@@ -1425,7 +1427,9 @@ else:
             blender: script(&dir.join("tools/blender"), FAKE_BLENDER),
             render_script: dir.join("render.py"),
             work: dir.join("work"),
-            size: 64,
+            size: Some(64),
+            format: None,
+            profile: crate::profile::resolve(crate::profile::BASE, &dir.join("store"), &dir.join("render.py"), &dir),
             chunk,
             cache_limit: 0,
         };
@@ -1975,7 +1979,7 @@ mod real_tests {
         me.name = name.into();
         let hub = Hub::new(NetConfig { name: name.into(), token: "t".into(), listen, peers, discovery: false }, me.clone(), dir.join("inbox"));
         let tables = if export { crate::cas::tests::repo_tables(&dir.join("work")) } else { crate::tables::Tables::default() };
-        let cfg = Config { p4k, starbreaker, blender, render_script: repo.join("blender/render.py"), work: dir.join("work"), size: 128, chunk: 50, cache_limit: 0 };
+        let cfg = Config { p4k, starbreaker, blender, render_script: repo.join("blender/render.py"), work: dir.join("work"), size: Some(128), format: None, profile: crate::profile::resolve(crate::profile::BASE, &dir, &repo.join("blender/render.py"), &repo), chunk: 50, cache_limit: 0 };
         let mut e = Engine::new(cfg, targets, tables, store, set, Some(hub), me).unwrap();
         e.max_renderers = if render { 2 } else { 0 };
         e.max_exporters = if export { 2 } else { 0 };

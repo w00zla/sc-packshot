@@ -361,6 +361,7 @@ fn finish(e: &mut Engine, minutes: f64) {
         // the synthetic state has no render.py or Blender to read: fixed values for the runs table
         info.origin["render_py"] = "6da3cb0c523f77d7".into();
         info.origin["blender_version"] = "5.2.3".into();
+        info.origin["profile_hash"] = "3f9c0e7a51d2b864".into();
         if let Ok(t) = chrono::DateTime::parse_from_rfc3339(&info.started) {
             info.started = (t - chrono::Duration::seconds((minutes * 60.0) as i64)).to_rfc3339();
             e.store.save_run(&info).unwrap();
@@ -399,7 +400,7 @@ fn scene(cell: (u16, u16)) -> Scene {
     let x = root.join("x");
     let rig = root.join("inventorylightgroup_studio_a.json");
     std::fs::write(&rig, "{}").unwrap();
-    let cfg = Config { p4k: x.clone(), starbreaker: x.clone(), blender: x.clone(), render_script: x, work: root.join("work"), size: 256, chunk: 50, cache_limit: 0 };
+    let cfg = Config { p4k: x.clone(), starbreaker: x.clone(), blender: x.clone(), render_script: x.clone(), work: root.join("work"), size: None, format: None, profile: Ok(crate::profile::Profile::stub(&x)), chunk: 50, cache_limit: 0 };
     let mut e = Engine::new(cfg, all.clone(), Tables::with_rig(rig), store, main, Some(hub), me).unwrap();
     e.max_renderers = 6;
     e.max_exporters = 2;

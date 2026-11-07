@@ -19,6 +19,7 @@ use serde_json::json;
 use crate::events::{EventLog, GpuProbe, file_hash, round3};
 use crate::net::{Hello, Hub, ItemJob, Msg, Payload, RenderJob, RunStatus, RunSummary};
 use crate::node::LOCAL;
+use crate::profile::Profile;
 use crate::store::{EntityResult, Resolved, RunInfo, SetInfo, Store};
 use crate::tables::Tables;
 
@@ -48,10 +49,25 @@ pub struct Config {
     pub blender: PathBuf,
     pub render_script: PathBuf,
     pub work: PathBuf,
-    pub size: u32,
+    /// --size and --format: they override the profile's (None: the profile's applies, render.py reads it)
+    pub size: Option<u32>,
+    pub format: Option<String>,
+    /// the runs' profile (--profile); Err: why there is none (no run starts here)
+    pub profile: std::result::Result<Profile, String>,
     pub chunk: usize,
     /// fetched-file cache limit of a rendering node in bytes (0 = none)
     pub cache_limit: u64,
+}
+
+impl Config {
+    /// The runs' output format: --format, else the profile's (png without either)
+    pub fn out_format(&self) -> String {
+        self.format.clone().or_else(|| self.profile.as_ref().ok().and_then(|p| p.param("format"))).unwrap_or_else(|| "png".into())
+    }
+    /// The runs' image size: --size, else the profile's
+    pub fn out_size(&self) -> Option<u32> {
+        self.size.or_else(|| self.profile.as_ref().ok().and_then(|p| p.param("size")).and_then(|s| s.parse().ok()))
+    }
 }
 
 /// What gets rendered from the filter selection
@@ -253,6 +269,8 @@ pub struct Run {
     pub phase_n: usize,
     /// run_end is already in the event log
     logged_end: bool,
+    /// the extension of the run's output format (fixed at its start)
+    pub(crate) ext: &'static str,
 }
 
 /// Phases per render, as render.py appends them to the icon: line ("timing load=… prep=… render=… glass=… post=…")
@@ -471,11 +489,11 @@ fn sanitize(name: &str) -> String {
     s.trim().chars().take(80).collect()
 }
 
-/// File name of an icon as in cli.ts: "display name (class name) <uuid>.png"
-fn icon_file(t: &Target, k: usize) -> String {
+/// File name of an icon as in cli.ts: "display name (class name) <uuid>.<ext>" (the run's format's extension)
+fn icon_file(t: &Target, k: usize, ext: &str) -> String {
     let name = sanitize(t.names.as_ref().and_then(|n| n.get(k)).map(String::as_str).unwrap_or(""));
     let prefix = if name.is_empty() { String::new() } else { format!("{name} ") };
-    format!("{prefix}({}) {}.png", t.entity, t.uuids[k])
+    format!("{prefix}({}) {}.{ext}", t.entity, t.uuids[k])
 }
 
 pub(crate) fn too_long(root: &Path, limit: usize) -> (usize, Option<PathBuf>) {
@@ -591,6 +609,7 @@ impl Engine {
         let haystack = targets.iter().map(search_text).collect();
         let manifest = crate::cluster::load_manifest(&store.root);
         let mut serve = crate::node::Renderer::new(&me.name, &cfg.work, cfg.blender.clone(), cfg.render_script.clone(), 0);
+        serve.profile = cfg.profile.as_ref().map(|p| p.dir.clone()).unwrap_or_default();
         serve.set_cache_limit(cfg.cache_limit);
         if me.export {
             serve.tools = Some(crate::node::ExportTools { starbreaker: cfg.starbreaker.clone(), p4k: cfg.p4k.clone() });
@@ -736,7 +755,8 @@ impl Engine {
         }
     }
 
-    /// Origin of the run for run_start: machine, processes, versions of render.py, addon, StarBreaker and p4k
+    /// Origin of the run for run_start: machine, processes, versions of render.py, addon, StarBreaker and p4k, the
+    /// profile
     #[allow(clippy::too_many_arguments)]
     fn run_meta(&self, run_id: &str, args_line: &str, filter: &str, scope: Scope, total: usize, blocks: usize, size: usize) -> serde_json::Value {
         let version = self.me.blender.clone();
@@ -777,7 +797,11 @@ impl Engine {
             "p4k_id": exporter.as_ref().and_then(|h| h.p4k_id.clone()),
             "p4k_version": exporter.as_ref().and_then(|h| h.p4k_version.clone()),
             "p4k_mtime": p4k.and_then(|m| m.modified().ok()).and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| d.as_secs()),
-            "size": self.cfg.size,
+            // the profile with game-tile under it, and what the run renders with it (flags over the profile's)
+            "profile": self.cfg.profile.as_ref().ok().map(|p| p.name.clone()),
+            "profile_hash": self.cfg.profile.as_ref().ok().and_then(Profile::hash),
+            "size": self.cfg.out_size(),
+            "format": self.cfg.out_format(),
         })
     }
 
@@ -819,9 +843,10 @@ impl Engine {
         self.gpu = None;
     }
 
-    /// Where Blender renders to; the image then moves into the run
+    /// Where an image from a Blender lands (with the run's extension); it then moves into the run
     pub(crate) fn render_png(&self, t: usize) -> PathBuf {
-        self.cfg.work.join("render").join(format!("{}.png", self.targets[t].entity))
+        let ext = self.run.as_ref().map(|r| r.ext).unwrap_or("png");
+        self.cfg.work.join("render").join(format!("{}.{ext}", self.targets[t].entity))
     }
 
     /// The entity's image in the target set (first UUID)
@@ -921,6 +946,9 @@ impl Engine {
     /// connected nodes that take part, `starter`: the node that asked for it (cluster.rs)
     #[allow(clippy::too_many_arguments)]
     pub fn start(&mut self, todo: &[usize], args_line: &str, filter: &str, scope: Scope, name: &str, nodes: Vec<String>, starter: &str) -> Result<()> {
+        if let Err(e) = &self.cfg.profile {
+            anyhow::bail!("no profile: {e}");
+        }
         if let Some(s) = self.serve.as_mut() {
             s.blender_log(&format!("=== {}", chrono::Local::now().to_rfc3339()));
         }
@@ -952,6 +980,7 @@ impl Engine {
             phase_sum: [0.0; 5],
             phase_n: 0,
             logged_end: false,
+            ext: crate::profile::ext(&self.cfg.out_format()),
         });
         // The run: folder with start time and name, run.json with the origin, at the end of the chain in the target set
         let name = if name.trim().is_empty() { self.default_run_name(filter, scope) } else { name.trim().to_string() };
@@ -1244,22 +1273,25 @@ impl Engine {
         let worker = self.workers.last().map(Worker::label).unwrap_or_default();
         let wait = if waits.is_empty() { 0.0 } else { waits.iter().sum::<f64>() / waits.len() as f64 };
         self.emit("render_start", json!({ "block": id, "worker": worker, "items": n, "queue_wait": round3(wait), "holders": holders }));
-        // the other nodes render with the head node's render.py
-        let (files, payload) = if conn == LOCAL {
-            (Vec::new(), Payload::None)
-        } else {
-            match fs::metadata(&self.cfg.render_script) {
-                Ok(m) => (vec![crate::net::FileEntry { path: "render.py".into(), size: m.len() }], Payload::Files(vec![self.cfg.render_script.clone()])),
-                Err(e) => {
-                    self.workers.pop();
-                    for t in items {
-                        self.record(t, false, Some(format!("render.py: {e}")), 0.0, "render", "");
-                    }
-                    return;
+        // the other nodes render with the head node's render.py, game-tile and the run's profile (ADR 0024); this one
+        // with its own folders
+        let sent = match &self.cfg.profile {
+            Ok(_) if conn == LOCAL => Ok((Vec::new(), Payload::None)),
+            Ok(p) => p.payload(&self.cfg.render_script).map(|(files, paths)| (files, Payload::Files(paths))).map_err(|e| format!("{e:#}")),
+            Err(e) => Err(format!("no profile: {e}")),
+        };
+        let (files, payload) = match sent {
+            Ok(x) => x,
+            Err(e) => {
+                self.workers.pop();
+                for t in items {
+                    self.record(t, false, Some(format!("render.py and profile: {e}")), 0.0, "render", "");
                 }
+                return;
             }
         };
-        self.dispatch(conn, Msg::Render { id, size: self.cfg.size, jobs, files }, payload);
+        let profile = self.cfg.profile.as_ref().map(|p| p.name.clone()).unwrap_or_default();
+        self.dispatch(conn, Msg::Render { id, size: self.cfg.size, format: self.cfg.format.clone(), profile, jobs, files }, payload);
     }
 
     /// Result of an item (export failure or render result); a failure's first line is the message, further lines the
@@ -1308,8 +1340,9 @@ impl Engine {
 
     /// The finished image into the run (one file per UUID) and as hardlinks into the target set; the entity's old ones go
     fn place_icons(&mut self, t: usize) -> Result<()> {
+        let ext = self.run.as_ref().map(|r| r.ext).unwrap_or("png");
         let tg = &self.targets[t];
-        let files: Vec<String> = (0..tg.uuids.len()).map(|k| icon_file(tg, k)).collect();
+        let files: Vec<String> = (0..tg.uuids.len()).map(|k| icon_file(tg, k, ext)).collect();
         let entity = tg.entity.clone();
         let run_id = self.record.as_ref().map(|r| r.id.clone()).context("no run")?;
         self.store.put_image(&run_id, &self.render_png(t), &files)?;

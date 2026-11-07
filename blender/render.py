@@ -9,8 +9,8 @@
 # the materials on opening). This file is the core: it opens the item, calls the profile's hooks, renders a linear
 # multi-layer EXR and hands it to the profile's post hook, which writes the output. The look lives in the profile
 # (profile.toml + hooks.py, default profiles/game-tile); a hook the profile leaves out runs game-tile's.
-# Parameters: profile.toml [params], then this script's flags, then the job's fields (packshot sends size only when
-# --size was given).
+# Parameters: profile.toml [params], then this script's flags, then the job's fields (packshot sends size and format
+# only when --size or --format was given).
 import argparse
 import importlib.util
 import json
@@ -101,7 +101,7 @@ class Context:
 
     def __init__(self, job, profile):
         self.job = job
-        self.params = {**profile.params, **{k: job[k] for k in ('size',) if job.get(k) is not None}}
+        self.params = {**profile.params, **{k: job[k] for k in ('size', 'format') if job.get(k) is not None}}
         self.scene = None
         self.src, self.out = job['src'], job['out']
         self.profile = profile.folder

@@ -15,7 +15,7 @@ read by packshot itself. No database: the target list is a file per set.
 | Stage | What happens |
 |---|---|
 | Export | StarBreaker reads an entity from `Data.p4k` and writes a decomposed package: `scene.blend`, meshes, PNG textures and the material sidecars |
-| Render | Blender loads the package; the StarBreaker add-on builds the node trees from the sidecars; `render.py` sets pose, fit and light rig, renders with Eevee and writes the PNG through its own tone curve |
+| Render | Blender loads the package; the StarBreaker add-on builds the node trees from the sidecars; `render.py` calls the run's profile (default `game-tile`): pose, fit and light rig, an Eevee render to a linear EXR, the image (PNG, JPEG or EXR) through the profile's tone curve |
 | Store | the image goes into the run's folder, never changed afterwards, and as a hard link into the target set; consumers read `sets/main` |
 
 ## Material sidecars
@@ -61,7 +61,8 @@ Only network reads and process output have threads of their own, which hand over
 | `cas.rs` | an item's closure, content hashes (xxh3-128), the renderer's content cache with its size limit |
 | `tables.rs` | pose and light tables of the inventory from the DataCore, cached in the work folder |
 | `blender.rs`, `shim/` | one command line for every Blender; on Linux the RDSEED shim via `LD_PRELOAD` |
-| `blender/render.py` | runs inside Blender: loads the package, stages, renders, answers `icon:` or `failed:` with phase timings |
+| `blender/render.py` | runs inside Blender: loads the package, calls the profile's hooks, renders, answers `icon:` or `failed:` with phase timings |
+| `profile.rs`, `profiles/` | profiles: resolution (`--profile`), content hash, the files a render chunk carries; `game-tile`, the default look |
 
 ## An item through a run
 
@@ -159,7 +160,7 @@ the versions of all connected nodes; if anything differs, no run starts and the 
 | add-on | hash over the add-on's files | all nodes |
 | StarBreaker | the commit in the `COMMIT` file next to the binary | all nodes |
 | Data.p4k | size plus branch, version and build id from `build_manifest.id` | exporting nodes, among each other |
-| `render.py` | travels with every render chunk from the head node | distributed, not compared |
+| `render.py`, profile | travel with every render chunk from the head node (with `game-tile`, the base of every profile) | distributed, not compared |
 
 ## Compute assessment
 
@@ -170,11 +171,15 @@ the gain drops below 5 % or RAM or VRAM run out; then an export sweep with the B
 (CPU per core, GPU, VRAM, RAM). The result goes into `assessment.json` and stays valid while host, CPU, GPU and the
 versions stay the same; it sets the default counts and the chunk sizes.
 
-## Outlook: profiles
+## Profiles
 
-Today the look is built in: `render.py` mixes pipeline, material tweaks and photo scene, and the add-on comes from the
-fork. Decided, not built: packshot becomes modular ([ADR 0022](adr/0022-modular-profiles.md)). A **profile** combines
-exchangeable modules (targets, exporter by release pin, material add-on plus override script, scene as a `.blend`
-template, output formats) and today's look becomes the default profile; the head node hands profiles to the nodes
-([ADR 0024](adr/0024-head-node-distributes-profiles.md)). Cluster, chunks, runs, sets and assessment do not depend on the
-look; they are the core that profiles only refit.
+The look is a **profile** ([ADR 0022](adr/0022-modular-profiles.md), [0041](adr/0041-profile-hooks.md),
+[0042](adr/0042-profile-folder-and-hook-signatures.md)): a folder with `profile.toml` (parameters such as size,
+samples, format) and `hooks.py` (`before_open`, `after_open`, `stage`, `post`). `render.py` is the core; the bundled
+`game-tile` is the default and the base of every profile: its parameters lie under a profile's, its hooks run where a
+profile has none. A run's profile comes from `--profile` (a name: an own one in the packshot folder's `profiles/` hides a
+bundled one; or a folder); `--size` and `--format` override its values. The head node sends `render.py`, `game-tile` and
+the run's profile with every render chunk ([ADR 0024](adr/0024-head-node-distributes-profiles.md)); a node keeps them in
+its work folder by content hash and starts a Blender per `render.py` and profile. The run records the profile's name and
+hash. The assessment always measures `game-tile` as PNG. Cluster, chunks, runs, sets and assessment do not depend on the
+look.

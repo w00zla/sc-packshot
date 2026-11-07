@@ -268,8 +268,19 @@ pub enum Msg {
     /// head node -> holder: these export chunks are done (every item rendered or failed), their folders can go
     Release { chunks: Vec<u64> },
     /// head node -> rendering node: render these items (by one Blender), fetching what is held elsewhere straight
-    /// from its holder (files: render.py)
-    Render { id: u64, size: u32, jobs: Vec<RenderJob>, files: Vec<FileEntry> },
+    /// from its holder (files: render.py, profiles/game-tile/..., profiles/<profile>/...); size and format only when
+    /// the run sets them (else the profile's)
+    Render {
+        id: u64,
+        #[serde(default)]
+        size: Option<u32>,
+        #[serde(default)]
+        format: Option<String>,
+        #[serde(default)]
+        profile: String,
+        jobs: Vec<RenderJob>,
+        files: Vec<FileEntry>,
+    },
     /// rendering node -> head node: the render chunk's files are here (from which holders, bytes fetched and taken
     /// from the cache, how long it took)
     Fetched { id: u64, holders: Vec<String>, bytes: u64, cached: u64, files: usize, secs: f64 },
@@ -1055,7 +1066,7 @@ mod tests {
         fs::write(src.join("sub").join("b.bin"), vec![7u8; 100_000]).unwrap();
         let (files, paths) = collect_files(&src, "x/").unwrap();
         let mut buf = Vec::new();
-        write_frame(&mut buf, &Msg::Render { id: 3, size: 256, jobs: Vec::new(), files: files.clone() }, &Payload::Files(paths)).unwrap();
+        write_frame(&mut buf, &Msg::Render { id: 3, size: Some(256), format: None, profile: "game-tile".into(), jobs: Vec::new(), files: files.clone() }, &Payload::Files(paths)).unwrap();
         write_frame(&mut buf, &Msg::Item { block: 3, item: 1, ok: true, info: "i".into() }, &Payload::Bytes(vec![1, 2, 3])).unwrap();
         let mut r = io::Cursor::new(buf);
         let mut seq = 0;

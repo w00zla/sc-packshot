@@ -79,7 +79,8 @@ impl Keys {
         Self {
             blender: me.blender.clone(),
             gpu: me.gpu.clone(),
-            render_py: crate::events::file_hash(render_script),
+            // render.py with game-tile, which the sweep renders
+            render_py: crate::profile::Profile::base(render_script).and_then(|p| p.key(render_script)),
             addon: me.addon.clone(),
             starbreaker: me.starbreaker.clone(),
             host: Some(me.name.clone()),
@@ -294,7 +295,10 @@ struct TestSetFile {
 pub struct SweepParams {
     pub blender: PathBuf,
     pub script: PathBuf,
-    pub size: u32,
+    /// game-tile beside it: the sweep always measures it, as PNG (the validity keys stay meaningful)
+    pub profile: PathBuf,
+    /// --size (None: game-tile's)
+    pub size: Option<u32>,
     pub chunk: usize,
     /// test set: (entity, worn, scene.blend, rig, pose)
     pub items: Vec<(String, bool, PathBuf, PathBuf, [f64; 3])>,
@@ -489,7 +493,11 @@ impl Proc {
 /// A render job line for item `i` of the test set, its image into `dir`
 fn render_line(p: &SweepParams, i: usize, dir: &Path) -> String {
     let (_, _, src, rig, pose) = &p.items[i];
-    json!({ "src": src, "out": dir.join(format!("{i}.png")), "pose": pose, "rig": rig, "size": p.size }).to_string()
+    let mut job = json!({ "src": src, "out": dir.join(format!("{i}.png")), "pose": pose, "rig": rig, "format": "png" });
+    if let Some(s) = p.size {
+        job["size"] = json!(s);
+    }
+    job.to_string()
 }
 
 /// A ready process gets its work: export-batch --stdin its chunk at once, a Blender its next job (and LOOKAHEAD
@@ -554,7 +562,7 @@ impl Drop for Sweep {
 
 /// The item index from an output path "<dir>/<i>.png" in a render.py line
 fn item_of(rest: &str) -> Option<usize> {
-    let end = rest.to_lowercase().find(".png")?;
+    let (end, _) = crate::node::image_end(rest)?;
     let path = &rest[..end];
     let stem = path.rsplit(['/', '\\']).next()?;
     stem.parse().ok()
@@ -594,6 +602,9 @@ impl Sweep {
             todo = items.iter().map(|&i| render_line(&self.p, i, dir)).collect();
             let mut c = crate::blender::command(&self.p.blender);
             c.arg("--gpu-backend").arg("vulkan").arg("--python").arg(&self.p.script).arg("--").arg("--stdin");
+            if !self.p.profile.as_os_str().is_empty() {
+                c.arg("--profile").arg(&self.p.profile);
+            }
             c
         };
         let started = Instant::now();
@@ -1465,6 +1476,7 @@ impl Engine {
         let p = SweepParams {
             blender: self.cfg.blender.clone(),
             script: self.cfg.render_script.clone(),
+            profile: crate::profile::base_dir(&self.cfg.render_script).unwrap_or_default(),
             size: self.cfg.size,
             chunk: self.cfg.chunk,
             items,

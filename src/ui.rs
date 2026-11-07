@@ -1928,7 +1928,7 @@ fn draw_sets(f: &mut Frame, app: &mut App, area: Rect) {
     let top = app.set_sel.saturating_sub(h.saturating_sub(1).min(h / 2)).min(app.set_rows.len().saturating_sub(h));
     let me = app.engine.me.name.clone();
     let active = app.engine.set.name.clone();
-    let mut lines = vec![Line::from(format!("{:<36}{:<12}{:<16}{:>8} {:<8} {:<9} {:<7} {:<11}", "Set / run", "Node", "Targets / filter", "Images", "Add-on", "render.py", "Blender", "StarBreaker")).fg(DIM)];
+    let mut lines = vec![Line::from(format!("{:<36}{:<12}{:<16}{:>8} {:<8} {:<9} {:<7} {:<11} {:<11}", "Set / run", "Node", "Targets / filter", "Images", "Add-on", "render.py", "Blender", "StarBreaker", "Profile")).fg(DIM)];
     let rows: Vec<SetRow> = app.set_rows.iter().skip(top).take(h.saturating_sub(1)).cloned().collect();
     for (i, row) in rows.iter().enumerate() {
         let mut line = match row {
@@ -1953,7 +1953,7 @@ fn draw_sets(f: &mut Frame, app: &mut App, area: Rect) {
                 let filter = r.as_ref().map(|r| r.origin["filter"].as_str().unwrap_or("").to_string()).unwrap_or_default();
                 let images = r.as_ref().map(|r| r.entities.values().filter(|e| e.ok).count()).unwrap_or(0);
                 let origin = |k: &str, n: usize| r.as_ref().and_then(|r| r.origin[k].as_str().map(|s| s.chars().take(n).collect::<String>())).unwrap_or_else(|| "–".into());
-                let (addon, render_py, blender, starbreaker) = (origin("addon", 8), origin("render_py", 8), origin("blender_version", 7), origin("starbreaker", 8));
+                let (addon, render_py, blender, starbreaker, profile) = (origin("addon", 8), origin("render_py", 8), origin("blender_version", 7), origin("starbreaker", 8), origin("profile", 11));
                 let running = r.as_ref().is_some_and(|r| r.finished.is_none());
                 let label = format!("    {}  {}", run_date(id), name);
                 Line::from(vec![
@@ -1964,6 +1964,7 @@ fn draw_sets(f: &mut Frame, app: &mut App, area: Rect) {
                     Span::styled(format!(" {addon:<8} {render_py:<9} "), Style::new().fg(DIM)),
                     Span::raw(format!("{blender:<7} ")),
                     Span::styled(format!("{starbreaker:<11}"), Style::new().fg(DIM)),
+                    Span::raw(format!(" {profile:<11}")),
                     if running { Span::styled(" running", Style::new().fg(WARN)) } else { "".into() },
                 ])
             }
@@ -2124,6 +2125,9 @@ fn draw_run_detail(f: &mut Frame, app: &mut App, area: Rect, id: &str) {
         lines.push(row("render.py", s("render_py")));
         lines.push(row("Blender", format!("{} · {}", s("blender_version"), s("gpu_backend"))));
         lines.push(row("StarBreaker", s("starbreaker")));
+        // runs before profiles have none
+        let output: Vec<String> = [o["format"].as_str().map(String::from), o["size"].as_u64().map(|s| format!("{s} px"))].into_iter().flatten().collect();
+        lines.push(row("Profile", [o["profile"].as_str().map(String::from), o["profile_hash"].as_str().map(String::from)].into_iter().flatten().chain(output).collect::<Vec<_>>().join(" · ")));
         let p4k_date = o["p4k_mtime"].as_i64().and_then(|t| chrono::DateTime::from_timestamp(t, 0)).map(|d| d.format("%Y-%m-%d").to_string()).unwrap_or_default();
         let p4k_v = o["p4k_version"].as_str().map(|v| format!("{v} · ")).unwrap_or_default();
         let p4k_id = o["p4k_id"].as_str().map(|v| format!(" · {}", v.get(..8).unwrap_or(v))).unwrap_or_default();
@@ -2562,7 +2566,7 @@ mod tests {
         let store = Store::open(&root.join("store")).unwrap();
         let set = store.load_set(MAIN).unwrap();
         let x = root.join("x");
-        let cfg = Config { p4k: x.clone(), starbreaker: x.clone(), blender: x.clone(), render_script: x, work: root.join("work"), size: 256, chunk: 50, cache_limit: 0 };
+        let cfg = Config { p4k: x.clone(), starbreaker: x.clone(), blender: x.clone(), render_script: x.clone(), work: root.join("work"), size: None, format: None, profile: Ok(crate::profile::Profile::stub(&x)), chunk: 50, cache_limit: 0 };
         let mut engine = Engine::new(cfg, Vec::new(), Tables::default(), store, set, None, Hello { name: "N".into(), ..Default::default() }).unwrap();
         engine.targets_file = root.join("store").join("targets").join("targets.json");
         let args = Args { filter: String::new(), scope: Scope::Missing, plain: false, serve: false, dry_run: false, workers: 0, exporters: 0, name: String::new(), line: String::new() };
@@ -2719,7 +2723,7 @@ mod tests {
             ..Default::default()
         };
         let x = root.join("x");
-        let cfg = Config { p4k: x.clone(), starbreaker: x.clone(), blender: x.clone(), render_script: x, work: root.join("work"), size: 256, chunk: 50, cache_limit: 0 };
+        let cfg = Config { p4k: x.clone(), starbreaker: x.clone(), blender: x.clone(), render_script: x.clone(), work: root.join("work"), size: None, format: None, profile: Ok(crate::profile::Profile::stub(&x)), chunk: 50, cache_limit: 0 };
         let targets = vec![Target { uuids: vec!["0".into()], names: Some(vec!["Gun".into()]), entity: "gun_a".into(), kind: "WeaponPersonal".into(), sub_type: "Small".into(), worn: false }];
         let mut engine = Engine::new(cfg, targets, Tables::default(), store, set, None, me).unwrap();
         engine.max_renderers = 6;
@@ -2785,7 +2789,7 @@ mod tests {
             node: "DRAGONEGG".into(),
             started: "2026-11-04T10:00:00+00:00".into(),
             finished: Some("2026-11-04T10:05:00+00:00".into()),
-            origin: serde_json::json!({"filter": "", "addon": "1a2b3c4d5e", "render_py": "6da3cb0c523f77d7", "blender_version": "5.2.3"}),
+            origin: serde_json::json!({"filter": "", "addon": "1a2b3c4d5e", "render_py": "6da3cb0c523f77d7", "blender_version": "5.2.3", "profile": "studio"}),
             ..Default::default()
         };
         std::fs::create_dir_all(app.engine.store.run_dir(&run.id)).unwrap();
@@ -2794,9 +2798,9 @@ mod tests {
         app.engine.store.save_set(&app.engine.set).unwrap();
         app.refresh_sets();
         let s = screen(&mut app);
-        assert!(s.contains("Add-on") && s.contains("render.py") && s.contains("Blender") && s.contains("StarBreaker"), "{s}");
+        assert!(s.contains("Add-on") && s.contains("render.py") && s.contains("Blender") && s.contains("StarBreaker") && s.contains("Profile"), "{s}");
         let row = s.lines().find(|l| l.contains("full") && l.contains("6da3cb0c")).unwrap_or_else(|| panic!("no run row: {s}"));
-        assert!(row.contains("1a2b3c4d") && row.contains("5.2.3") && row.contains("–"), "{row}");
+        assert!(row.contains("1a2b3c4d") && row.contains("5.2.3") && row.contains("–") && row.contains("studio"), "{row}");
 
         // another node as head node, its state not there yet
         app.view = View::Run;
