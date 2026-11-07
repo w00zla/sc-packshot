@@ -1,0 +1,62 @@
+name: Release
+
+# A tag v<version> on a commit of main, the version as in Cargo.toml: builds both bundles with
+# scripts/packshot-bundle.sh (packshot for Windows and Linux, StarBreaker and its add-on from the fork's pinned release,
+# no Blender: the bundle's setup fetches it) and publishes them with a SHA256SUMS file.
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Tag matches the version and is on main
+        shell: bash
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          version="$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)"
+          if [ "$tag" != "v$version" ]; then
+            echo "::error::Tag $tag does not match the version $version in Cargo.toml"
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::Tag $tag is not on main"
+            exit 1
+          fi
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-musl, x86_64-pc-windows-gnu
+      - name: mingw (the Windows linker)
+        run: sudo apt-get update && sudo apt-get install -y mingw-w64
+      - name: Bundles
+        run: bash scripts/packshot-bundle.sh --platform all --out dist-in
+      - name: Package
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          mkdir dist
+          mv dist-in/windows "dist-in/packshot-$tag-windows-x64"
+          mv dist-in/linux "dist-in/packshot-$tag-linux-x64"
+          (cd dist-in && zip -qr "../dist/packshot-$tag-windows-x64.zip" "packshot-$tag-windows-x64")
+          tar -czf "dist/packshot-$tag-linux-x64.tar.gz" -C dist-in "packshot-$tag-linux-x64"
+          (cd dist && sha256sum -- * > SHA256SUMS)
+          cat dist/SHA256SUMS
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          gh release create "$tag" dist/* --title "packshot $tag" --verify-tag \
+            --notes "packshot $tag, built from ${GITHUB_SHA}. Unpack, run setup (it fetches Blender from blender.org), then run. Check the files against SHA256SUMS."

@@ -40,3 +40,4 @@ supersedes the old one. 0001–0020 were recorded afterwards (2026-11-05) from t
 | [0033](0033-one-pin-file-for-dev-and-bundles.md) | One pin file for Blender and StarBreaker, used by the dev setup and the bundles | accepted | 2026-11-07 |
 | [0034](0034-changes-through-pull-requests.md) | Changes land on main through pull requests | accepted | 2026-11-07 |
 | [0035](0035-main-set-is-called-main.md) | The main set is called main | accepted | 2026-11-07 |
+| [0036](0036-releases-without-blender-and-workflows.md) | Releases are bundles without Blender; test and release workflows | accepted | 2026-11-07 |

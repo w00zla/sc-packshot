@@ -3,6 +3,8 @@
 <h1 align="center">packshot</h1>
 
 <p align="center">
+  <a href="https://github.com/w00zla/sc-packshot/actions/workflows/test.yml"><img src="https://github.com/w00zla/sc-packshot/actions/workflows/test.yml/badge.svg?branch=main" alt="Tests"></a>
+  <a href="https://github.com/w00zla/sc-packshot/releases"><img src="https://img.shields.io/github/v/release/w00zla/sc-packshot?color=54adf7" alt="Release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-54adf7" alt="License: MIT"></a>
   <a href="Cargo.toml"><img src="https://img.shields.io/badge/rust-1.89%2B-54adf7?logo=rust" alt="Rust 1.89+"></a>
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20Linux-54adf7" alt="Windows | Linux">
@@ -28,18 +30,25 @@
 
 - Windows 10/11 or Linux, a GPU with Vulkan (rendering).
 - For exporting: the game's `Data.p4k` with its `build_manifest.id` next to it.
-- To build from source: Rust 1.89+ and git. Blender and StarBreaker come with the bundles, or from `scripts/setup.*`.
+- Internet once for the setup (it fetches Blender), or Blender's official archive put next to the bundle.
+- To build from source: Rust 1.89+ and git.
 
 ## Use
 
-Get a bundle for your OS (`scripts/packshot-bundle.sh` or `.ps1`); it carries packshot, StarBreaker, Blender and
-`render.py`, and needs nothing installed.
+Download the bundle for your OS from the [releases](https://github.com/w00zla/sc-packshot/releases)
+(`packshot-<version>-windows-x64.zip` or `packshot-<version>-linux-x64.tar.gz`; `SHA256SUMS` lists their checksums) and
+unpack it anywhere. It carries packshot, StarBreaker with its Blender add-on and `render.py`, and needs nothing
+installed. Blender is not in it: the setup takes the version `blender.pin` names, from the bundle's folder if you put
+the official archive there, else downloaded from blender.org, and checks its SHA256.
 
 ```sh
-bash setup.sh                 # unpacks Blender (Windows: setup.cmd)
-bash check.sh                 # the add-on loads, Eevee renders on Vulkan
+bash setup.sh                 # Blender into ./blender, the add-on enabled (Windows: setup.cmd)
+bash check.sh                 # the add-on loads, Eevee renders on Vulkan (Windows: check.cmd)
 ./run.sh --render --export    # the TUI (Windows: run.cmd); --help lists everything
 ```
+
+The check matters most on Linux, where a headless Blender depends on the GPU driver and its Vulkan setup (drivers,
+ICDs, a server without a display); that is where rendering fails first.
 
 `--render` lets this node run Blender, `--export` StarBreaker (it needs `Data.p4k`); a node with neither only starts,
 stores and watches runs. The first start asks for the target list, a JSON file of the entities to render.

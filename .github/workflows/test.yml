@@ -1,0 +1,48 @@
+name: Tests
+
+# Every pull request and every push to main: the Rust tests (fake tools, no game data) on Linux and Windows, clippy,
+# and shellcheck for the shell scripts. The ruleset on main requires these checks.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+env:
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  rust:
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [ubuntu-22.04, windows-latest]
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: swatinem/rust-cache@v2
+        with:
+          shared-key: test-${{ matrix.platform }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: cargo test
+        run: cargo test --release --locked
+      - name: cargo clippy
+        run: cargo clippy --release --locked --all-targets -- -D warnings
+
+  shellcheck:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v7
+      - name: shellcheck
+        run: shellcheck scripts/*.sh scripts/lib/*.sh bundle/linux/*.sh

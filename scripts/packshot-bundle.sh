@@ -1,24 +1,22 @@
 #!/usr/bin/env bash
 # Packs everything packshot (this repository) needs on another node, one folder per platform, built on Linux:
-#   <out>/windows: packshot.exe (cross-built with mingw), starbreaker/ (starbreaker.exe and COMMIT from
-#                  local/starbreaker-ps/), the official Blender zip (SHA256 checked, left packed: setup.cmd unpacks
-#                  it on the node), portable/ (config and add-on), cli/render.py, targets.json, setup.cmd, run.cmd,
-#                  README.txt, packshot.example.json (the Windows texts with CRLF)
-#   <out>/linux:   packshot (static musl binary), starbreaker/ (the Linux build and COMMIT), the official Blender
-#                  tarball (SHA256 checked, left packed: setup.sh unpacks it on the node), portable/ (config and
-#                  add-on), cli/render.py, targets.json, setup.sh, check.sh, run.sh, README.txt, packshot.example.json
-# portable/ comes from the Linux Blender for both, the add-on as real files (the Windows Blender's
-# junction cannot be read on Linux).
+#   <out>/windows: packshot.exe (cross-built with mingw), starbreaker/ (starbreaker.exe and COMMIT),
+#                  addon/starbreaker_addon, cli/render.py, blender.pin, targets.json, setup.cmd, check.cmd, run.cmd, README.txt,
+#                  packshot.example.json (the Windows texts with CRLF)
+#   <out>/linux:   packshot (static musl binary), starbreaker/ (the Linux binary and COMMIT), addon/starbreaker_addon,
+#                  cli/render.py, blender.pin, targets.json, setup.sh, check.sh, run.sh, README.txt,
+#                  packshot.example.json
+# No Blender in the bundles: setup.cmd / setup.sh take the official archive named in blender.pin (next to them, else
+# from blender.org), check its SHA256 and put portable/ with the add-on into it.
 #
 #   scripts/packshot-bundle.sh [--platform all|windows|linux] [--out <dir>] [--targets <targets.json>]
 #
-# Blender and StarBreaker as deps.toml pins them: the Blender archive from local/cache/ (scripts/lib/deps.sh), the
-# StarBreaker binaries only when their <binary>.commit stamp is the pinned commit (a missing one comes from the pinned
-# release: scripts/lib/deps.sh install_starbreaker).
-# targets.json (default local/packshot/targets.json) goes into both bundles when it exists, else they carry none.
-# Needs: rustup targets x86_64-unknown-linux-musl and x86_64-pc-windows-gnu, mingw64-gcc (the Windows linker),
-# local/blender/blender-<ver>-linux-x64 (its portable/, from scripts/setup.sh), the StarBreaker builds in
-# local/starbreaker-ps/ (or the release), curl, sha256sum, unzip and rsync.
+# Blender and StarBreaker as deps.toml pins them: the StarBreaker binaries only when their <binary>.commit stamp is
+# the pinned commit (a missing one comes from the pinned release: scripts/lib/deps.sh install_starbreaker), the
+# add-on from the pinned release. targets.json (default local/packshot/targets.json) goes into both bundles when it
+# exists, else they carry none.
+# Needs: rustup targets x86_64-unknown-linux-musl and x86_64-pc-windows-gnu, mingw64-gcc (the Windows linker), curl,
+# sha256sum, unzip and rsync.
 set -euo pipefail
 
 out=local/packshot-bundle
@@ -54,13 +52,16 @@ starbreaker_for() {
   install_starbreaker "$platform" || exit 1
 }
 
-# The add-on as real files: the Linux Blender's portable/ links into the fork
-blender_lin=local/blender/blender-$blender_version-linux-x64
-addon=$blender_lin/portable/scripts/addons/starbreaker_addon
-if ! compgen -G "$addon/*.py" >/dev/null; then
-  echo "ERROR: no add-on in $addon (scripts/setup.sh links it in)" >&2
-  exit 1
-fi
+# The pinned release's add-on as real files and the Blender pin for one platform (windows-x64 | linux-x64); what
+# older bundles carried instead (the Blender archive, portable/) goes
+addon=$(release_addon)
+addon_and_pin() {
+  local dir=$1 platform=$2
+  rm -rf "$dir/addon" "$dir/portable" "$dir"/blender-*.zip "$dir"/blender-*.tar.xz
+  mkdir -p "$dir/addon"
+  rsync -a --exclude __pycache__ "$addon/" "$dir/addon/starbreaker_addon/"
+  printf 'version=%s\nsha256=%s\n' "$blender_version" "$(pin blender "sha256-$platform")" >"$dir/blender.pin"
+}
 
 # The target list, if there is one
 if [[ -f $targets ]]; then
@@ -97,7 +98,6 @@ summary() {
 
 if [[ $do_win == 1 ]]; then
   win=$out/windows
-  [[ -d $blender_lin/portable ]] || { echo "ERROR: $blender_lin/portable is missing (scripts/setup.sh)" >&2; exit 1; }
   starbreaker_for starbreaker.exe
   echo "Building packshot (Windows, mingw) ..."
   (cargo build --release --target x86_64-pc-windows-gnu)
@@ -105,16 +105,11 @@ if [[ $do_win == 1 ]]; then
   cp target/x86_64-pc-windows-gnu/release/packshot.exe "$win/"
   cp local/starbreaker-ps/starbreaker.exe "$win/starbreaker/"
   cp local/starbreaker-ps/starbreaker.exe.commit "$win/starbreaker/COMMIT"
-  # Blender zip, packed (setup.cmd unpacks it); the unpacked blender/ of older bundles goes
-  zip=$(blender_archive windows-x64)
-  rm -rf "$win/blender"
-  rm -f "$win"/blender-*-windows-x64.zip
-  cp "$zip" "$win/"
-  # portable/: real files instead of the add-on symlink, without __pycache__
-  rm -rf "$win/portable"
-  rsync -aL --exclude __pycache__ "$blender_lin/portable/" "$win/portable/"
+  addon_and_pin "$win" windows-x64
+  sed -i 's/$/\r/' "$win/blender.pin"
   texts "$win" windows
   crlf "$tpl/windows/setup.cmd" "$win/setup.cmd"
+  crlf "$tpl/windows/check.cmd" "$win/check.cmd"
   crlf "$tpl/windows/run.cmd" "$win/run.cmd"
   rm -f "$win/LIESMICH.txt"
   summary "$win"
@@ -123,7 +118,6 @@ fi
 if [[ $do_lin == 1 ]]; then
   lin=$out/linux
   sb=local/starbreaker-ps/starbreaker
-  [[ -d $blender_lin/portable ]] || { echo "ERROR: $blender_lin/portable is missing (scripts/setup.sh)" >&2; exit 1; }
   starbreaker_for starbreaker
   # 1. packshot: static, runs on any x86-64 Linux
   echo "Building packshot (Linux, musl) ..."
@@ -137,14 +131,9 @@ if [[ $do_lin == 1 ]]; then
     glibc=$(objdump -T "$sb" | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -n 1 || true)
     echo "StarBreaker needs ${glibc:-no glibc (static)} on the node (ldd --version shows its glibc)"
   fi
-  # 3. Blender tarball, packed (setup.sh unpacks it)
-  tarball=$(blender_archive linux-x64)
-  rm -f "$lin"/blender-*-linux-x64.tar.xz
-  cp "$tarball" "$lin/"
-  # 4. portable/: real files instead of the add-on symlink, without __pycache__
-  rm -rf "$lin/portable"
-  rsync -aL --exclude __pycache__ "$blender_lin/portable/" "$lin/portable/"
-  # 5. render.py, target list, scripts and texts
+  # 3. the add-on and the Blender pin (setup.sh fetches Blender)
+  addon_and_pin "$lin" linux-x64
+  # 4. render.py, target list, scripts and texts
   texts "$lin" linux
   cp "$tpl/linux/setup.sh" "$tpl/linux/check.sh" "$tpl/linux/run.sh" "$lin/"
   chmod +x "$lin/packshot" "$lin/starbreaker/starbreaker" "$lin/setup.sh" "$lin/check.sh" "$lin/run.sh"

@@ -72,9 +72,11 @@ P --report [log|run dir]                # evaluates a run's event log (runs/<run
 
 cargo build --release --target x86_64-unknown-linux-musl   # the static Linux binary, linked by rust-lld (.cargo/config.toml; target once via rustup target add x86_64-unknown-linux-musl)
 scripts/packshot-bundle.sh [--platform all|windows|linux] [--out <dir>] [--targets <file>]   # on Linux, both bundles: local/packshot-bundle/windows (packshot.exe cross-built with mingw: rustup target x86_64-pc-windows-gnu + mingw64-gcc;
-#   StarBreaker (only with a .commit stamp equal to the pin; a missing binary comes from the release), the pinned Blender zip (local/cache/, SHA256 from deps.toml), portable/ with the add-on, cli/render.py, targets.json, setup.cmd, run.cmd; Data.p4k + build_manifest.id go next to it)
-#   and linux (static packshot, the Linux StarBreaker (glibc: it prints the version it needs), the pinned Blender tarball, portable/ with the add-on, render.py, targets.json, setup.sh, check.sh, run.sh)
-scripts/packshot-bundle.ps1 [-Platform all|windows|linux] [-Out <dir>] [-Targets <file>]   # on Windows, the same two bundles (portable/ from the pinned local Windows Blender)
+#   StarBreaker (only with a .commit stamp equal to the pin; a missing binary comes from the release), addon/ (the release's add-on), blender.pin, cli/render.py, targets.json, setup.cmd, check.cmd, run.cmd; Data.p4k + build_manifest.id go next to it)
+#   and linux (static packshot, the Linux StarBreaker (glibc: it prints the version it needs), addon/, blender.pin, render.py, targets.json, setup.sh, check.sh, run.sh)
+#   no Blender in the bundles (ADR 0036): their setup takes the archive blender.pin names (next to it, else from blender.org), checks the SHA256, builds portable/ with the add-on
+scripts/packshot-bundle.ps1 [-Platform all|windows|linux] [-Out <dir>] [-Targets <file>]   # on Windows, the same two bundles
+# CI: .github/workflows/test.yml (cargo test on Linux + Windows, clippy -D warnings, shellcheck) on PRs and main; release.yml on a tag v<Cargo version> on main: both bundles + SHA256SUMS as a release
 scripts/starbreaker-build.sh [--platform all|windows|linux] [--commit <rev>]   # (.ps1 -Platform -Commit on Windows) builds the pinned commit (git archive, --commit HEAD to try a fork change) of ../starbreaker-ps
 #   into local/starbreaker-ps/ (starbreaker.exe; starbreaker for Linux via cargo-zigbuild against glibc 2.31, needs zig + cargo-zigbuild + rustup target x86_64-unknown-linux-gnu,
 #   on Windows too; Windows from Linux via mingw); stamps each binary (<binary>.commit, the bundles copy it as COMMIT), COMMIT = this OS's binary

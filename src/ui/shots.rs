@@ -269,6 +269,7 @@ fn shape_of(t: usize) -> usize {
     KINDS[t % KINDS.len()].3
 }
 
+#[allow(clippy::too_many_arguments)]
 fn hello(name: &str, os: &str, render: bool, export: bool, slots: usize, exporters: usize, cores: usize, cpu: &str, gpu: &str, ram_gb: u64, free_gb: u64, total_gb: u64) -> Hello {
     Hello {
         name: name.into(),
@@ -325,6 +326,7 @@ fn render_chunk(e: &mut Engine, chunk: u64, node: Option<&str>, conn: u64, items
 }
 
 /// A worker left running: `done` of its items reported, started `secs` ago
+#[allow(clippy::too_many_arguments)]
 fn running_worker(e: &mut Engine, kind: Kind, chunk: u64, node: Option<&str>, conn: u64, items: &[usize], done: usize, secs: f64) {
     e.push_worker(kind, chunk, node.map(String::from), conn, items.to_vec());
     let w = e.workers.iter_mut().find(|w| w.chunk == chunk && w.conn == conn).unwrap();
@@ -409,7 +411,7 @@ fn scene(cell: (u16, u16)) -> Scene {
     let nodes = vec!["borealis".to_string(), "cinder".to_string()];
 
     // 1. an earlier run over the helmets and backpacks, finished
-    let first: Vec<usize> = (0..all.len()).filter(|t| matches!(t % KINDS.len(), 0 | 1 | 2)).take(60).collect();
+    let first: Vec<usize> = (0..all.len()).filter(|t| matches!(t % KINDS.len(), 0..=2)).take(60).collect();
     e.start(&first, "packshot --filter helmet,backpack", "helmet,backpack", Scope::Missing, "helmets", nodes.clone(), "atlas").unwrap();
     let mut chunk = 1u64;
     for part in first.chunks(12) {
@@ -459,7 +461,9 @@ fn scene(cell: (u16, u16)) -> Scene {
         v
     };
     // workers going on: exports and renders on every node
-    let mut ws: Vec<(Kind, Option<&str>, u64, Vec<usize>, usize, f64)> = Vec::new();
+    // (kind, node, connection, items, reported, seconds since the last item)
+    type Running<'a> = (Kind, Option<&'a str>, u64, Vec<usize>, usize, f64);
+    let mut ws: Vec<Running> = Vec::new();
     for (i, d, s) in [(0usize, 14usize, 41.2f64), (1, 3, 9.8)] {
         let _ = i;
         ws.push((Kind::Export, None, LOCAL, take(50), d, s));
