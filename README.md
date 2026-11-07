@@ -22,7 +22,8 @@
 
 - **Bulk:** thousands of entities per run; long-lived exporter and Blender processes, fed one job per line.
 - **One PC or a cluster:** nodes find each other on the LAN, any node can start a run, files move by content hash.
-- **The game's own staging:** pose and light rig per item type from the game's inventory data.
+- **The game's own staging:** pose and light rig per item type (and tag) from the game's inventory data.
+- **Your own look:** a profile (parameters plus four Python hooks) decides materials, scene and output: PNG, JPEG, EXR.
 - **Runs and sets:** every run is kept as it was; sets pick the newest image per entity, experiments branch off.
 - **Measured, not guessed:** an assessment finds how many processes a node carries; `--report` reads a run's log.
 
@@ -57,13 +58,9 @@ what to do and turns off only what needs it (no Blender: no rendering; no `Data.
 asks for the target list: a JSON file, or one built in the target picker from the game's entities
 ([Target lists](#target-lists)).
 
-The look comes from a **profile** (`--profile <name|folder>`, default `game-tile`): a folder with `profile.toml`
-(parameters such as size, samples, format) and `hooks.py`; `game-tile`'s parameters and hooks fill in what a profile
-leaves out. Own profiles go into `profiles/` in the packshot folder (in a bundle: the bundle's `profiles/`) and hide a
-bundled one of the same name. `--size` and `--format png|jpeg|exr` override the profile's values for a run. A profile
-may bring its own copy of the StarBreaker add-on (`addon = "starbreaker_addon"`, a folder in the profile), which its
-Blender processes use instead of the installed one. The run start in the TUI asks for the profile (the last one chosen,
-at first `--profile`'s, preselected); a run started on another node uses the starter's profile, which goes along.
+The look comes from a **profile**, chosen per run: the TUI asks for it when a run starts, `--profile <name|folder>`
+preselects it (default `game-tile`, the game's inventory tiles); `--size` and `--format png|jpeg|exr` override its values
+([Profiles](#profiles)).
 
 Cluster: copy `packshot.example.json` to `packshot.json` on every node, set the same `token`, open port 47950 (TCP and
 UDP) on the LAN; nodes on another subnet go into `peers`. Process counts default to the node's measured
@@ -145,7 +142,7 @@ Export and materials come from [starbreaker-ps](https://github.com/w00zla/starbr
 | Part | What packshot gets |
 |---|---|
 | `entity export-batch --stdin` | a long-lived exporter: loads `Data.p4k` and the DataCore once, then exports one entity per stdin line; a job that fails or panics is answered as a failure and the process goes on |
-| `dcb query --ids` | the entity list for the target picker: record id, class name, item type and subtype in about a second |
+| `dcb query --ids` | the entity list for the target picker (record id, class name, item type and subtype) and the entities' tags, each in about a second |
 | Blender add-on | builds Blender's material node trees from the package's sidecars: layer blends, tint palettes, decals, glass, glow |
 
 Both come from the fork's release `deps.toml` pins: the setup and the bundle scripts download its files and check
@@ -159,15 +156,15 @@ Every render slot runs one portable Blender of the version `deps.toml` pins (5.2
 | | |
 |---|---|
 | Renderer | Eevee on the **Vulkan** backend, 16 samples, transparent film, 256 px PNG (`game-tile`; `--size`, `--format`) |
-| Staging | pose and light rig from the game's inventory data (per item type), the item scaled to 0.7 m |
+| Staging | pose and light rig from the game's inventory data (per item type; an entry for a tag the entity carries wins, e.g. the sidearms rig for pistols), the item scaled to 0.7 m |
 | Look | (`game-tile`) linear EXR mapped by its own tone curve, a studio world, boosted emission with bloom, a second pass for light behind glass |
 
 ### Runs and sets
 
 | | |
 |---|---|
-| **Run** | `runs/<date>_<time>_<name>/`: the images as `<Name> (<class>) <uuid>.png`, `run.json`, `events.jsonl`, `run.log`; never changed after its end |
-| **Set** | `sets/<name>/`: per entity a hard link to the newest image in its chain of runs, plus its own `targets.json` |
+| **Run** | `runs/<date>_<time>_<name>/`: the images as `<Name> (<class>) <uuid>.<png\|jpg\|exr>`, `run.json` (with the profile, its hash, size and format), `events.jsonl`, `run.log`; never changed after its end |
+| **Set** | `sets/<name>/`: per entity a hard link to the newest image in its chain of runs, whatever its format, plus its own `targets.json` |
 | **main** | the set consumers read; an experiment set branches off it and is adopted by appending its runs |
 
 Everything packshot writes lives in one folder, laid out the same on every node: `local/packshot/` in a checkout, the
@@ -185,7 +182,7 @@ dialog lists every list there, `targets/targets.json` first:
 | `uuids` | one or more ids; the first names the image file, further ones become hard links to it |
 | `names` | optional, one display name per id (shown in the TUI and the image file name) |
 | `entity` | the entity's class name in the DataCore (`behr_rifle_ballistic_01`) |
-| `type` · `subType` | the item type and subtype (`WeaponPersonal` · `Medium`); they pick pose and light rig |
+| `type` · `subType` | the item type and subtype (`WeaponPersonal` · `Medium`); with the entity's tags (read from the DataCore) they pick pose and light rig |
 | `worn` | optional, `true` renders armour and clothing worn instead of as their loot crate |
 
 ```json
@@ -206,8 +203,42 @@ The entity list behind it is read once per game build (a few seconds) and cached
 Every node starts with what it can do now (`--render`, `--export`, both or neither). Any node can start a run, on
 itself or on another node, which then holds it as the **head node** and assigns the chunks. One run at a time in the
 cluster. Every node must run the same packshot build, Blender, add-on and StarBreaker, and the exporting nodes the same
-`Data.p4k`; otherwise no run starts and the TUI shows what differs. `render.py` and the run's profile come from the head
-node with every render chunk.
+`Data.p4k`; otherwise no run starts and the TUI shows what differs. The starter decides what a run renders, as on one
+node: target set, target list and profile go along to the head node. The head node sends `render.py`, `game-tile` and
+the run's profile with every render chunk; a node keeps them while it runs.
+
+## Profiles
+
+A profile is a folder; the run's look is whatever it says, and what it leaves out comes from `game-tile`:
+
+| File | |
+|---|---|
+| `profile.toml` | `[params]`: `size` (px), `samples`, `format` (`png` · `jpeg` · `exr`), `quality` and `background` (JPEG), `fit`, `margin`, `light_scale`. Optional `scene = "<file>.blend"`, a template whose world, cameras and lights the `stage` hook may take; optional `addon = "starbreaker_addon"`, the profile's own copy of the add-on, used instead of the installed one |
+| `hooks.py` | up to four functions, each taking one context `ctx` (`job`, `params`, `scene`, paths, `use_template()`) |
+
+| Hook | When | `game-tile` does |
+|---|---|---|
+| `before_open(ctx)` | before the item's file opens | nothing (the place to set add-on constants or replace its methods) |
+| `after_open(ctx)` | after the add-on built the materials | sharper gloss on metal and glass, stronger emission, hides empty UI screens |
+| `stage(ctx)` | then | the game's pose, the camera fit, the game's light rig, a studio world, Eevee settings |
+| `post(ctx, exr_paths)` | after the render, a linear multi-layer EXR | bloom, contrast, tone curve, a second pass for glow behind glass; writes the image, returns its path |
+
+Parameters stack: `game-tile`'s, then the profile's, then `--size` / `--format`. Formats: `png` is sRGB with
+transparency; `jpeg` the same over `background`; `exr` is linear with the bloom but no tone curve, for your own grading.
+
+A profile that renders large JPEGs on white needs only a `profile.toml`:
+
+```toml
+[params]
+size = 1024
+format = "jpeg"
+background = [1.0, 1.0, 1.0]
+```
+
+Bundled profiles live in `profiles/` next to the tool; your own go into `profiles/` of the packshot folder (in a bundle
+that is the bundle's own `profiles/`) and hide a bundled one of the same name; `game-tile` itself cannot be replaced.
+Every run records its profile, the profile's content hash and the size and format used; the Sets view shows them per
+run, the run tile and the details (`i`) in full.
 
 ## Develop
 
@@ -238,8 +269,9 @@ land on `main` through pull requests.
 
 ## Security
 
-In a cluster every node runs the render script (Python) that it receives from the node that starts a run. Anyone
-with the token can make every node run code, so share a cluster only with machines and people you trust.
+In a cluster every rendering node runs Python it receives: `render.py` from the head node, the profile's `hooks.py` and
+any add-on copy from the node that starts the run. Anyone with the token can make every node run code, so share a
+cluster only with machines and people you trust.
 
 ## Game data and fan content
 

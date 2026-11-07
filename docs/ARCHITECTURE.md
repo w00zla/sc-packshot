@@ -59,7 +59,7 @@ Only network reads and process output have threads of their own, which hand over
 | `events.rs` | the event log per run (`events.jsonl`) and `--report` |
 | `net.rs` | TCP frames of JSON plus payload, hello with token and versions, UDP discovery, checks on all data from other nodes |
 | `cas.rs` | an item's closure, content hashes (xxh3-128), the renderer's content cache with its size limit |
-| `tables.rs` | pose and light tables of the inventory from the DataCore, cached in the work folder |
+| `tables.rs` | pose and light tables of the inventory and the entities' tags from the DataCore (a tagged entry wins for an entity with that tag), cached in the work folder |
 | `blender.rs`, `shim/` | one command line for every Blender; on Linux the RDSEED shim via `LD_PRELOAD` |
 | `blender/render.py` | runs inside Blender: loads the package, calls the profile's hooks, renders, answers `icon:` or `failed:` with phase timings |
 | `profile.rs`, `profiles/` | profiles: resolution (`--profile`), content hash, the files a render chunk carries; `game-tile`, the default look |
@@ -134,7 +134,7 @@ targets/
   <name>.json      lists from the picker or by hand (subfolders are listed too)
 runs/
   2026-11-05_14-30_full/
-    <Name> (<class>) <uuid>.png   read-only
+    <Name> (<class>) <uuid>.png   read-only (.jpg/.exr with another format)
     run.json  events.jsonl  run.log
 sets/
   main/            hard links · set.json · targets.json
@@ -144,7 +144,7 @@ work/
   export/          export chunks, deleted after use
   cas/             content cache of fetched files
   fetch/           render chunks, linked from cas/
-  dcb/             pose and light tables
+  dcb/             pose and light tables, entity tags
   assess/          the assessment's test set
 ```
 
@@ -160,7 +160,7 @@ the versions of all connected nodes; if anything differs, no run starts and the 
 | add-on | hash over the add-on's files | all nodes |
 | StarBreaker | the commit in the `COMMIT` file next to the binary | all nodes |
 | Data.p4k | size plus branch, version and build id from `build_manifest.id` | exporting nodes, among each other |
-| `render.py`, profile | travel with every render chunk from the head node (with `game-tile`, the base of every profile) | distributed, not compared |
+| `render.py`, profile | travel with every render chunk from the head node (`render.py` and `game-tile` its own, the profile the starter's) | distributed, not compared |
 
 ## Compute assessment
 
