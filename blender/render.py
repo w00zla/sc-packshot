@@ -11,10 +11,13 @@
 # (profile.toml + hooks.py, by default profiles/default); a hook the profile leaves out runs the default profile's.
 # Parameters: profile.toml [params], then this script's flags, then the job's fields. Size and format are the target
 # set's (ADR 0045): packshot puts them into every job; a profile does not set them, by hand they default to 256 png.
+# profile.toml [addon] (ADR 0049): `override` (the profile's own add-on copy) and the add-on's look knobs, constants of
+# starbreaker_addon.runtime.constants checked once at the start and set on it before every item's file opens.
 import argparse
 import importlib.util
 import json
 import os
+import re
 import sys
 import time
 import tomllib
@@ -96,10 +99,22 @@ class Profile:
                  'mirror': a.mirror, 'az': a.az, 'el': a.el, 'margin': a.margin}
         self.params.update({k: v for k, v in flags.items() if v is not None})
         self.scene = os.path.join(folder, own['scene']) if own.get('scene') else None
+        # [addon] (ADR 0049): `override` (its own add-on copy) and the add-on's look knobs; 1.0.0's top-level
+        # `addon = "..."` is the override alone
+        table = own.get('addon')
+        table = table if isinstance(table, dict) else {'override': table} if table else {}
+        override = table.get('override')
+        bad = [k for k in table if k != 'override' and not KNOB_NAME.match(k)]
+        if bad:
+            sys.exit(f'profile.toml of {folder}, [addon]: unknown option {", ".join(bad)} '
+                     "(override, or an add-on constant's UPPER_CASE name)")
+        if override is not None and not isinstance(override, str):
+            sys.exit(f"profile.toml of {folder}, [addon]: override is the add-on folder's name, a string")
         # its own copy of the StarBreaker add-on (ADR 0025), active before its hooks load: they may import it
-        self.addon = os.path.join(folder, own['addon']) if own.get('addon') else None
+        self.addon = os.path.join(folder, override) if override else None
         if self.addon:
             use_addon(self.addon)
+        self.knobs = check_knobs({k: v for k, v in table.items() if k != 'override'}, folder)
         defaults = load_module(default, 'packshot_profile_default')
         mine = defaults if os.path.samefile(folder, default) else load_module(folder, 'packshot_profile')
         self.hooks = {h: getattr(mine, h, None) or getattr(defaults, h) for h in HOOKS}
@@ -160,6 +175,7 @@ def render(job, profile):
     """One item through the hooks; returns (output files, info for the icon: line)"""
     ctx = Context(job, profile)
     hooks = profile.hooks
+    apply_knobs(profile.knobs)
     hooks['before_open'](ctx)
     ctx.scene = load(ctx.src)
     ctx.lap('load')
@@ -226,8 +242,8 @@ ADDON = 'starbreaker_addon'
 
 
 def use_addon(folder):
-    """A profile's own add-on copy (profile.toml `addon`, a folder named starbreaker_addon inside the profile) instead
-    of the installed one, for the whole process (a Blender process belongs to one profile): the installed one is
+    """A profile's own add-on copy (profile.toml `[addon] override` or 1.0.0's `addon`, a folder named
+    starbreaker_addon inside the profile) instead of the installed one, for the whole process (a Blender process belongs to one profile): the installed one is
     unregistered and its modules dropped, the copy's parent goes first on sys.path and Blender enables the copy under
     the same name (its preferences entry stays), before the first file opens."""
     import addon_utils
@@ -244,6 +260,77 @@ def use_addon(folder):
     if mod is None or not os.path.normcase(os.path.abspath(mod.__file__)).startswith(os.path.normcase(os.path.abspath(folder))):
         sys.exit(f'profile add-on {folder} did not load (got {getattr(mod, "__file__", None)})')
     print(f'add-on: {folder}', file=sys.stderr, flush=True)
+
+
+CONSTANTS = ADDON + '.runtime.constants'
+# the names [addon] may set besides override: the add-on's constants (upper case)
+KNOB_NAME = re.compile(r'[A-Z][A-Z0-9_]*\Z')
+
+
+def is_number(v):
+    return isinstance(v, (int, float)) and not isinstance(v, bool)
+
+
+def fit_knob(value, cur):
+    """A profile's [addon] value as the constant's type: (value, None), or (None, why) when the types differ (int and
+    float are both numbers, a bool is none; a list for a tuple or list of the same length, item by item; a list
+    becomes a tuple for a tuple)"""
+    if isinstance(cur, bool):
+        return (value, None) if isinstance(value, bool) else (None, f'the constant is a bool ({cur!r})')
+    if is_number(cur):
+        if not is_number(value):
+            return None, f'the constant is a number ({cur!r})'
+        return (float(value) if isinstance(cur, float) else value), None
+    if isinstance(cur, str):
+        return (value, None) if isinstance(value, str) else (None, f'the constant is a string ({cur!r})')
+    if isinstance(cur, (tuple, list)):
+        if not isinstance(value, list):
+            return None, f'the constant is a {type(cur).__name__} ({cur!r})'
+        if len(value) != len(cur):
+            return None, f'{len(value)} values, the constant has {len(cur)} ({cur!r})'
+        items = []
+        for v, c in zip(value, cur):
+            x, why = fit_knob(v, c)
+            if why:
+                return None, f'item {len(items) + 1}: {why}'
+            items.append(x)
+        return (tuple(items) if isinstance(cur, tuple) else items), None
+    return None, f'the constant is a {type(cur).__name__}, no TOML value replaces it'
+
+
+def check_knobs(knobs, folder):
+    """The profile's add-on knobs (ADR 0049) against the active add-on's runtime/constants.py (the installed one or
+    the profile's copy): {name: value as the constant's type}; a name the module does not define or a value of
+    another type ends the process here, before any job"""
+    if not knobs:
+        return {}
+    try:
+        mod = importlib.import_module(CONSTANTS)
+    except ImportError as e:
+        sys.exit(f'profile.toml of {folder}, [addon]: the add-on has no runtime/constants.py ({e})')
+    out, bad = {}, []
+    for name, value in knobs.items():
+        if not hasattr(mod, name):
+            bad.append(f'{name}: the add-on defines no such constant')
+            continue
+        v, why = fit_knob(value, getattr(mod, name))
+        if why:
+            bad.append(f'{name} = {value!r}: {why}')
+        else:
+            out[name] = v
+    if bad:
+        sys.exit(f'profile.toml of {folder}, [addon] ({mod.__file__}): ' + '; '.join(bad))
+    print(f'add-on knobs: {", ".join(f"{k} = {v!r}" for k, v in out.items())}', file=sys.stderr, flush=True)
+    return out
+
+
+def apply_knobs(knobs):
+    """Before every item's file opens (and before before_open): the knobs on the add-on's constants module, as it is
+    imported now"""
+    if knobs:
+        mod = importlib.import_module(CONSTANTS)
+        for name, value in knobs.items():
+            setattr(mod, name, value)
 
 
 def share_path_indexes():

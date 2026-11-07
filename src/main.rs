@@ -326,10 +326,13 @@ fn real_main() -> Result<()> {
         .or_else(|| first_existing(&[root.join("blender/render.py"), root.join("cli/render.py")]))
         .ok_or_else(|| anyhow!("render.py not found (--render-script)"))?;
     // the run's profile: without one this node renders for other nodes' runs but starts none
-    let profile = profile::resolve(opt.get("profile").map(String::as_str).unwrap_or(profile::BASE), &store_dir, &render_script, &root);
+    // its add-on knobs against the add-on it uses: its copy or the one installed with Blender (ADR 0049)
+    let installed_addon = blender.as_deref().map(node::addon_dir);
+    let profile = profile::resolve(opt.get("profile").map(String::as_str).unwrap_or(profile::BASE), &store_dir, &render_script, &root)
+        .and_then(|p| p.check_knobs(installed_addon.as_deref()).map(|_| p));
     let profile_res = match &profile {
         Ok(p) => Ok(format!("{} · {}", p.name, p.dir.display())),
-        Err(e) => Err((e.clone(), "Give --profile a profile name or folder; runs do not start here.".to_string())),
+        Err(e) => Err((e.clone(), "Give --profile another profile name or folder, or fix its profile.toml; runs do not start here.".to_string())),
     };
     check("Profile", profile_res)?;
 

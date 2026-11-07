@@ -686,6 +686,13 @@ impl Engine {
         Ok(e)
     }
 
+    /// A profile's add-on knobs against the add-on a run with it uses (ADR 0049): its own copy, else the one installed
+    /// with this node's Blender (without Blender here none: render.py checks them on the rendering nodes)
+    pub fn check_knobs(&self, p: &Profile) -> Result<()> {
+        let installed = self.cfg.blender.is_file().then(|| crate::node::addon_dir(&self.cfg.blender));
+        p.check_knobs(installed.as_deref()).map_err(|e| anyhow::anyhow!(e))
+    }
+
     /// The profile chosen for runs started here: from --profile, or the start dialog's choice
     pub fn set_profile(&mut self, p: Profile) {
         self.cfg.profile = Ok(p);
@@ -1008,6 +1015,7 @@ impl Engine {
     /// chose; size and format are the target set's (ADR 0045)
     #[allow(clippy::too_many_arguments)]
     pub fn start(&mut self, todo: &[usize], args_line: &str, filter: &str, scope: Scope, name: &str, nodes: Vec<String>, starter: &str, profile: Profile) -> Result<()> {
+        self.check_knobs(&profile)?;
         let look = RunLook::of(profile, &self.set);
         if let Some(s) = self.serve.as_mut() {
             s.blender_log(&format!("=== {}", chrono::Local::now().to_rfc3339()));
