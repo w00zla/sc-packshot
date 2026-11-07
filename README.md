@@ -89,11 +89,12 @@ render. The image above shows a run on three nodes.
 
 ### Sets
 
-<p align="center"><a href="docs/assets/tui-sets.png"><img src="docs/assets/tui-sets.png" alt="The Sets view: sets with their runs, a finished run's images" width="600"></a><br><sub>click for full size</sub></p>
+<p align="center"><a href="docs/assets/tui-sets.png"><img src="docs/assets/tui-sets.png" alt="The Sets view: sets with their runs, a finished run's tile and images" width="600"></a><br><sub>click for full size</sub></p>
 
-The sets with their runs, newest first; on the right the selected run with its result and images, or the set's
-details. A run's Profile column shows the profile with its short hash; a `*` after the add-on marks the profile's own
-add-on copy.
+The sets with their runs, newest first, with the add-on, `render.py`, StarBreaker and profile each run used (a `*`
+after the add-on marks the profile's own add-on copy). On the right the selected set's tile, or the selected run's: node,
+selection, result, profile (where it came from, its hash), the core (`render.py`'s hash), size and format and where they
+came from, add-on, template, StarBreaker, Blender, `Data.p4k` and workers, with some of its images below.
 
 | Key | |
 |---|---|
@@ -101,7 +102,6 @@ add-on copy.
 | `n` · `t` | new set (branches off `main`) · its target list (a file, or the target picker) |
 | `l` | adopt an experiment into `main` |
 | `x` | delete a run or a set |
-| `i` | the run's details: add-on, `render.py`, Blender, StarBreaker, profile, `Data.p4k`, workers |
 
 ### Nodes
 
@@ -237,8 +237,8 @@ background = [1.0, 1.0, 1.0]
 
 Bundled profiles live in `profiles/` next to the tool; your own go into `profiles/` of the packshot folder (in a bundle
 that is the bundle's own `profiles/`) and hide a bundled one of the same name; `game-tile` itself cannot be replaced.
-Every run records its profile, the profile's content hash and the size and format used; the Sets view shows them per
-run, the run tile and the details (`i`) in full.
+Every run records its profile, the profile's content hash and the size and format used; the Sets view shows the
+profile per run, the run's tile all of it.
 
 ## Develop
 

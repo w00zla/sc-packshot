@@ -1,7 +1,7 @@
 // The TUI: three views behind a tab bar, the same on every node. 1 Run: header (selection with head node and set, or
 // progress), the to-render list or the workers (of a run here, or as the head node of another node's run reports
 // them) with throughput, the image preview (Sixel/Kitty/iTerm2, else half blocks; for another node's run the images
-// rendered here). 2 Sets: the sets with their runs, the selected run's result and images on the right, details on i.
+// rendered here). 2 Sets: the sets with their runs, the selected run's tile and images on the right.
 // 3 Nodes: this node and the others with capabilities, disks and details, the state check, fetching runs and the
 // main manifest, the compute assessment (b, this node or another one). Log and errors at the bottom, keys in the last
 // line.
@@ -270,7 +270,6 @@ struct App {
     errors_tab: bool,
     set_rows: Vec<SetRow>,
     set_sel: usize,
-    details: bool,
     /// thumbnails of the selected run in the Sets view
     thumbs: HashMap<PathBuf, StatefulProtocol>,
     node_sel: usize,
@@ -385,7 +384,6 @@ impl App {
             errors_tab: false,
             set_rows: Vec::new(),
             set_sel: 0,
-            details: false,
             thumbs: HashMap::new(),
             node_sel: 0,
             rate: VecDeque::new(),
@@ -1108,7 +1106,6 @@ impl App {
                 KeyCode::Down => self.set_sel = (self.set_sel + 1).min(self.set_rows.len().saturating_sub(1)),
                 KeyCode::PageUp => self.set_sel = self.set_sel.saturating_sub(20),
                 KeyCode::PageDown => self.set_sel = (self.set_sel + 20).min(self.set_rows.len().saturating_sub(1)),
-                KeyCode::Char('i') => self.details = !self.details,
                 KeyCode::Enter => {
                     if let Some(SetRow::Set(n)) = row {
                         self.engine.set_remote_set(&n);
@@ -1126,7 +1123,6 @@ impl App {
             KeyCode::Down => self.set_sel = (self.set_sel + 1).min(self.set_rows.len().saturating_sub(1)),
             KeyCode::PageUp => self.set_sel = self.set_sel.saturating_sub(20),
             KeyCode::PageDown => self.set_sel = (self.set_sel + 20).min(self.set_rows.len().saturating_sub(1)),
-            KeyCode::Char('i') => self.details = !self.details,
             _ if running => {}
             KeyCode::Enter => {
                 if let Some(SetRow::Set(n)) = row {
@@ -2034,7 +2030,7 @@ fn draw_sets(f: &mut Frame, app: &mut App, area: Rect) {
     let top = app.set_sel.saturating_sub(h.saturating_sub(1).min(h / 2)).min(app.set_rows.len().saturating_sub(h));
     let me = app.engine.me.name.clone();
     let active = app.engine.set.name.clone();
-    let mut lines = vec![Line::from(format!("{:<30}{:<12}{:<16}{:>8} {:<9} {:<9} {:<7} {:<11} {:<15}", "Set / run", "Node", "Targets / filter", "Images", "Add-on", "render.py", "Blender", "StarBreaker", "Profile")).fg(DIM)];
+    let mut lines = vec![Line::from(format!("{:<38}{:<12}{:<16}{:>8} {:<9} {:<9} {:<11} {:<15}", "Set / run", "Node", "Targets / filter", "Images", "Add-on", "render.py", "StarBreaker", "Profile")).fg(DIM)];
     let rows: Vec<SetRow> = app.set_rows.iter().skip(top).take(h.saturating_sub(1)).cloned().collect();
     for (i, row) in rows.iter().enumerate() {
         let mut line = match row {
@@ -2048,7 +2044,7 @@ fn draw_sets(f: &mut Frame, app: &mut App, area: Rect) {
                 }
                 let used: usize = spans.iter().map(|s| s.content.chars().count()).sum();
                 let targets = s.as_ref().and_then(|s| s.targets.as_ref()).map(|t| format!("{} targets", num(t.count))).unwrap_or_else(|| "no targets".into());
-                spans.push(format!("{:w$}{:<12}{:<16}{:>8}", "", format!("{runs} runs"), targets, num(files), w = 30usize.saturating_sub(used)).fg(DIM));
+                spans.push(format!("{:w$}{:<12}{:<16}{:>8}", "", format!("{runs} runs"), targets, num(files), w = 38usize.saturating_sub(used)).fg(DIM));
                 Line::from(spans)
             }
             SetRow::Run { id, .. } => {
@@ -2059,22 +2055,17 @@ fn draw_sets(f: &mut Frame, app: &mut App, area: Rect) {
                 let filter = r.as_ref().map(|r| r.origin["filter"].as_str().unwrap_or("").to_string()).unwrap_or_default();
                 let images = r.as_ref().map(|r| r.entities.values().filter(|e| e.ok).count()).unwrap_or(0);
                 let origin = |k: &str, n: usize| r.as_ref().and_then(|r| r.origin[k].as_str().map(|s| s.chars().take(n).collect::<String>())).unwrap_or_else(|| "–".into());
-                let (addon, render_py, blender, starbreaker, profile) = (origin("addon", 8), origin("render_py", 8), origin("blender_version", 7), origin("starbreaker", 8), origin("profile", 9));
-                // the add-on a run used: the profile's own copy is marked; the profile with its short hash
+                let (addon, render_py, starbreaker, profile) = (origin("addon", 8), origin("render_py", 8), origin("starbreaker", 8), origin("profile", 14));
+                // the add-on a run used: the profile's own copy is marked (the profile's hash is in the run's tile)
                 let addon = if r.as_ref().is_some_and(|r| r.origin["addon_from"] == "profile") { format!("{addon}*") } else { addon };
-                let profile = match r.as_ref().and_then(|r| r.origin["profile_hash"].as_str().map(|h| h.chars().take(5).collect::<String>())) {
-                    Some(h) => format!("{profile} {h}"),
-                    None => profile,
-                };
                 let running = r.as_ref().is_some_and(|r| r.finished.is_none());
                 let label = format!("    {}  {}", run_date(id), name);
                 Line::from(vec![
-                    Span::raw(format!("{label:<30.30}")),
+                    Span::raw(format!("{label:<38.38}")),
                     Span::raw(format!("{:<12.12}", format!("{node}{}", if foreign { " ⇣" } else { "" }))),
                     Span::styled(format!("{:<16.16}", if filter.is_empty() { "all".into() } else { filter }), Style::new().fg(DIM)),
                     Span::raw(format!("{:>8}", num(images))),
                     Span::styled(format!(" {addon:<9} {render_py:<9} "), Style::new().fg(DIM)),
-                    Span::raw(format!("{blender:<7} ")),
                     Span::styled(format!("{starbreaker:<11}"), Style::new().fg(DIM)),
                     Span::raw(format!(" {profile:<15}")),
                     if running { Span::styled(" running", Style::new().fg(WARN)) } else { "".into() },
@@ -2208,11 +2199,13 @@ fn draw_remote_sets(f: &mut Frame, app: &mut App, area: Rect) {
     f.render_widget(Paragraph::new(detail), inner);
 }
 
+/// The selected run on the right of the Sets view: its tile (as a set's: everything the run record says, one row per
+/// item, the same rows for every run) and below it up to 8 of its images
 fn draw_run_detail(f: &mut Frame, app: &mut App, area: Rect, id: &str) {
-    let block = boxed(format!("Run {}", run_date(id)));
-    let inner = block.inner(area);
-    f.render_widget(block, area);
     let Ok(r) = app.engine.store.run(id).cloned() else {
+        let block = boxed(format!("Run {}", run_date(id)));
+        let inner = block.inner(area);
+        f.render_widget(block, area);
         f.render_widget(Paragraph::new("run.json not readable").fg(BAD), inner);
         return;
     };
@@ -2223,52 +2216,64 @@ fn draw_run_detail(f: &mut Frame, app: &mut App, area: Rect, id: &str) {
         _ => "running".into(),
     };
     let o = &r.origin;
-    let s = |k: &str| o[k].as_str().unwrap_or("?").to_string();
-    let row = |k: &str, v: String| Line::from(vec![Span::styled(format!("{k:<11}"), Style::new().fg(DIM)), Span::raw(v)]);
-    let mut lines = vec![
+    // a field of the run record, "–" without it (a run from before the field)
+    let s = |k: &str| o[k].as_str().filter(|v| !v.is_empty()).map(String::from).unwrap_or_else(|| "–".into());
+    let row = |k: &str, v: String| Line::from(vec![Span::styled(format!("{k:<12}"), Style::new().fg(DIM)), Span::raw(v)]);
+    let nodes: Vec<String> = o["nodes"].as_array().map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect()).unwrap_or_default();
+    let from = |k: &str| if o[k] == "flag" { "flag" } else { "profile" };
+    let filter = o["filter"].as_str().map(|f| if f.is_empty() { "all".to_string() } else { f.to_string() }).unwrap_or_else(|| "–".into());
+    // version, size, date and id, as far as the run record has them
+    let p4k_date = o["p4k_mtime"].as_i64().and_then(|t| chrono::DateTime::from_timestamp(t, 0)).map(|d| d.format("%Y-%m-%d").to_string()).unwrap_or_default();
+    let p4k_gb = o["p4k_bytes"].as_f64().map(|b| format!("{:.1} GB", b / 1e9));
+    let p4k_id = o["p4k_id"].as_str().map(|v| v.get(..8).unwrap_or(v).to_string());
+    let p4k = [o["p4k_version"].as_str().map(String::from), p4k_gb, Some(p4k_date).filter(|d| !d.is_empty()), p4k_id].into_iter().flatten().collect::<Vec<_>>().join(" · ");
+    let p4k = if p4k.is_empty() { "–".to_string() } else { p4k };
+    let size = o["size"].as_u64().map(|v| format!("{v} px ({})", from("size_from"))).unwrap_or_else(|| "–".into());
+    let format = o["format"].as_str().map(|v| format!("{v} ({})", from("format_from"))).unwrap_or_else(|| "–".into());
+    let profile = match o["profile"].as_str() {
+        Some(p) => format!("{p} · {} · {}", s("profile_from"), short(o, "profile_hash")),
+        None => "– (a run before profiles)".into(),
+    };
+    let addon = format!("{} · {}", short(o, "addon"), if o["addon_from"] == "profile" { "the profile's copy" } else { "installed" });
+    let lines = vec![
         Line::from(Span::styled(r.name.clone(), Style::new().fg(ACCENT).bold())),
         row("Node", format!("{}{}", r.node, if r.node != app.engine.me.name { " (fetched)" } else { "" })),
-        row("Selection", format!("{} · {}", if s("filter").is_empty() { "all".into() } else { s("filter") }, s("scope"))),
+        row("Selection", format!("{filter} · {}", s("scope"))),
         row("Result", format!("{ok} ok · {failed} failed · {dur}{}", if r.aborted { " · aborted" } else { "" })),
+        row("Profile", profile),
+        row("Core", format!("render.py {}", short(o, "render_py"))),
+        row("Output", format!("{size} · {format}")),
+        row("Add-on", addon),
+        row("Template", o["scene"].as_str().map(String::from).unwrap_or_else(|| "none".into())),
+        row("StarBreaker", s("starbreaker")),
+        row("Blender", format!("{} · {}", s("blender_version"), s("gpu_backend"))),
+        row("Data.p4k", p4k),
+        row("Workers", format!("{} export · {} render{}", o["exporters"], o["renderers"], if nodes.is_empty() { String::new() } else { format!(" + {}", nodes.join(", ")) })),
+        // in the packshot folder
+        row("Folder", app.engine.store.run_dir(id).strip_prefix(&app.engine.store.root).map(|p| p.display().to_string()).unwrap_or_default()).fg(DIM),
     ];
-    if app.details {
-        let nodes: Vec<String> = o["nodes"].as_array().map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect()).unwrap_or_default();
-        lines.push(row("Add-on", format!("{}{}", s("addon"), if o["addon_from"] == "profile" { " (the profile's copy)" } else { "" })));
-        lines.push(row("Blender", format!("{} · {}", s("blender_version"), s("gpu_backend"))));
-        lines.push(row("StarBreaker", s("starbreaker")));
-        // render.py (the core) next to the profile; runs before profiles have no profile fields
-        let from = |k: &str| if o[k] == "flag" { "flag" } else { "profile" };
-        let scene = o["scene"].as_str().map(|t| format!(" · template {t}")).unwrap_or_default();
-        match o["profile"].as_str() {
-            Some(p) => {
-                lines.push(row("Profile", format!("{p} ({}) · {} · core {}{scene}", s("profile_from"), short(o, "profile_hash"), short(o, "render_py"))));
-                lines.push(row("Output", format!("{} px ({}) · {} ({})", o["size"].as_u64().map(|v| v.to_string()).unwrap_or_else(|| "?".into()), from("size_from"), s("format"), from("format_from"))));
-            }
-            None => lines.push(row("render.py", s("render_py"))),
-        }
-        let p4k_date = o["p4k_mtime"].as_i64().and_then(|t| chrono::DateTime::from_timestamp(t, 0)).map(|d| d.format("%Y-%m-%d").to_string()).unwrap_or_default();
-        let p4k_v = o["p4k_version"].as_str().map(|v| format!("{v} · ")).unwrap_or_default();
-        let p4k_id = o["p4k_id"].as_str().map(|v| format!(" · {}", v.get(..8).unwrap_or(v))).unwrap_or_default();
-        lines.push(row("p4k", format!("{p4k_v}{:.1} GB · {p4k_date}{p4k_id}", o["p4k_bytes"].as_f64().unwrap_or(0.0) / 1e9)));
-        lines.push(row("Workers", format!("{} export · {} render{}", o["exporters"], o["renderers"], if nodes.is_empty() { String::new() } else { format!(" + {}", nodes.join(", ")) })));
-        lines.push(row("Folder", app.engine.store.run_dir(id).display().to_string()).fg(DIM));
-    }
-    let text_h = lines.len() as u16 + 1;
-    let [text, imgs] = Layout::vertical([Constraint::Length(text_h), Constraint::Min(3)]).areas(inner);
-    f.render_widget(Paragraph::new(lines), text);
-    // up to 8 images of the run
+    // the tile at its full height, the images below in what is left
+    let [tile, imgs] = Layout::vertical([Constraint::Length(lines.len() as u16 + 2), Constraint::Min(0)]).areas(area);
+    let block = boxed(format!("Run {}", run_date(id)));
+    let inner = block.inner(tile);
+    f.render_widget(block, tile);
+    f.render_widget(Paragraph::new(lines), inner);
+    // up to 8 images of the run, small: 4 per row
     let dir = app.engine.store.run_dir(id);
     let files: Vec<PathBuf> = r.entities.values().filter_map(|e| e.files.first()).take(8).map(|f| dir.join(f)).collect();
-    if files.is_empty() || imgs.height < 3 {
+    if files.is_empty() || imgs.height < 5 {
         return;
     }
+    let block = boxed(format!("Images · {}", num(ok)));
+    let grid = block.inner(imgs);
+    f.render_widget(block, imgs);
     let cols = 4u16;
-    let rows_n = (files.len() as u16).div_ceil(cols).min((imgs.height / 5).max(1));
-    let cell_w = imgs.width / cols;
-    let cell_h = (imgs.height / rows_n).min(cell_w / 2 + 1);
+    let cell_w = grid.width / cols;
+    let rows_n = (files.len() as u16).div_ceil(cols).min((grid.height / 3).max(1));
+    let cell_h = (grid.height / rows_n).min(cell_w / 2 + 1);
     for (k, p) in files.iter().enumerate().take((rows_n * cols) as usize) {
         let (cx, cy) = (k as u16 % cols, k as u16 / cols);
-        let cell = Rect { x: imgs.x + cx * cell_w, y: imgs.y + cy * cell_h, width: cell_w.saturating_sub(1), height: cell_h.saturating_sub(1) };
+        let cell = Rect { x: grid.x + cx * cell_w, y: grid.y + cy * cell_h, width: cell_w.saturating_sub(1), height: cell_h.saturating_sub(1) };
         if !app.thumbs.contains_key(p) && let Ok(img) = image::open(p) {
             let proto = app.picker.new_resize_protocol(img);
             app.thumbs.insert(p.clone(), proto);
@@ -2621,9 +2626,9 @@ fn draw_keys(f: &mut Frame, app: &App, area: Rect) {
             (View::Run, true, _) => &[("p", "pause"), ("a", "abort"), ("+/-", "render"), ("</>", "export"), ("←/→", "preview"), ("e", "log/errors"), ("Tab", "view"), ("q", "abort+quit")],
             (View::Run, false, true) => &[("a", "abort"), ("+/-", "render"), ("</>", "export"), ("e", "log/errors"), ("Tab", "view"), ("q", "quit")],
             (View::Run, false, false) => &[("n", "head node"), ("s", "set"), ("/", "filter"), ("x", "clear"), ("u", "scope"), ("↑↓", "list"), ("Enter", "start"), ("+/-", "render"), ("</>", "export"), ("e", "log"), ("Tab", "view"), ("q", "quit")],
-            (View::Sets, true, _) => &[("↑↓", "set/run"), ("i", "details"), ("Tab", "view"), ("q", "abort+quit")],
-            (View::Sets, false, _) if app.remote_sets().is_some() => &[("↑↓", "set/run"), ("Enter", "target set there"), ("i", "details"), ("Tab", "view"), ("q", "quit")],
-            (View::Sets, false, _) => &[("↑↓", "set/run"), ("Enter", "target set"), ("n", "new set"), ("t", "target list"), ("l", "to main"), ("x", "delete"), ("i", "details"), ("Tab", "view"), ("q", "quit")],
+            (View::Sets, true, _) => &[("↑↓", "set/run"), ("Tab", "view"), ("q", "abort+quit")],
+            (View::Sets, false, _) if app.remote_sets().is_some() => &[("↑↓", "set/run"), ("Enter", "target set there"), ("Tab", "view"), ("q", "quit")],
+            (View::Sets, false, _) => &[("↑↓", "set/run"), ("Enter", "target set"), ("n", "new set"), ("t", "target list"), ("l", "to main"), ("x", "delete"), ("Tab", "view"), ("q", "quit")],
             (View::Nodes, _, _) if app.node_sel == 0 => &[("↑↓", "node"), ("m", "drop manifest"), ("b", "assess/abort"), ("Tab", "view"), ("q", if running { "abort+quit" } else { "quit" })],
             (View::Nodes, _, _) => &[("↑↓", "node"), ("h", "fetch runs"), ("m", "fetch manifest"), ("r", "refresh"), ("b", "assess/abort"), ("Tab", "view"), ("q", if running { "abort+quit" } else { "quit" })],
         }
@@ -2957,9 +2962,15 @@ mod tests {
         app.engine.store.save_set(&app.engine.set).unwrap();
         app.refresh_sets();
         let s = screen(&mut app);
-        assert!(s.contains("Add-on") && s.contains("render.py") && s.contains("Blender") && s.contains("StarBreaker") && s.contains("Profile"), "{s}");
+        assert!(s.contains("Add-on") && s.contains("render.py") && !s.contains("Blender") && s.contains("StarBreaker") && s.contains("Profile"), "{s}");
         let row = s.lines().find(|l| l.contains("full") && l.contains("6da3cb0c")).unwrap_or_else(|| panic!("no run row: {s}"));
-        assert!(row.contains("1a2b3c4d") && row.contains("5.2.3") && row.contains("–") && row.contains("studio abcde") && row.contains("1a2b3c4d*"), "{row}");
+        assert!(row.contains("1a2b3c4d") && !row.contains("5.2.3") && row.contains("–") && row.contains("studio") && !row.contains("abcde") && row.contains("1a2b3c4d*"), "{row}");
+        // the selected run: its tile on the right, Blender there now
+        app.set_sel = app.set_rows.iter().position(|r| matches!(r, SetRow::Run { .. })).unwrap();
+        let s = screen(&mut app);
+        for want in ["Run 11-04 10:00", "Blender     5.2.3", "Profile     studio", "Core        render.py 6da3cb0c", "Add-on      1a2b3c4d · the profile's copy", "Template    none"] {
+            assert!(s.contains(want), "{want}: {s}");
+        }
 
         // another node as head node, its state not there yet
         app.view = View::Run;

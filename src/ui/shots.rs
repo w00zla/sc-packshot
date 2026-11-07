@@ -374,6 +374,8 @@ fn fixed_origin(e: &mut Engine) -> Option<crate::store::RunInfo> {
     info.origin["blender_version"] = "5.2.3".into();
     info.origin["profile_hash"] = "3f9c0e7a51d2b864".into();
     info.origin["size"] = 256.into();
+    // the Data.p4k's date in the run tile (2026-11-04)
+    info.origin["p4k_mtime"] = 1_793_779_200u64.into();
     if let Some(r) = e.record.as_mut() {
         r.origin = info.origin.clone();
     }
