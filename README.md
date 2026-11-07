@@ -204,7 +204,7 @@ A profile is a folder with two files. Anything it does not set falls back to `ga
 
 | File | |
 |---|---|
-| `profile.toml` | `[params]`: `size` (px), `samples`, `format` (`png` · `jpeg` · `exr`), `quality` and `background` (JPEG), `fit`, `margin`, `light_scale`. Optional `scene = "<file>.blend"`, a template whose world, cameras and lights the `stage` hook may take; optional `addon = "starbreaker_addon"`, the profile's own copy of the add-on, used instead of the installed one |
+| `profile.toml` | `[params]`: `size` (px), `samples`, `format` (`png` · `jpeg` · `exr`), for JPEG `quality` (0-100) and `background` (the colour under the item, sRGB `[r, g, b]` from 0 to 1), `fit`, `margin`, `light_scale`. Optional `scene = "<file>.blend"`, a template whose world, cameras and lights the `stage` hook may take; optional `addon = "starbreaker_addon"`, the profile's own copy of the add-on, used instead of the installed one |
 | `hooks.py` | up to four functions, each taking one context `ctx` (`job`, `params`, `scene`, paths, `use_template()`) |
 
 `render.py` calls the hooks in this order for every item; a hook the profile does not define runs `game-tile`'s:
