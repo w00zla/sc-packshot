@@ -222,7 +222,8 @@ A profile's parameters lie over `game-tile`'s; `--size` and `--format` lie over 
 | `mirror` | `false` | the camera from the other side (a mirrored image) |
 | `az` · `el` | `20.0` · `15.0` | without a game pose: camera azimuth and elevation in degrees |
 
-`render.py` calls the hooks in this order for every item; a hook the profile does not define runs `game-tile`'s:
+Hooks are Python functions that `render.py` calls at four points of every render; each may change the scene. A profile
+defines only the ones it needs, the others come from `game-tile`:
 
 | Hook | When | `game-tile` does |
 |---|---|---|
