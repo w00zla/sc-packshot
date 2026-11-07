@@ -36,35 +36,29 @@
 
 ## Use
 
-Download the bundle for your OS from the [releases](https://github.com/w00zla/sc-packshot/releases)
-(`packshot-<version>-windows-x64.zip` or `packshot-<version>-linux-x64.tar.gz`; `SHA256SUMS` lists their checksums) and
-unpack it anywhere. It carries packshot, StarBreaker with its Blender add-on, `render.py` and the bundled profiles, and
-needs nothing installed. Blender is not in it: the setup takes the version `blender.pin` names, from the bundle's folder
-if you put the official archive there, else downloaded from blender.org, and checks its SHA256.
+Download the bundle for your OS from the [releases](https://github.com/w00zla/sc-packshot/releases) and unpack it
+anywhere. It brings packshot, StarBreaker with its Blender add-on, `render.py` and the bundled profiles; the setup adds
+Blender (from blender.org, or the official archive you put next to it).
 
 ```bat
-setup.cmd                     :: Blender into .\blender, the add-on enabled (Linux: bash setup.sh)
+setup.cmd                     :: Blender and the add-on (Linux: bash setup.sh)
 check.cmd                     :: the add-on loads, Eevee renders on Vulkan (Linux: bash check.sh)
 run.cmd --render --export     :: the TUI; --help lists everything (Linux: ./run.sh)
 ```
 
-The check matters most on Linux, where a headless Blender depends on the GPU driver and its Vulkan setup (drivers,
-ICDs, a server without a display); that is where rendering fails first.
+On Linux run the check first: a headless Blender depends on the GPU driver and its Vulkan setup.
 
-`--render` lets this node run Blender, `--export` StarBreaker (it needs `Data.p4k`); a node with neither only starts,
-stores and watches runs. The TUI always opens: until everything is in place, a **Start** tile in the Run view shows
-Blender, StarBreaker, `Data.p4k`, the DataCore tables and the entity list, each with its state; what is missing says
-what to do and turns off only what needs it (no Blender: no rendering; no `Data.p4k`: no exports). The first run start
-asks for the target list: a JSON file, or one built in the target picker from the game's entities
-([Target lists](#target-lists)).
-
-The look comes from a **profile**, chosen per run: the TUI asks for it when a run starts, `--profile <name|folder>`
-preselects it (default `game-tile`, the game's inventory tiles); `--size` and `--format png|jpeg|exr` override its values
-([Profiles](#profiles)).
-
-Cluster: copy `packshot.example.json` to `packshot.json` on every node, set the same `token`, open port 47950 (TCP and
-UDP) on the LAN; nodes on another subnet go into `peers`. Process counts default to the node's measured
-**assessment** (`--assess` or `b`), else to a share of its cores.
+- `--render` lets the node run Blender, `--export` StarBreaker (it needs `Data.p4k`); with neither it only starts,
+  stores and watches runs.
+- The TUI always opens: a **Start** tile in the Run view shows what is missing and what to do, and turns off only what
+  needs it.
+- Starting a run asks for its name and **profile**, the look (default `game-tile`, the game's inventory tiles;
+  [Profiles](#profiles)), and for a target list while the set has none (a JSON file or the target picker;
+  [Target lists](#target-lists)). `--profile` preselects the profile; `--size` and `--format png|jpeg|exr` override
+  its values.
+- **Cluster:** the same `token` in every node's `packshot.json` (copied from `packshot.example.json`), port 47950 TCP
+  and UDP open on the LAN, nodes on another subnet in `peers`.
+- Process counts follow the node's measured **assessment** (`--assess` or `b`), else a share of its cores.
 
 ## The terminal UI
 
