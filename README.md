@@ -41,10 +41,10 @@ unpack it anywhere. It carries packshot, StarBreaker with its Blender add-on and
 installed. Blender is not in it: the setup takes the version `blender.pin` names, from the bundle's folder if you put
 the official archive there, else downloaded from blender.org, and checks its SHA256.
 
-```sh
-bash setup.sh                 # Blender into ./blender, the add-on enabled (Windows: setup.cmd)
-bash check.sh                 # the add-on loads, Eevee renders on Vulkan (Windows: check.cmd)
-./run.sh --render --export    # the TUI (Windows: run.cmd); --help lists everything
+```bat
+setup.cmd                     :: Blender into .\blender, the add-on enabled (Linux: bash setup.sh)
+check.cmd                     :: the add-on loads, Eevee renders on Vulkan (Linux: bash check.sh)
+run.cmd --render --export     :: the TUI; --help lists everything (Linux: ./run.sh)
 ```
 
 The check matters most on Linux, where a headless Blender depends on the GPU driver and its Vulkan setup (drivers,
@@ -62,7 +62,7 @@ UDP) on the LAN; nodes on another subnet go into `peers`. Process counts default
 Three views, switched with `1` `2` `3` or `Tab`; the last line always lists the keys that work right now. Images show
 in full on terminals with Sixel, Kitty or iTerm2 graphics, else as half blocks (`PACKSHOT_GRAPHICS` forces one).
 
-### 1 Run
+### Run
 
 The selection to render (head node, target set, filter, scope), or the run going on: progress and ETA, every worker on
 every node with the entity it is on, throughput and the pool of exported items waiting for a Blender, the latest
@@ -78,7 +78,7 @@ render. The image above shows a run on three nodes.
 | `←` `→` | browse the latest renders |
 | `e` | log or errors |
 
-### 2 Sets
+### Sets
 
 <p align="center"><a href="docs/assets/tui-sets.png"><img src="docs/assets/tui-sets.png" alt="The Sets view: sets with their runs, a finished run's images" width="600"></a><br><sub>click for full size</sub></p>
 
@@ -93,7 +93,7 @@ details.
 | `x` | delete a run or a set |
 | `i` | the run's details: add-on, `render.py`, Blender, StarBreaker, `Data.p4k`, workers |
 
-### 3 Nodes
+### Nodes
 
 <p align="center"><a href="docs/assets/tui-nodes.png"><img src="docs/assets/tui-nodes.png" alt="The Nodes view: the nodes with their workers and assessment, one node's details, the next run" width="600"></a><br><sub>click for full size</sub></p>
 
@@ -181,12 +181,12 @@ phase timings, slot use per node, slowest entities.
 
 One script sets up a checkout exactly as `deps.toml` pins it, and the bundles are built from the same pins:
 
-```sh
-scripts/setup.ps1                              # Windows (.sh on Linux): Blender, add-on and StarBreaker from the pinned release
-scripts/setup.ps1 -FromSource                  # the same with the fork next to the repo: add-on linked into it, StarBreaker built
+```powershell
+scripts/setup.ps1                              # Blender, add-on and StarBreaker from the pinned release (Linux: scripts/setup.sh)
+scripts/setup.ps1 -FromSource                  # the same with the fork next to the repo: add-on linked into it, StarBreaker built (Linux: --from-source)
 cargo run --release -- --render --export       # store in local/packshot/, Blender in local/blender/
 cargo test --release                           # real-tool tests are #[ignore] and need SC_DATA_P4K
-scripts/packshot-bundle.ps1                    # both bundles into local/packshot-bundle/ (.sh on Linux)
+scripts/packshot-bundle.ps1                    # both bundles into local/packshot-bundle/ (Linux: scripts/packshot-bundle.sh)
 ```
 
 To move to another Blender or StarBreaker: change `deps.toml`, run the setup again, rebuild the bundles. Building the
