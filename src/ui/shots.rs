@@ -356,22 +356,29 @@ fn finish(e: &mut Engine, minutes: f64) {
     }
     e.tick();
     // run.json: its start back by the same time, so the Sets view shows a real duration
-    if let Some(id) = e.record.as_ref().map(|r| r.id.clone()) {
-        let mut info = e.store.run(&id).unwrap().clone();
-        // the synthetic state has no render.py or Blender to read: fixed values for the runs table
-        info.origin["render_py"] = "6da3cb0c523f77d7".into();
-        info.origin["blender_version"] = "5.2.3".into();
-        info.origin["profile_hash"] = "3f9c0e7a51d2b864".into();
-        info.origin["size"] = 256.into();
-        // the run tile reads the record in memory
-        if let Some(r) = e.record.as_mut() {
-            r.origin = info.origin.clone();
-        }
-        if let Ok(t) = chrono::DateTime::parse_from_rfc3339(&info.started) {
-            info.started = (t - chrono::Duration::seconds((minutes * 60.0) as i64)).to_rfc3339();
-            e.store.save_run(&info).unwrap();
-        }
+    if let Some(info) = fixed_origin(e)
+        && let Ok(t) = chrono::DateTime::parse_from_rfc3339(&info.started)
+    {
+        let mut info = info;
+        info.started = (t - chrono::Duration::seconds((minutes * 60.0) as i64)).to_rfc3339();
+        e.store.save_run(&info).unwrap();
     }
+}
+
+/// The synthetic state has no render.py, profile or Blender to read: fixed values in the current run's record (on
+/// disk for the runs table, in memory for the run tile), finished or not; the record as saved
+fn fixed_origin(e: &mut Engine) -> Option<crate::store::RunInfo> {
+    let id = e.record.as_ref().map(|r| r.id.clone())?;
+    let mut info = e.store.run(&id).unwrap().clone();
+    info.origin["render_py"] = "6da3cb0c523f77d7".into();
+    info.origin["blender_version"] = "5.2.3".into();
+    info.origin["profile_hash"] = "3f9c0e7a51d2b864".into();
+    info.origin["size"] = 256.into();
+    if let Some(r) = e.record.as_mut() {
+        r.origin = info.origin.clone();
+    }
+    e.store.save_run(&info).unwrap();
+    Some(info)
 }
 
 struct Scene {
@@ -450,6 +457,7 @@ fn scene(cell: (u16, u16)) -> Scene {
     let sel = e.select("", Scope::Missing);
     let todo = sel.todo.clone();
     e.start(&todo, "packshot --name full", "", Scope::Missing, "full", nodes, "atlas", crate::profile::Profile::stub(&root)).unwrap();
+    fixed_origin(&mut e);
     let done_n = 1284;
     let fails = [todo[211], todo[730], todo[1102]];
     let hosts: [(Option<&str>, u64); 3] = [(None, LOCAL), (Some("borealis"), c_bor), (Some("cinder"), c_cin)];
