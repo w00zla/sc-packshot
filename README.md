@@ -85,10 +85,11 @@ render. The image above shows a run on three nodes.
 
 <p align="center"><a href="docs/assets/tui-sets.png"><img src="docs/assets/tui-sets.png" alt="The Sets view: sets with their runs, a finished run's tile and images" width="600"></a><br><sub>click for full size</sub></p>
 
-The sets with their runs, newest first, with the add-on, `render.py`, StarBreaker and profile each run used (a `*`
-after the add-on marks the profile's own add-on copy). On the right the selected set's tile, or the selected run's: node,
-selection, result, profile (where it came from, its hash), the core (`render.py`'s hash), size and format and where they
-came from, add-on, template, StarBreaker, Blender, `Data.p4k` and workers, with some of its images below.
+The sets with their runs, newest first: per run its profile with size, format and add-on, then the components the
+profile does not decide, `render.py` and StarBreaker (a `*` marks an override: the profile's own add-on copy, a
+`render.py` from `--render-script`). On the right the selected set's tile, or the selected run's: node, selection,
+result, workers, `Data.p4k`; its profile (where it came from, its hash), size and format and where they came from,
+add-on, template; its components `render.py`, StarBreaker and Blender; some of its images below.
 
 | Key | |
 |---|---|

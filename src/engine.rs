@@ -423,6 +423,8 @@ pub struct Engine {
     pub start: Vec<StartCheck>,
     /// what a run started here would render with (Engine::profile_origin of the chosen profile)
     pub profile_info: serde_json::Value,
+    /// render.py came with --render-script (the run record says so)
+    pub render_script_flag: bool,
     /// the step the DataCore tables are at while they load, and why they did not load
     pub tables_step: String,
     pub tables_error: Option<String>,
@@ -698,6 +700,7 @@ impl Engine {
             assess_max: 32,
             fixed_counts: (false, false),
             profile_info: serde_json::Value::Null,
+            render_script_flag: false,
         };
         e.refresh_profile_info();
         Ok(e)
@@ -857,6 +860,8 @@ impl Engine {
         let copy = p.addon_hash();
         json!({
             "render_py": file_hash(&self.cfg.render_script),
+            // given with --render-script instead of the one beside the tool
+            "render_py_from": if self.render_script_flag { "flag" } else { "default" },
             "profile": p.name,
             "profile_from": p.from,
             "profile_dir": p.dir,
@@ -868,6 +873,7 @@ impl Engine {
             "format_from": if look.format.is_some() { "flag" } else { "profile" },
             "addon": copy.clone().or_else(|| self.me.addon.clone()),
             "addon_from": if copy.is_some() { "profile" } else { "installed" },
+            "starbreaker": self.me.starbreaker,
         })
     }
 

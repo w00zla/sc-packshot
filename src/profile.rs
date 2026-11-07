@@ -191,7 +191,7 @@ impl Profile {
 }
 
 /// The fields of a run record's origin that say what it renders with (Engine::profile_origin)
-pub const ORIGIN_KEYS: [&str; 12] = ["render_py", "profile", "profile_from", "profile_dir", "profile_hash", "scene", "size", "size_from", "format", "format_from", "addon", "addon_from"];
+pub const ORIGIN_KEYS: [&str; 14] = ["render_py", "render_py_from", "profile", "profile_from", "profile_dir", "profile_hash", "scene", "size", "size_from", "format", "format_from", "addon", "addon_from", "starbreaker"];
 
 /// Those fields of a run record's origin
 pub fn origin_fields(origin: &serde_json::Value) -> serde_json::Value {

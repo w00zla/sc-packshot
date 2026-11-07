@@ -425,6 +425,8 @@ fn real_main() -> Result<()> {
     let mut engine = Engine::new(cfg, targets, tables, store, set, hub, me)?;
     // the file the TUI offers for a set's target list
     engine.targets_file = store_dir.join("targets").join("targets.json");
+    engine.render_script_flag = opt.contains_key("render-script");
+    engine.refresh_profile_info();
     engine.picker_p4k = p4k_found.filter(|p| p.exists() && cluster::p4k_id(p).is_some());
     engine.start = checks;
     engine.max_renderers = args.workers;

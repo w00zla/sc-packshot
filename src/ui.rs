@@ -1720,24 +1720,30 @@ fn short(o: &serde_json::Value, k: &str) -> String {
     o[k].as_str().map(|s| s.chars().take(8).collect()).unwrap_or_else(|| "–".into())
 }
 
-/// What a run renders with (the run record's fields, Engine::profile_origin) in one line: the profile and where it
-/// came from, the core's (render.py) and the profile's hash, size and format and their source (a flag or the
-/// profile), the add-on (the installed one or the profile's copy), the template
+/// A short hash with `*` when the run overrode it: the profile's own add-on, render.py from --render-script
+fn tool_hash(o: &serde_json::Value, k: &str) -> String {
+    let over = match k {
+        "addon" => o["addon_from"] == "profile",
+        "render_py" => o["render_py_from"] == "flag",
+        _ => false,
+    };
+    format!("{}{}", short(o, k), if over { "*" } else { "" })
+}
+
+/// What a run renders with (the run record's fields, Engine::profile_origin) in one line, in two groups: the profile
+/// with the size and format it renders and its add-on (ADR 0025), then the components that are not part of it
 fn profile_line(o: &serde_json::Value) -> Line<'static> {
     if let Some(e) = o["error"].as_str() {
         return Line::from(vec!["Profile ".fg(DIM), Span::styled(format!("none: {e}"), Style::new().fg(BAD))]);
     }
-    let Some(name) = o["profile"].as_str() else { return Line::from("Profile –  (a run before profiles)").fg(DIM) };
-    let from = |k: &str| if o[k] == "flag" { "flag" } else { "profile" };
+    let name = o["profile"].as_str().unwrap_or("–").to_string();
     let size = o["size"].as_u64().map(|s| format!("{s} px")).unwrap_or_else(|| "– px".into());
-    let addon = if o["addon_from"] == "profile" { "profile's copy" } else { "installed" };
-    let scene = o["scene"].as_str().map(|s| format!("  ·  template {s}")).unwrap_or_default();
     Line::from(vec![
         "Profile ".fg(DIM),
-        Span::styled(name.to_string(), Style::new().fg(ACCENT)),
-        format!(" ({})  ·  core {} · profile {}  ·  ", o["profile_from"].as_str().unwrap_or("?"), short(o, "render_py"), short(o, "profile_hash")).fg(DIM),
-        format!("{size} ({}) · {} ({})", from("size_from"), o["format"].as_str().unwrap_or("?"), from("format_from")).into(),
-        format!("  ·  add-on {} ({addon}){scene}", short(o, "addon")).fg(DIM),
+        Span::styled(name, Style::new().fg(ACCENT)),
+        format!(" · {size} · {} · add-on {}", o["format"].as_str().unwrap_or("–"), tool_hash(o, "addon")).into(),
+        "   │   Components ".fg(DIM),
+        format!("render.py {} · StarBreaker {}", tool_hash(o, "render_py"), short(o, "starbreaker")).into(),
     ])
 }
 
@@ -2030,7 +2036,7 @@ fn draw_sets(f: &mut Frame, app: &mut App, area: Rect) {
     let top = app.set_sel.saturating_sub(h.saturating_sub(1).min(h / 2)).min(app.set_rows.len().saturating_sub(h));
     let me = app.engine.me.name.clone();
     let active = app.engine.set.name.clone();
-    let mut lines = vec![Line::from(format!("{:<38}{:<12}{:<16}{:>8} {:<9} {:<9} {:<11} {:<15}", "Set / run", "Node", "Targets / filter", "Images", "Add-on", "render.py", "StarBreaker", "Profile")).fg(DIM)];
+    let mut lines = vec![Line::from(format!("{:<31}{:<11}{:<14}{:>8} {:<11} {:>4} {:<6} {:<9} │ {:<9} {:<11}", "Set / run", "Node", "Targets/filter", "Images", "Profile", "px", "Format", "Add-on", "render.py", "StarBreaker")).fg(DIM)];
     let rows: Vec<SetRow> = app.set_rows.iter().skip(top).take(h.saturating_sub(1)).cloned().collect();
     for (i, row) in rows.iter().enumerate() {
         let mut line = match row {
@@ -2044,7 +2050,7 @@ fn draw_sets(f: &mut Frame, app: &mut App, area: Rect) {
                 }
                 let used: usize = spans.iter().map(|s| s.content.chars().count()).sum();
                 let targets = s.as_ref().and_then(|s| s.targets.as_ref()).map(|t| format!("{} targets", num(t.count))).unwrap_or_else(|| "no targets".into());
-                spans.push(format!("{:w$}{:<12}{:<16}{:>8}", "", format!("{runs} runs"), targets, num(files), w = 38usize.saturating_sub(used)).fg(DIM));
+                spans.push(format!("{:w$}{:<11}{:<14}{:>8}", "", format!("{runs} runs"), targets, num(files), w = 31usize.saturating_sub(used)).fg(DIM));
                 Line::from(spans)
             }
             SetRow::Run { id, .. } => {
@@ -2055,19 +2061,23 @@ fn draw_sets(f: &mut Frame, app: &mut App, area: Rect) {
                 let filter = r.as_ref().map(|r| r.origin["filter"].as_str().unwrap_or("").to_string()).unwrap_or_default();
                 let images = r.as_ref().map(|r| r.entities.values().filter(|e| e.ok).count()).unwrap_or(0);
                 let origin = |k: &str, n: usize| r.as_ref().and_then(|r| r.origin[k].as_str().map(|s| s.chars().take(n).collect::<String>())).unwrap_or_else(|| "–".into());
-                let (addon, render_py, starbreaker, profile) = (origin("addon", 8), origin("render_py", 8), origin("starbreaker", 8), origin("profile", 14));
-                // the add-on a run used: the profile's own copy is marked (the profile's hash is in the run's tile)
-                let addon = if r.as_ref().is_some_and(|r| r.origin["addon_from"] == "profile") { format!("{addon}*") } else { addon };
+                // the profile with its output and add-on, then the tools (not part of the profile); `*`: overridden
+                let o = r.as_ref().map(|r| r.origin.clone()).unwrap_or_default();
+                let profile = origin("profile", 11);
+                let px = o["size"].as_u64().map(|s| s.to_string()).unwrap_or_else(|| "–".into());
+                let fmt = o["format"].as_str().unwrap_or("–").to_string();
+                let (addon, render_py, starbreaker) = (tool_hash(&o, "addon"), tool_hash(&o, "render_py"), short(&o, "starbreaker"));
                 let running = r.as_ref().is_some_and(|r| r.finished.is_none());
                 let label = format!("    {}  {}", run_date(id), name);
                 Line::from(vec![
-                    Span::raw(format!("{label:<38.38}")),
-                    Span::raw(format!("{:<12.12}", format!("{node}{}", if foreign { " ⇣" } else { "" }))),
-                    Span::styled(format!("{:<16.16}", if filter.is_empty() { "all".into() } else { filter }), Style::new().fg(DIM)),
+                    Span::raw(format!("{label:<31.31}")),
+                    Span::raw(format!("{:<11.11}", format!("{node}{}", if foreign { " ⇣" } else { "" }))),
+                    Span::styled(format!("{:<14.14}", if filter.is_empty() { "all".into() } else { filter }), Style::new().fg(DIM)),
                     Span::raw(format!("{:>8}", num(images))),
-                    Span::styled(format!(" {addon:<9} {render_py:<9} "), Style::new().fg(DIM)),
-                    Span::styled(format!("{starbreaker:<11}"), Style::new().fg(DIM)),
-                    Span::raw(format!(" {profile:<15}")),
+                    Span::raw(format!(" {profile:<11.11} {px:>4} {fmt:<6}")),
+                    Span::styled(format!(" {addon:<9}"), Style::new().fg(DIM)),
+                    " │ ".fg(DIM),
+                    Span::styled(format!("{render_py:<9} {starbreaker:<11}"), Style::new().fg(DIM)),
                     if running { Span::styled(" running", Style::new().fg(WARN)) } else { "".into() },
                 ])
             }
@@ -2078,7 +2088,7 @@ fn draw_sets(f: &mut Frame, app: &mut App, area: Rect) {
         lines.push(line);
     }
     f.render_widget(Paragraph::new(lines), list_area);
-    let foot_line = Line::from("⇣ = run from another node (its head node), fetched with h in view 3  ·  * = the profile's own add-on").fg(DIM);
+    let foot_line = Line::from("⇣ = run from another node, fetched with h in view 3  ·  * = overridden: the profile's add-on, --render-script").fg(DIM);
     f.render_widget(Paragraph::new(foot_line), foot);
 
     // right: the selected run (or set)
@@ -2235,22 +2245,28 @@ fn draw_run_detail(f: &mut Frame, app: &mut App, area: Rect, id: &str) {
         None => "– (a run before profiles)".into(),
     };
     let addon = format!("{} · {}", short(o, "addon"), if o["addon_from"] == "profile" { "the profile's copy" } else { "installed" });
+    let render_py = format!("{} · {}", short(o, "render_py"), if o["render_py_from"] == "flag" { "--render-script" } else { "beside the tool" });
+    // a block's title over its rows
+    let block = |title: &str| Line::from(format!("── {title} {}", "─".repeat(60))).fg(DIM);
     let lines = vec![
         Line::from(Span::styled(r.name.clone(), Style::new().fg(ACCENT).bold())),
         row("Node", format!("{}{}", r.node, if r.node != app.engine.me.name { " (fetched)" } else { "" })),
         row("Selection", format!("{filter} · {}", s("scope"))),
         row("Result", format!("{ok} ok · {failed} failed · {dur}{}", if r.aborted { " · aborted" } else { "" })),
+        row("Workers", format!("{} export · {} render{}", o["exporters"], o["renderers"], if nodes.is_empty() { String::new() } else { format!(" + {}", nodes.join(", ")) })),
+        row("Data.p4k", p4k),
+        // in the packshot folder
+        row("Folder", app.engine.store.run_dir(id).strip_prefix(&app.engine.store.root).map(|p| p.display().to_string()).unwrap_or_default()).fg(DIM),
+        // the profile with its output and add-on (ADR 0025), then the components that are not part of it
+        block("Profile"),
         row("Profile", profile),
-        row("Core", format!("render.py {}", short(o, "render_py"))),
         row("Output", format!("{size} · {format}")),
         row("Add-on", addon),
         row("Template", o["scene"].as_str().map(String::from).unwrap_or_else(|| "none".into())),
+        block("Components"),
+        row("render.py", render_py),
         row("StarBreaker", s("starbreaker")),
         row("Blender", format!("{} · {}", s("blender_version"), s("gpu_backend"))),
-        row("Data.p4k", p4k),
-        row("Workers", format!("{} export · {} render{}", o["exporters"], o["renderers"], if nodes.is_empty() { String::new() } else { format!(" + {}", nodes.join(", ")) })),
-        // in the packshot folder
-        row("Folder", app.engine.store.run_dir(id).strip_prefix(&app.engine.store.root).map(|p| p.display().to_string()).unwrap_or_default()).fg(DIM),
     ];
     // the tile at its full height, the images below in what is left
     let [tile, imgs] = Layout::vertical([Constraint::Length(lines.len() as u16 + 2), Constraint::Min(0)]).areas(area);
@@ -2701,7 +2717,7 @@ mod tests {
         let args = Args { filter: String::new(), scope: Scope::Missing, plain: false, serve: false, dry_run: false, workers: 0, exporters: 0, name: String::new(), line: String::new() };
         let mut app = App::new(engine, Picker::halfblocks(), args);
         let s = screen(&mut app);
-        assert!(s.contains("Profile game-tile (bundled)") && s.contains("256 px (profile) · png (profile)") && s.contains("(installed)"), "{s}");
+        assert!(s.contains("Profile game-tile · 256 px · png · add-on ") && s.contains("│   Components render.py ") && !s.contains("(bundled)"), "{s}");
         app.input = Some(Input::RunName(Field::new("look")));
         app.key(KeyCode::Enter, KeyModifiers::NONE).unwrap();
         let Some(Input::Profile { choices, sel }) = &app.input else { panic!("no profile dialog") };
@@ -2713,7 +2729,7 @@ mod tests {
         assert!(app.input.is_none());
         assert_eq!(app.engine.cfg.profile.as_ref().unwrap().name, "studio");
         let s = screen(&mut app);
-        assert!(s.contains("Profile studio (store)") && s.contains("jpeg (profile)") && s.contains("(profile's copy)"), "{s}");
+        assert!(s.contains("Profile studio · 256 px · jpeg · add-on ") && s.lines().any(|l| l.contains("Profile studio") && l.contains("*   │")), "{s}");
         // the next start preselects it
         app.input = Some(Input::RunName(Field::new("again")));
         app.key(KeyCode::Enter, KeyModifiers::NONE).unwrap();
@@ -2968,7 +2984,7 @@ mod tests {
         // the selected run: its tile on the right, Blender there now
         app.set_sel = app.set_rows.iter().position(|r| matches!(r, SetRow::Run { .. })).unwrap();
         let s = screen(&mut app);
-        for want in ["Run 11-04 10:00", "Blender     5.2.3", "Profile     studio", "Core        render.py 6da3cb0c", "Add-on      1a2b3c4d · the profile's copy", "Template    none"] {
+        for want in ["Run 11-04 10:00", "Blender     5.2.3", "Profile     studio", "render.py   6da3cb0c · beside the tool", "── Profile", "── Components", "Add-on      1a2b3c4d · the profile's copy", "Template    none"] {
             assert!(s.contains(want), "{want}: {s}");
         }
 
