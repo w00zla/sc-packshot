@@ -18,15 +18,15 @@ supersedes the old one. 0001–0020 were recorded afterwards (2026-11-05) from t
 | [0011](0011-runs-and-sets.md) | Immutable run folders and sets of hard links | accepted; name superseded by 0035 | 2026-11-03 |
 | [0012](0012-bundles-per-os.md) | Per-OS bundles built by script | superseded in part by [0026](0026-starbreaker-by-release-pin.md), [0033](0033-one-pin-file-for-dev-and-bundles.md), [0036](0036-releases-without-blender-and-workflows.md) | 2026-11-03 |
 | [0013](0013-cluster-capabilities-and-head-node.md) | Cluster of capability nodes with a head node | accepted | 2026-11-04 |
-| [0014](0014-same-state-or-no-run.md) | Same state on all nodes or no run | superseded in part by [0038](0038-render-script-distributed-not-compared.md), [0024](0024-head-node-distributes-profiles.md) (not built) | 2026-11-03 |
+| [0014](0014-same-state-or-no-run.md) | Same state on all nodes or no run | superseded in part by [0038](0038-render-script-distributed-not-compared.md), [0024](0024-head-node-distributes-profiles.md) | 2026-11-03 |
 | [0015](0015-chunks-and-content-hash-fetch.md) | Export and render chunks with node-to-node fetch by content hash | accepted (cache bounded since [0031](0031-render-cache-limit.md)) | 2026-11-04 |
 | [0016](0016-data-p4k-only-on-exporters.md) | Data.p4k as a local copy on exporting nodes only | accepted (cache limit since [0031](0031-render-cache-limit.md)) | 2026-11-04 |
 | [0017](0017-delete-work-data-log-deviations.md) | Always delete work data; keep failures reproducible through logs | accepted | 2026-11-04 |
 | [0018](0018-validate-peer-input-and-lock.md) | Validate everything peers send; one process per folder | accepted | 2026-11-04 |
-| [0019](0019-compute-assessment-on-demand.md) | Compute assessment on demand, per node | accepted | 2026-11-04 |
+| [0019](0019-compute-assessment-on-demand.md) | Compute assessment on demand, per node | accepted; superseded in part by [0046](0046-assessment-never-stale.md), [0047](0047-assessment-per-os.md) | 2026-11-04 |
 | [0020](0020-rdseed-shim.md) | Embedded RDSEED shim for Blender on Linux | accepted | 2026-11-05 |
 | [0021](0021-standalone-public-repo.md) | packshot is a standalone public repository; sc-quartermaster is a consumer | accepted | 2026-11-05 |
-| [0022](0022-modular-profiles.md) | Modular profiles: targets, exporter, material, scene and output are replaceable | accepted | 2026-11-05 |
+| [0022](0022-modular-profiles.md) | Modular profiles: targets, exporter, material, scene and output are replaceable | accepted; superseded in part by [0042](0042-profile-folder-and-hook-signatures.md), [0044](0044-profile-per-run.md) | 2026-11-05 |
 | [0023](0023-scene-as-blend-template.md) | The photo scene is a .blend template plus parameters | accepted | 2026-11-05 |
 | [0024](0024-head-node-distributes-profiles.md) | The head node distributes profiles to the nodes | accepted | 2026-11-05 |
 | [0025](0025-material-module.md) | Material module: add-on folder plus optional override script | accepted | 2026-11-05 |
@@ -46,9 +46,9 @@ supersedes the old one. 0001–0020 were recorded afterwards (2026-11-05) from t
 | [0039](0039-target-lists-owned-by-packshot.md) | packshot owns the target-list format and builds lists from the DataCore | accepted | 2026-11-07 |
 | [0040](0040-start-checks-in-the-tui.md) | Start checks run inside the TUI | accepted | 2026-11-07 |
 | [0041](0041-profile-hooks.md) | Profile hooks: before_open, after_open, stage, post | accepted | 2026-11-07 |
-| [0042](0042-profile-folder-and-hook-signatures.md) | A profile is a folder with profile.toml and hooks.py; hooks take one context | accepted | 2026-11-07 |
+| [0042](0042-profile-folder-and-hook-signatures.md) | A profile is a folder with profile.toml and hooks.py; hooks take one context | accepted; superseded in part by [0045](0045-size-and-format-per-set.md) | 2026-11-07 |
 | [0043](0043-tagged-inventory-entries-apply.md) | Tagged inventory entries apply; a tag beats the sub type | accepted | 2026-11-07 |
-| [0044](0044-profile-per-run.md) | The profile is chosen per run, not per set | accepted | 2026-11-07 |
+| [0044](0044-profile-per-run.md) | The profile is chosen per run, not per set | accepted; superseded in part by [0045](0045-size-and-format-per-set.md) | 2026-11-07 |
 | [0045](0045-size-and-format-per-set.md) | Output size and format belong to the set, without overrides | accepted | 2026-11-07 |
 | [0046](0046-assessment-never-stale.md) | An assessment stays in use until a new one replaces it | accepted | 2026-11-07 |
 | [0047](0047-assessment-per-os.md) | One assessment per operating system, in one file | accepted | 2026-11-07 |

@@ -210,7 +210,7 @@ A profile is a folder with two files. Anything it does not set falls back to `ga
 | File | |
 |---|---|
 | `profile.toml` | `[params]` (below), and optionally `scene = "<file>.blend"`, a template whose world, cameras and lights the `stage` hook may take, and `addon = "starbreaker_addon"`, the profile's own copy of the add-on, used instead of the installed one |
-| `hooks.py` | up to four functions, each taking one context `ctx` (`job`, `params`, `scene`, paths, `lap()`, `output_path()`, `use_template()`); `post` also takes the EXR paths |
+| `hooks.py` | up to four functions, each taking one context `ctx` (`job`, `params`, `scene`, paths, `lap()`, `output_path()`, `scene_blend`, `use_scene_blend()`); `post` also takes the EXR paths |
 
 A profile's parameters lie over `game-tile`'s; size and format are not among them, they are the set's:
 
@@ -276,7 +276,7 @@ Every node must run the same packshot build, Blender, add-on and StarBreaker, an
 | `templates/bundle/` | templates of the per-OS bundles (setup, check, run, README, cluster config) |
 | `deps.toml` | the pins: Blender version and archive SHA256s, the StarBreaker release with its SHA256s and commit |
 | `scripts/` | `setup.{ps1,sh}` (a dev checkout), `starbreaker-build.{ps1,sh}` (the fork), `packshot-bundle.{ps1,sh}` (the bundles) |
-| `docs/` | [`ARCHITECTURE.md`](docs/ARCHITECTURE.md), `assets/` (images and their sources) |
+| `docs/` | [`ARCHITECTURE.md`](docs/ARCHITECTURE.md), `adr/` (decisions), `releases/` (release notes, used by the release workflow), `assets/` (images and their sources) |
 
 One script sets up a checkout exactly as `deps.toml` pins it, and the bundles are built from the same pins:
 

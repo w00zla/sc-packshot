@@ -273,7 +273,7 @@ fn shape_of(t: usize) -> usize {
 fn hello(name: &str, os: &str, render: bool, export: bool, slots: usize, exporters: usize, cores: usize, cpu: &str, gpu: &str, ram_gb: u64, free_gb: u64, total_gb: u64) -> Hello {
     Hello {
         name: name.into(),
-        version: "0.1.0+3f9c2ab1".into(),
+        version: format!("{}+3f9c2ab1", env!("CARGO_PKG_VERSION")),
         os: os.into(),
         render,
         export,

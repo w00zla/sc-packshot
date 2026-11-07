@@ -1545,7 +1545,8 @@ else:
         fs::write(&rig, "{}").unwrap();
         fs::write(dir.join("render.py"), "# render").unwrap();
         fs::create_dir_all(dir.join("profiles/game-tile")).unwrap();
-        fs::write(dir.join("profiles/game-tile/profile.toml"), "[params]\nsize = 256\n").unwrap();
+        // size and format are the set's (ADR 0045): a profile with them is refused
+        fs::write(dir.join("profiles/game-tile/profile.toml"), "[params]\nsamples = 16\n").unwrap();
         fs::write(dir.join("Data.p4k"), "").unwrap();
         let config = Config {
             p4k: dir.join("Data.p4k"),

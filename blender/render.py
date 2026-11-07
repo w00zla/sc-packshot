@@ -115,7 +115,7 @@ class Context:
         self.scene = None
         self.src, self.out = job['src'], job['out']
         self.profile = profile.folder
-        self.template = profile.scene
+        self.scene_blend = profile.scene
         self.info = ''
         self.laps = {}
         self._t = time.perf_counter()
@@ -129,12 +129,12 @@ class Context:
         """The job's output path with the extension of `fmt` (png, jpeg -> .jpg, exr)"""
         return os.path.splitext(self.out)[0] + {'jpeg': '.jpg'}.get(fmt, '.' + fmt)
 
-    def use_template(self):
-        """Links the template's (profile.toml `scene`) world, cameras and lights into the item's scene; its world and
-        first camera become the scene's. For a stage hook that takes its scene from the template."""
-        if not self.template:
+    def use_scene_blend(self):
+        """Links the world, cameras and lights of the profile's scene .blend (profile.toml `scene`, `scene_blend` here)
+        into the item's scene; its world and first camera become the scene's. For a stage hook that takes them from it."""
+        if not self.scene_blend:
             return
-        with bpy.data.libraries.load(self.template, link=False) as (src, dst):
+        with bpy.data.libraries.load(self.scene_blend, link=False) as (src, dst):
             dst.worlds = src.worlds
             dst.objects = [n for n in src.objects]
         for o in dst.objects:

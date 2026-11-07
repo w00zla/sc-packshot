@@ -1,6 +1,6 @@
 # 0042. A profile is a folder with profile.toml and hooks.py; hooks take one context
 
-- Status: accepted
+- Status: accepted; superseded in part by [0045](0045-size-and-format-per-set.md) (size and format are the set's, no CLI overrides)
 - Date: 2026-11-07
 - Scope: profiles ([0022](0022-modular-profiles.md)), scene ([0023](0023-scene-as-blend-template.md)), output
   ([0027](0027-output-formats-thumbnails-are-users.md)), hooks ([0041](0041-profile-hooks.md)), `blender/render.py`

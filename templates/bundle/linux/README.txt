@@ -1,13 +1,13 @@
 packshot bundle, Linux
 
 Contents: packshot (static binary), starbreaker/ (StarBreaker CLI, our fork), addon/ (its Blender add-on),
-cli/render.py, profiles/ (game-tile, the default look; own profiles go there too, --profile picks one), blender.pin
-(the Blender version and its SHA256), targets/ (targets.json, the target list, if one was bundled),
+cli/render.py, profiles/ (game-tile, the default look; own profiles go there too; --profile preselects one, the
+TUI asks when a run starts), blender.pin (the Blender version and its SHA256), targets/ (targets.json, the target list, if one was bundled),
 setup.sh, check.sh, run.sh, packshot.example.json (cluster settings). Blender is not in the bundle: setup.sh gets it.
 The first run start (Enter) asks for main's target list: choose targets/targets.json in the dialog if the bundle has
 one, else build one in the target picker (its first row); every set keeps its own (t in view 2 replaces it).
 
-1. Copy the whole folder to the Linux node, e.g. scp -r linux/ user@host:packshot
+1. Copy the whole folder to the Linux node, e.g. scp -r <this folder>/ user@host:packshot
 2. There: bash setup.sh    (the Blender tarball blender.pin names: taken from this folder if it is here, else
                             downloaded from blender.org; SHA256 checked, unpacked into ./blender, the add-on enabled)
 3. Then:  bash check.sh    (add-on loaded? EEVEE render on Vulkan possible?)

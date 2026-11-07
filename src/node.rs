@@ -1689,7 +1689,7 @@ mod tests {
         let r = Renderer::new("me", &root.join("work"), PathBuf::new(), PathBuf::new(), 1);
         let chunk = |n: usize, studio: &str| {
             let d = root.join(format!("inbox/{n}"));
-            for (rel, text) in [("render.py", "# core"), ("profiles/game-tile/profile.toml", "[params]\nsize = 256\n"), ("profiles/studio/profile.toml", studio)] {
+            for (rel, text) in [("render.py", "# core"), ("profiles/game-tile/profile.toml", "[params]\nsamples = 16\n"), ("profiles/studio/profile.toml", studio)] {
                 fs::create_dir_all(d.join(rel).parent().unwrap()).unwrap();
                 fs::write(d.join(rel), text).unwrap();
             }

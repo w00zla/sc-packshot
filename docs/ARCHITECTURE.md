@@ -81,8 +81,8 @@ The head node cuts a chunk only when a process frees up. Its size (`guided()` in
 by three times the processes of that kind, at least 10, at most `--chunk` (50), never more than the items left divided
 by the processes. Chunks shrink towards the end, so all processes finish together.
 
-- **Per node:** with a valid assessment the size scales with the node's measured rate per process against the mean of
-  the nodes taking part; a slow node gets smaller chunks, so the run's end does not wait for it.
+- **Per node:** with an assessment (stale ones too, ADR 0046) the size scales with the node's measured rate per
+  process against the mean of the nodes taking part; a slow node gets smaller chunks, so the run's end does not wait for it.
 - **Assignment:** an export chunk goes to the fastest node with a free export slot. A free Blender takes items its own
   node holds first, else those of the holder with the most waiting items.
 - **Backlog:** no new export chunk while exported but unrendered items plus running exports reach
@@ -198,8 +198,8 @@ sets and assessment do not depend on it.
   `after_open`, `stage`, `post`), renders a linear multi-layer EXR and hands it to `post`, which writes the image. The
   bundled `game-tile` is the default and the base of every profile: its parameters lie under a profile's, its hooks
   run where a profile has none.
-- **Extras:** a profile may bring a `scene` template and its own copy of the StarBreaker add-on (`addon`,
-  [ADR 0025](adr/0025-material-module.md)), which `render.py` enables instead of the installed one for its whole
+- **Extras:** a profile may bring a `scene` .blend (world, cameras, lights; `ctx.use_scene_blend()`) and its own copy
+  of the StarBreaker add-on (`addon`, [ADR 0025](adr/0025-material-module.md)), which `render.py` enables instead of the installed one for its whole
   process; the equality check still compares the installed add-on.
 - **Choice:** per run, by the starter: `--profile` (a name, or a folder) or the TUI's start dialog. A start on another
   node picks the target set there (its target list comes with the set's state) and sends the selected targets, filter

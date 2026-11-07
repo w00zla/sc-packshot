@@ -1,6 +1,6 @@
 # 0044. The profile is chosen per run, not per set
 
-- Status: accepted
+- Status: accepted; superseded in part by [0045](0045-size-and-format-per-set.md) (size and format are the set's, not chosen with the run)
 - Date: 2026-11-07
 - Scope: profiles ([0022](0022-modular-profiles.md), [0042](0042-profile-folder-and-hook-signatures.md)), runs and sets
   ([0011](0011-runs-and-sets.md)), distribution ([0024](0024-head-node-distributes-profiles.md))
