@@ -1,22 +1,20 @@
 <p align="center"><img src="docs/assets/banner.jpg" alt="packshot" width="800"></p>
 
-# packshot
+<h1 align="center">packshot</h1>
 
-[![License: MIT](https://img.shields.io/badge/license-MIT-54adf7)](LICENSE)
-[![Rust 1.89+](https://img.shields.io/badge/rust-1.89%2B-54adf7?logo=rust)](Cargo.toml)
-![Windows | Linux](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-54adf7)
-[![Blender 5.2.3](https://img.shields.io/badge/Blender-5.2.3-54adf7?logo=blender&logoColor=white)](deps.toml)
-[![StarBreaker fork](https://img.shields.io/github/v/release/w00zla/starbreaker-ps?label=starbreaker-ps&color=54adf7)](https://github.com/w00zla/starbreaker-ps/releases)
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-54adf7" alt="License: MIT"></a>
+  <a href="Cargo.toml"><img src="https://img.shields.io/badge/rust-1.89%2B-54adf7?logo=rust" alt="Rust 1.89+"></a>
+  <img src="https://img.shields.io/badge/platform-Windows%20%7C%20Linux-54adf7" alt="Windows | Linux">
+</p>
 
-Renders of Star Citizen entities, in bulk: packshot exports each entity from the game's `Data.p4k` with
-[starbreaker-ps](https://github.com/w00zla/starbreaker-ps) (a StarBreaker fork) and renders it in Blender, many
-exports and Blender processes at once, on one PC or a cluster of nodes, driven from a terminal UI. It started as the
-icon renderer of the Quartermaster org tool and is meant for anyone who wants pictures of the game's items, in their
-own look.
-
-> Status: runs as it did inside Quartermaster, with one look (the game's inventory tiles). Next is the modular design:
-> profiles that make materials and the photo scene replaceable ([ADR 0022](docs/adr/0022-modular-profiles.md)).
-> Decisions and the plan: [`docs/adr/`](docs/adr/README.md).
+<p align="center">
+  Renders of Star Citizen entities, in bulk: packshot exports each entity from the game's <code>Data.p4k</code> with
+  <a href="https://github.com/w00zla/starbreaker-ps">starbreaker-ps</a> (a StarBreaker fork) and renders it in Blender,
+  many exports and Blender processes at once, on one PC or a cluster of nodes, driven from a terminal UI. It started as
+  the icon renderer of the Quartermaster org tool and is meant for anyone who wants pictures of the game's items, in
+  their own look.
+</p>
 
 <p align="center"><img src="docs/assets/tui-run.png" alt="The Run view: a run on three nodes with its workers, throughput, pool and the latest render" width="900"></p>
 
@@ -120,16 +118,15 @@ processes, state check, assessment): [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md
 ### StarBreaker
 
 Export and materials come from [starbreaker-ps](https://github.com/w00zla/starbreaker-ps), a fork of
-[StarBreaker](https://github.com/diogotr7/StarBreaker) made for packshot (its decisions:
-[docs/adr](https://github.com/w00zla/starbreaker-ps/tree/main/docs/adr)):
+[StarBreaker](https://github.com/diogotr7/StarBreaker) made for packshot:
 
 | Part | What packshot gets |
 |---|---|
 | `entity export-batch --stdin` | a long-lived exporter: loads `Data.p4k` and the DataCore once, then exports one entity per stdin line; a job that fails or panics is answered as a failure and the process goes on |
 | Blender add-on | builds Blender's material node trees from the package's sidecars: layer blends, tint palettes, decals, glass, glow |
 
-Both come from the fork's release `deps.toml` pins ([ADR 0026](docs/adr/0026-starbreaker-by-release-pin.md)): the
-setup and the bundle scripts download its files and check their SHA256.
+Both come from the fork's release `deps.toml` pins: the setup and the bundle scripts download its files and check
+their SHA256.
 
 ### Blender
 
@@ -140,7 +137,7 @@ Every render slot runs one portable Blender of the version `deps.toml` pins (5.2
 |---|---|
 | Renderer | Eevee on the **Vulkan** backend, 16 samples, transparent film, 256 px (`--size`) |
 | Staging | pose and light rig from the game's inventory data (per item type), the item scaled to 0.7 m |
-| Look | linear EXR mapped by `render.py`'s own tone curve, a studio world, boosted emission with bloom, a second pass for light behind glass ([ADR 0005](docs/adr/0005-own-tone-curve-and-studio-world.md)) |
+| Look | linear EXR mapped by `render.py`'s own tone curve, a studio world, boosted emission with bloom, a second pass for light behind glass |
 
 ### Cluster
 
@@ -171,10 +168,9 @@ phase timings, slot use per node, slowest entities.
 | `bundle/` | templates of the per-OS bundles (setup, check, run, README, cluster config) |
 | `deps.toml` | the pins: Blender version and archive SHA256s, the StarBreaker release with its SHA256s and commit |
 | `scripts/` | `setup.{ps1,sh}` (a dev checkout), `starbreaker-build.{ps1,sh}` (the fork), `packshot-bundle.{ps1,sh}` (the bundles) |
-| `docs/` | [`ARCHITECTURE.md`](docs/ARCHITECTURE.md), `adr/` (decisions), `assets/` (images and their sources) |
+| `docs/` | [`ARCHITECTURE.md`](docs/ARCHITECTURE.md), `assets/` (images and their sources) |
 
-One script sets up a checkout exactly as `deps.toml` pins it, and the bundles are built from the same pins
-([ADR 0033](docs/adr/0033-one-pin-file-for-dev-and-bundles.md)):
+One script sets up a checkout exactly as `deps.toml` pins it, and the bundles are built from the same pins:
 
 ```sh
 scripts/setup.ps1                              # Windows (.sh on Linux): Blender, add-on and StarBreaker from the pinned release
@@ -186,13 +182,12 @@ scripts/packshot-bundle.ps1                    # both bundles into local/packsho
 
 To move to another Blender or StarBreaker: change `deps.toml`, run the setup again, rebuild the bundles. Building the
 fork itself (`-FromSource`, `scripts/starbreaker-build.*`) needs zig and cargo-zigbuild for its Linux binary. Changes
-land on `main` through pull requests ([ADR 0034](docs/adr/0034-changes-through-pull-requests.md)).
+land on `main` through pull requests.
 
 ## Security
 
 In a cluster every node runs Python (render script, add-on) that it receives from the node that starts a run. Anyone
-with the token can make every node run code, so share a cluster only with machines and people you trust
-([ADR 0028](docs/adr/0028-security-notice-only.md)).
+with the token can make every node run code, so share a cluster only with machines and people you trust.
 
 ## Game data and fan content
 
