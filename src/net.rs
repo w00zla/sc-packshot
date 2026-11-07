@@ -106,6 +106,7 @@ pub struct AssessInfo {
     pub export: f64,
     pub workers: usize,
     pub exporters: usize,
+    /// measured with what runs now (else shown as stale; used either way, ADR 0046)
     pub valid: bool,
     pub date: String,
     /// the steps it was measured at: (Blender count, items/s) and (export count, items/s), so the head node can take

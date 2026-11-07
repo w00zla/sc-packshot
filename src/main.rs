@@ -6,8 +6,8 @@
 // consumers read main). Every node starts with what it can do now (--render, --export); with a token in
 // packshot.json the nodes find each other and every node can start a run, on itself or on another node as its main
 // node (cluster.rs, node.rs). Runs in the repo (paths under local/) and in the bundle (paths next to the exe),
-// without Node.js and without the DB. The worker counts come from the node's compute assessment when it has a valid
-// one (assess.rs), else from the cores.
+// without Node.js and without the DB. The worker counts come from the node's compute assessment when it has one
+// (assess.rs, also when stale), else from the cores.
 mod assess;
 mod blender;
 mod cas;
@@ -335,13 +335,12 @@ fn real_main() -> Result<()> {
     let disk_paths = if work.starts_with(&store_dir) { vec![store_dir.clone()] } else { vec![store_dir.clone(), work.clone()] };
     let caps = Caps { render, export, blender: blender.as_deref(), starbreaker: starbreaker.as_deref(), p4k: export.then_some(p4k.as_path()) };
     let mut me = cluster::own_hello(&net_cfg.name, caps, 0, 0, auto.2, cluster::disk_info(&disk_paths));
-    // the node's assessment: its counts are the defaults while it is valid (same Blender, GPU, render.py,
-    // add-on, StarBreaker)
+    // the node's assessment: its counts are the defaults, whatever changed since (ADR 0046); what differs from what it
+    // was measured with only shows it as stale
     let assessment = assess::load(&store_dir.join(assess::FILE));
     let stale = assessment.as_ref().map(|a| a.keys.diff(&assess::Keys::of(&me, &render_script))).unwrap_or_default();
-    let valid = assessment.as_ref().filter(|_| stale.is_empty());
-    let workers = valid.map(|a| a.workers).unwrap_or(auto.0);
-    let exporters = valid.and_then(|a| a.exporters).unwrap_or(auto.1);
+    let workers = assessment.as_ref().map(|a| a.workers).unwrap_or(auto.0);
+    let exporters = assessment.as_ref().and_then(|a| a.exporters).unwrap_or(auto.1);
     let args = Args {
         filter: opt.get("filter").cloned().unwrap_or_default(),
         scope,
@@ -493,7 +492,8 @@ fn startup_notes(engine: &mut Engine, caps_line: &str, store_dir: &Path, work: &
     notes.push(match (&engine.assessment, engine.assess_stale.first()) {
         (None, _) => (Info, "Assessment: none (counts from the cores)".into()),
         (Some(a), None) => (Info, format!("Assessment of {}: {}", a.info(true).date, assess::summary(a))),
-        (Some(a), Some(why)) => (Error, format!("Assessment of {} stale, counts from the cores: {why}", a.info(false).date)),
+        // still used (ADR 0046)
+        (Some(a), Some(_)) => (Info, format!("Assessment of {} stale, still used: {} (b assesses again)", a.info(false).date, engine.assess_stale.join(", "))),
     });
     notes.push(tool("Blender", (!engine.cfg.blender.as_os_str().is_empty()).then_some(me.blender.as_str()), &engine.cfg.blender));
     notes.push(tool("StarBreaker", me.starbreaker.as_deref(), &engine.cfg.starbreaker));

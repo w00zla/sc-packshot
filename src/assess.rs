@@ -12,7 +12,8 @@
 // the best, capped by memory. An exporting node then runs export-batch with e = 1 … EXPORT_MAX while the chosen n
 // Blender render alongside (export-batch --stdin as in a run when StarBreaker has it) and takes the e where the
 // smaller of export and render rate stops improving, capped by RAM with the most an export process took. The result
-// goes into its own file, assessment.json in the packshot folder, with the keys that make it stale.
+// goes into its own file, assessment.json in the packshot folder, with what it was measured with; it stays in use until a
+// new one replaces it, shown as stale when that differs (ADR 0046).
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufRead, BufReader, Read, Write};
@@ -53,9 +54,9 @@ const KEEP_LOGS: usize = 5;
 /// Images counted per Blender in a render step (after its first, unmeasured one)
 const MEASURED_PER_BLENDER: usize = 8;
 
-/// What an assessment depends on: when any of it differs, the assessment is stale and the formula counts again.
-/// Not the packshot build: any source change gives a new one without changing the load (a "packshot" key in an
-/// older file is ignored)
+/// What an assessment was measured with: when any of it differs the assessment shows as stale, with what differs, and
+/// is still used (ADR 0046). Not the packshot build, the profile parts (game-tile, the add-on) or the host name: keys
+/// an older file still has ("packshot", "addon", "host") are ignored
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
 pub struct Keys {
     pub blender: String,
@@ -64,14 +65,13 @@ pub struct Keys {
     #[serde(default)]
     pub render_py: Option<String>,
     #[serde(default)]
-    pub addon: Option<String>,
-    #[serde(default)]
     pub starbreaker: Option<String>,
-    /// host name and CPU: an assessment.json copied to another machine is stale there (also without nvidia-smi)
-    #[serde(default)]
-    pub host: Option<String>,
+    /// an assessment.json copied to another machine shows as stale there (also without nvidia-smi)
     #[serde(default)]
     pub cpu: Option<String>,
+    /// total RAM in whole GB (rounded: small reporting differences do not count); None in an older file: unknown
+    #[serde(default)]
+    pub ram_gb: Option<u64>,
 }
 
 impl Keys {
@@ -79,16 +79,14 @@ impl Keys {
         Self {
             blender: me.blender.clone(),
             gpu: me.gpu.clone(),
-            // render.py with game-tile, which the sweep renders
-            render_py: crate::profile::Profile::base(render_script).and_then(|p| p.key(render_script)),
-            addon: me.addon.clone(),
+            render_py: crate::events::file_hash(render_script),
             starbreaker: me.starbreaker.clone(),
-            host: Some(me.name.clone()),
+            ram_gb: me.ram.map(|b| (b as f64 / (1u64 << 30) as f64).round() as u64),
             cpu: me.cpu.clone(),
         }
     }
 
-    /// What differs now ("Blender 5.2.4 (assessed 5.2.3)"); empty = valid
+    /// What differs now ("Blender 5.2.4 (assessed 5.2.3)"); empty: measured with what runs now
     pub fn diff(&self, now: &Keys) -> Vec<String> {
         let mut out = Vec::new();
         let mut cmp = |what: &str, was: Option<&str>, is: Option<&str>| {
@@ -99,10 +97,14 @@ impl Keys {
         cmp("Blender", Some(&self.blender), Some(&now.blender));
         cmp("GPU", self.gpu.as_deref(), now.gpu.as_deref());
         cmp("render.py", self.render_py.as_deref(), now.render_py.as_deref());
-        cmp("add-on", self.addon.as_deref(), now.addon.as_deref());
         cmp("StarBreaker", self.starbreaker.as_deref(), now.starbreaker.as_deref());
-        cmp("host", self.host.as_deref(), now.host.as_deref());
         cmp("CPU", self.cpu.as_deref(), now.cpu.as_deref());
+        // an older file without RAM: unknown, not different
+        if let (Some(was), Some(is)) = (self.ram_gb, now.ram_gb)
+            && was != is
+        {
+            out.push(format!("RAM {is} GB (assessed {was} GB)"));
+        }
         out
     }
 }
@@ -1678,23 +1680,24 @@ mod tests {
             blender: "5.2.3".into(),
             gpu: Some("RTX 5080 · VRAM 16 GB".into()),
             render_py: Some("r1".into()),
-            addon: Some("a1".into()),
             starbreaker: Some("655d5f68".into()),
-            host: Some("DRAGONEGG".into()),
             cpu: Some("AMD Ryzen 7 9800X3D 8-Core Processor".into()),
+            ram_gb: Some(64),
         }
     }
 
-    /// Stale when any key differs: Blender, GPU, render.py, add-on, StarBreaker, host, CPU (a
-    /// assessment.json copied to a machine without nvidia-smi is stale there); a peer's p4k fingerprint stays one
-    /// folder name
+    /// Stale when a key differs: CPU, RAM, Blender, GPU, render.py, StarBreaker (an assessment.json copied to a
+    /// machine without nvidia-smi is stale there); an older file's extra keys (addon, host) load and count for nothing,
+    /// its missing RAM is unknown; a peer's p4k fingerprint stays one folder name
     #[test]
     fn staleness() {
         let k = keys();
         assert!(k.diff(&k).is_empty());
-        let copied = Keys { host: Some("DRAGONVR".into()), cpu: Some("Intel(R) Core(TM) i7-4790K CPU @ 4.00GHz".into()), gpu: None, ..k.clone() };
+        let copied = Keys { cpu: Some("Intel(R) Core(TM) i7-4790K CPU @ 4.00GHz".into()), gpu: None, ram_gb: Some(32), ..k.clone() };
         assert_eq!(k.diff(&copied).len(), 3, "{:?}", k.diff(&copied));
-        assert!(k.diff(&copied)[1].starts_with("host DRAGONVR (assessed DRAGONEGG)"));
+        assert_eq!(k.diff(&copied)[2], "RAM 32 GB (assessed 64 GB)");
+        let old: Keys = serde_json::from_str(r#"{"blender": "5.2.3", "gpu": "RTX 5080 · VRAM 16 GB", "render_py": "r1", "addon": "a0", "starbreaker": "655d5f68", "host": "OLDBOX", "cpu": "AMD Ryzen 7 9800X3D 8-Core Processor"}"#).unwrap();
+        assert!(old.diff(&k).is_empty(), "an older file: add-on and host ignored, RAM unknown: {:?}", old.diff(&k));
         let key = testset_key("../../..//x", &["a"]);
         assert!(crate::net::safe_name(&format!("testset-{key}")) && key.starts_with("x-"), "{key}");
         let other = Keys { blender: "5.2.4".into(), ..k.clone() };

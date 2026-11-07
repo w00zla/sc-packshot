@@ -183,8 +183,9 @@ Hardware differs a lot: a node with 16 GB VRAM, one with four cores, a server wi
 thumb the assessment measures, on request (`--assess`, key `b`), how many processes a node carries: a 48-item test
 set stratified by type, exported once; one unmeasured warm-up; a render ladder of 1, 2, 3, 4, 6, 8 … Blenders until
 the gain drops below 5 % or RAM or VRAM run out; then an export sweep with the Blenders alongside. Samples every 0.5 s
-(CPU per core, GPU, VRAM, RAM). The result goes into `assessment.json` and stays valid while host, CPU, GPU and the
-versions stay the same; it sets the default counts and the chunk sizes.
+(CPU per core, GPU, VRAM, RAM). The result goes into `assessment.json`; it sets the default counts and the chunk sizes
+until a new one replaces it ([ADR 0046](adr/0046-assessment-never-stale.md)). When CPU, RAM, GPU, Blender, `render.py` or
+StarBreaker differ from what it was measured with, it shows as stale, with what differs, and stays in use.
 
 ## Profiles
 

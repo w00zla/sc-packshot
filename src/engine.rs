@@ -413,8 +413,8 @@ pub struct Engine {
     /// node exports nothing until then
     pub tables_ready: bool,
     tables_load: Option<TablesLoad>,
-    /// this node's compute assessment from assessment.json (assess.rs), what makes it stale (empty: valid), the one
-    /// going on
+    /// this node's compute assessment from assessment.json (assess.rs), what differs from what it was measured with (it
+    /// is used anyway, ADR 0046), the one going on
     pub assessment: Option<crate::assess::Assessment>,
     pub assess_stale: Vec<String>,
     pub(crate) assess_job: Option<crate::assess::AssessJob>,
@@ -561,11 +561,12 @@ pub(crate) fn rate_at(steps: &[(usize, f64)], k: usize) -> Option<f64> {
     Some(a.1 + (b.1 - a.1) * (k - a.0) as f64 / (b.0 - a.0) as f64)
 }
 
-/// Items/s per process of a node from its valid assessment (render or export), at the count it runs now (its
+/// Items/s per process of a node from its assessment (render or export; stale or not), at the count it runs now (its
 /// hello's; changed with +/- or </> from the assessed one: the rate at that count from the steps, scaled like the
 /// assessed one, which for an exporting node was measured with its exports alongside); None without one
 pub(crate) fn proc_rate(h: &Hello, export: bool) -> Option<f64> {
-    let a = h.assess.as_ref().filter(|a| a.valid)?;
+    // a stale one too: it stays in use until a new one replaces it (ADR 0046)
+    let a = h.assess.as_ref()?;
     let (rate, n, steps, now) = if export { (a.export, a.exporters, &a.export_steps, h.exporters) } else { (a.render, a.workers, &a.steps, h.slots) };
     if rate <= 0.0 || n == 0 {
         return None;
@@ -1966,14 +1967,14 @@ mod rate_tests {
     }
 
     /// Chunks by the nodes' assessed rates: a slow node's chunks shrink, a fast one's grow up to --chunk; without
-    /// rates (or with a stale one) every node gets the plain size
+    /// rates every node gets the plain size; a stale assessment still counts (ADR 0046)
     #[test]
     fn chunk_size_by_rate() {
         // per process: DRAGONEGG 6.3/6 = 1.05, servbox 8.1/9 = 0.9, DRAGONVR 1.8/3 = 0.6 items/s
         let (egg, serv, vr) = (node(6.3, 6, true), node(8.1, 9, true), node(1.8, 3, true));
         assert!((proc_rate(&egg, false).unwrap() - 1.05).abs() < 1e-9);
         assert_eq!(proc_rate(&egg, true), Some(2.0));
-        assert_eq!(proc_rate(&node(6.3, 6, false), false), None, "stale: no rate");
+        assert!((proc_rate(&node(6.3, 6, false), false).unwrap() - 1.05).abs() < 1e-9, "stale: still used (ADR 0046)");
         assert_eq!(proc_rate(&Hello::default(), false), None);
         let nodes = vec![(0, 6, proc_rate(&egg, false)), (1, 9, proc_rate(&serv, false)), (2, 3, proc_rate(&vr, false))];
         // mean per process (6.3 + 8.1 + 1.8) / 18 = 0.9

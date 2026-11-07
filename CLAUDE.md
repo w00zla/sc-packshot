@@ -67,7 +67,7 @@ P [--render] [--export] [--filter <terms>] [--scope missing|failed|all] [--set <
 P --assess                              # compute assessment on this node, then exit (TUI: b in view 3, also for another node)
 #   a 48-item test set (stratified by type from the target set's list, exported once, here or fetched from an exporting node, kept in work/assess/), n long-lived Blender = 1, 2, 3, 4, 6, 8, ...
 #   (each warmed by one unmeasured item) until < 5 % gain or RAM/VRAM, sampled every 0.5 s (CPU per core, GPU, VRAM, RAM), then e exports with them alongside (capped by RAM);
-#   result + validity keys into assessment.json next to packshot.json (stale: the formula again); while valid its counts are the defaults and the head node sizes each node's chunks by its assessed items/s
+#   result + keys (CPU, RAM, Blender, GPU, render.py, StarBreaker) into assessment.json next to packshot.json; its counts are the defaults and the head node sizes each node's chunks by its assessed items/s until a new one replaces it (ADR 0046: a key that differs only shows it as stale)
 
 P --report [log|run dir]                # evaluates a run's event log (runs/<run>/events.jsonl, default the latest run): items/s, phases p50/p95, chunk overhead and slot use of every node's Blenders,
                                         # export overhead, transfer between nodes, CPU/GPU, slowest items
