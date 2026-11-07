@@ -58,7 +58,7 @@ struct Ready {
 }
 
 /// What a render chunk renders with: render.py, the profile folder it gets as --profile (empty: render.py's default,
-/// game-tile), and the size and format the run sets (None: the profile's)
+/// default), and the size and format the run sets (None: the profile's)
 #[derive(Clone, Default)]
 struct Look {
     script: PathBuf,
@@ -1015,7 +1015,7 @@ impl Renderer {
         post(&mut self.local, hub, head, msg, Payload::None);
     }
 
-    /// A render chunk's render.py and profiles (the folder they came in: render.py, profiles/game-tile/...,
+    /// A render chunk's render.py and profiles (the folder they came in: render.py, profiles/default/...,
     /// profiles/<profile>/...) into <work>/profile-cache/<content hash>/, kept there: the Blender processes started
     /// for the chunk outlive it and may read the profile's files (a scene template) per job. Returns render.py and the
     /// profile folder there
@@ -1026,7 +1026,7 @@ impl Renderer {
         let script = inbox.join("render.py");
         let key = crate::profile::Profile::at(&inbox.join("profiles").join(profile), &script)
             .and_then(|p| p.key(&script))
-            .with_context(|| format!("render.py, game-tile or {profile} missing in what the head node sent"))?;
+            .with_context(|| format!("render.py, default or {profile} missing in what the head node sent"))?;
         let dst = self.work.join("profile-cache").join(key);
         if dst.exists() {
             let _ = fs::remove_dir_all(inbox);
@@ -1689,7 +1689,7 @@ mod tests {
         let r = Renderer::new("me", &root.join("work"), PathBuf::new(), PathBuf::new(), 1);
         let chunk = |n: usize, studio: &str| {
             let d = root.join(format!("inbox/{n}"));
-            for (rel, text) in [("render.py", "# core"), ("profiles/game-tile/profile.toml", "[params]\nsamples = 16\n"), ("profiles/studio/profile.toml", studio)] {
+            for (rel, text) in [("render.py", "# core"), ("profiles/default/profile.toml", "[params]\nsamples = 16\n"), ("profiles/studio/profile.toml", studio)] {
                 fs::create_dir_all(d.join(rel).parent().unwrap()).unwrap();
                 fs::write(d.join(rel), text).unwrap();
             }
@@ -2094,7 +2094,7 @@ mod tests {
                 match ev {
                     HubEv::Msg { msg: Msg::ItemExported { item, ok, .. }, .. } => exported.push((item, ok)),
                     HubEv::Msg { msg: Msg::ExportDone { .. }, .. } => {
-                        // render the exported item where it is held, with the repo's render.py and game-tile
+                        // render the exported item where it is held, with the repo's render.py and default
                         let script = repo.join("blender/render.py");
                         let (files, paths) = crate::profile::Profile::base(&script).unwrap().payload(&script).unwrap();
                         let jobs = vec![RenderJob { item: 7, entity: "thumbnailentity_resource_rock_gold".into(), holder: "b".into(), chunk: 1 }];

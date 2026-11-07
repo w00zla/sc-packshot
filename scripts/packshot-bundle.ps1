@@ -47,7 +47,7 @@ function Add-AddonAndPin([string]$dir, [string]$platform, [switch]$Crlf) {
   [IO.File]::WriteAllText((Join-Path $dir 'blender.pin'), $pin, (New-Object Text.UTF8Encoding $false))
 }
 
-# The bundled profiles beside cli/ (render.py finds game-tile there), each replaced whole; own ones in profiles/ stay
+# The bundled profiles beside cli/ (render.py finds default there), each replaced whole; own ones in profiles/ stay
 function Add-Profiles([string]$dir) {
   New-Item -ItemType Directory -Force -Path (Join-Path $dir 'profiles') | Out-Null
   foreach ($p in Get-ChildItem (Join-Path $root 'profiles') -Directory) {

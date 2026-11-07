@@ -8,7 +8,7 @@
 # Input: a GLB (StarBreaker bundled) or the scene.blend of a decomposed export (the StarBreaker add-on then builds
 # the materials on opening). This file is the core: it opens the item, calls the profile's hooks, renders a linear
 # multi-layer EXR and hands it to the profile's post hook, which writes the output. The look lives in the profile
-# (profile.toml + hooks.py, default profiles/game-tile); a hook the profile leaves out runs game-tile's.
+# (profile.toml + hooks.py, by default profiles/default); a hook the profile leaves out runs the default profile's.
 # Parameters: profile.toml [params], then this script's flags, then the job's fields. Size and format are the target
 # set's (ADR 0045): packshot puts them into every job; a profile does not set them, by hand they default to 256 png.
 import argparse
@@ -23,7 +23,7 @@ import traceback
 import bpy
 
 HOOKS = ('before_open', 'after_open', 'stage', 'post')
-DEFAULT_PROFILE = 'game-tile'
+DEFAULT_PROFILE = 'default'
 # size and format without a job's or a flag's: render.py used by hand (packshot always sends the target set's)
 OUTPUT = {'size': 256, 'format': 'png'}
 
@@ -35,7 +35,7 @@ def parse_args():
     p.add_argument('out', nargs='?', type=os.path.abspath)
     p.add_argument('--jobs', type=os.path.abspath, help='JSON list of {src, out, pose, rig, size}')
     p.add_argument('--stdin', action='store_true', help='persistent: one JSON job per stdin line, answered with its icon:/failed: line')
-    p.add_argument('--profile', type=os.path.abspath, default=None, help='profile folder (default: game-tile)')
+    p.add_argument('--profile', type=os.path.abspath, default=None, help='profile folder (default: profiles/default)')
     p.add_argument('--pose', type=lambda s: [float(x) for x in s.split(',')], default=None)
     p.add_argument('--rig', type=os.path.abspath, default=None, help="the game's light rig (JSON from packshot)")
     # parameters: given here, they override the profile's
@@ -76,7 +76,7 @@ def load_module(folder, name):
 
 
 class Profile:
-    """A profile folder: its parameters (game-tile's under its own) and its hooks (game-tile's where it has none)"""
+    """A profile folder: its parameters (default's under its own) and its hooks (default's where it has none)"""
 
     def __init__(self, folder, a):
         default = find_default()
@@ -100,7 +100,7 @@ class Profile:
         self.addon = os.path.join(folder, own['addon']) if own.get('addon') else None
         if self.addon:
             use_addon(self.addon)
-        defaults = load_module(default, 'packshot_profile_game_tile')
+        defaults = load_module(default, 'packshot_profile_default')
         mine = defaults if os.path.samefile(folder, default) else load_module(folder, 'packshot_profile')
         self.hooks = {h: getattr(mine, h, None) or getattr(defaults, h) for h in HOOKS}
 

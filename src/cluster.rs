@@ -35,6 +35,34 @@ pub fn starbreaker_commit(starbreaker: &Path) -> Option<String> {
     text.split_whitespace().next().map(String::from)
 }
 
+/// StarBreaker version: the third word of the COMMIT stamp ("8b5ae08a starbreaker-ps 0.3.2-ps.5 (release)"), else
+/// the last word of `starbreaker --version`; shown only, the state check compares the commit
+pub fn starbreaker_version(starbreaker: &Path) -> Option<String> {
+    let is_version = |w: &&str| w.starts_with(|c: char| c.is_ascii_digit());
+    let stamp = starbreaker.parent().and_then(|d| fs::read_to_string(d.join("COMMIT")).ok()).unwrap_or_default();
+    if let Some(v) = stamp.lines().next().and_then(|l| l.split_whitespace().nth(2)).filter(is_version) {
+        return Some(v.to_string());
+    }
+    if !starbreaker.is_file() {
+        return None;
+    }
+    let out = std::process::Command::new(starbreaker).arg("--version").stdin(std::process::Stdio::null()).stderr(std::process::Stdio::null()).output().ok()?;
+    let text = String::from_utf8_lossy(&out.stdout).to_string();
+    text.split_whitespace().last().filter(is_version).map(String::from)
+}
+
+/// StarBreaker as the TUI shows it, in packshot's own notation: version+commit ("0.3.2-ps.5+8b5ae08a"); only the
+/// commit when the version is unknown (a run record or node from before it), "–" without either
+pub fn starbreaker_text(commit: Option<&str>, version: Option<&str>) -> String {
+    let commit = commit.filter(|c| !c.is_empty()).map(|c| c.chars().take(8).collect::<String>());
+    match (version.filter(|v| !v.is_empty()), commit) {
+        (Some(v), Some(c)) => format!("{v}+{c}"),
+        (None, Some(c)) => c,
+        (Some(v), None) => v.to_string(),
+        (None, None) => "–".into(),
+    }
+}
+
 /// Fingerprint of Data.p4k: FNV-1a over its size in bytes and Branch, Version and BuildId of build_manifest.id
 /// next to it. Reads no archive data, so it is instant on every start
 pub fn p4k_id(p4k: &Path) -> Option<String> {
@@ -164,6 +192,7 @@ pub fn own_hello(name: &str, caps: Caps, slots: usize, exporters: usize, cores: 
         p4k_id: p4k.and_then(p4k_id),
         p4k_version: p4k.and_then(p4k_version),
         starbreaker: caps.starbreaker.and_then(starbreaker_commit),
+        starbreaker_version: caps.starbreaker.and_then(starbreaker_version),
         gpu: gpu_info(),
         cpu,
         ram,
@@ -209,7 +238,10 @@ impl Engine {
             cmp("packshot", Some(&h.version), Some(&head.version));
             cmp("Blender", Some(&h.blender), Some(&head.blender));
             cmp("add-on", h.addon.as_deref(), head.addon.as_deref());
-            cmp("StarBreaker", h.starbreaker.as_deref(), head.starbreaker.as_deref());
+            // the commit is compared, version+commit shown
+            if h.starbreaker != head.starbreaker {
+                out.push(format!("StarBreaker {} (head {} {})", h.starbreaker_text(), head.name, head.starbreaker_text()));
+            }
         }
         if h.export {
             let mut nodes = vec![self.me.clone()];
@@ -601,7 +633,7 @@ impl Engine {
 
     /// The profile a starter sent with its StartRun (the starter decides it, as the target list): its folder's files
     /// in `dir` go into <work>/profile-cache/started/<hash>/<name>/ (the head node need not have it); without files
-    /// it is game-tile, this node's own beside render.py
+    /// it is default, this node's own beside render.py
     pub(crate) fn take_profile(&mut self, starter: &str, name: &str, dir: Option<PathBuf>) -> Result<Profile> {
         let script = self.cfg.render_script.clone();
         let Some(dir) = dir else {
@@ -611,8 +643,8 @@ impl Engine {
             return Profile::base(&script).with_context(|| format!("{} not found beside {}", crate::profile::BASE, script.display()));
         };
         let taken = (|| -> Result<Profile> {
-            // a folder name only; game-tile is this node's own
-            if !safe_name(name) || name == crate::profile::BASE {
+            // a folder name only; default is this node's own
+            if !safe_name(name) || name.eq_ignore_ascii_case(crate::profile::BASE) {
                 bail!("profile name {name:?} not taken");
             }
             if !dir.join("profile.toml").is_file() {
@@ -699,7 +731,7 @@ impl Engine {
         }
         let conn = self.conn_of(&node).with_context(|| format!("{node} is not connected"))?;
         let targets: Vec<Target> = todo.iter().map(|&t| self.targets[t].clone()).collect();
-        // the starter decides the profile: its folder goes along (game-tile itself does not: the head node has it)
+        // the starter decides the profile: its folder goes along (default itself does not: the head node has it)
         let profile = self.cfg.profile.clone().map_err(|e| anyhow::anyhow!("no profile: {e}"))?;
         let (files, payload) = if crate::profile::same_dir(&profile.dir, &profile.base) {
             (Vec::new(), Payload::None)
@@ -984,9 +1016,9 @@ mod tests {
         let me = Hello { name: cfg.name.clone(), version: "t".into(), render, export, blender: "5.2.3".into(), addon: Some("a".into()), slots: render as usize, exporters: export as usize, ..Default::default() };
         let hub = Hub::new(cfg, me.clone(), root.join("inbox"));
         let x = root.join("no-such-tool");
-        // game-tile beside the (missing) render.py: a run another node starts uses it
-        fs::create_dir_all(root.join("profiles/game-tile")).unwrap();
-        fs::write(root.join("profiles/game-tile/profile.toml"), "[params]\n").unwrap();
+        // default beside the (missing) render.py: a run another node starts uses it
+        fs::create_dir_all(root.join("profiles/default")).unwrap();
+        fs::write(root.join("profiles/default/profile.toml"), "[params]\n").unwrap();
         let config = Config { p4k: x.clone(), starbreaker: x.clone(), blender: x.clone(), render_script: x.clone(), work: root.join("work"), profile: Ok(crate::profile::Profile::base(&x).unwrap()), chunk: 50, cache_limit: 0 };
         let mut e = Engine::new(config, Vec::new(), Tables::default(), store, set, Some(hub), me).unwrap();
         e.max_renderers = render as usize;
@@ -1025,10 +1057,24 @@ mod tests {
         assert_eq!(e.differences_to(&addon, &head), vec!["add-on other (head a a)".to_string()]);
         let sb = Hello { render: false, export: false, starbreaker: Some("cc0c3c91".into()), ..same.clone() };
         assert_eq!(e.differences_to(&sb, &head).len(), 1, "StarBreaker counts even for a node without --export");
+        // the commit is compared, version+commit shown (only the commit where the version is unknown)
+        let sb = Hello { starbreaker_version: Some("0.3.2-ps.6".into()), ..sb };
+        assert_eq!(e.differences_to(&sb, &head), vec!["StarBreaker 0.3.2-ps.6+cc0c3c91 (head a 655d5f68)".to_string()]);
+        assert!(e.differences_to(&Hello { starbreaker_version: Some("0.3.2-ps.6".into()), ..same.clone() }, &head).is_empty(), "the version alone does not count");
+        assert_eq!(starbreaker_text(Some("8b5ae08a0123"), Some("0.3.2-ps.5")), "0.3.2-ps.5+8b5ae08a");
+        assert_eq!((starbreaker_text(None, Some("0.3.2-ps.5")), starbreaker_text(None, None)), ("0.3.2-ps.5".to_string(), "–".to_string()));
         let blender = Hello { render: false, export: false, blender: "5.2.2".into(), ..same.clone() };
         assert_eq!(e.differences_to(&blender, &head).len(), 1, "Blender counts even for a node without --render");
         // Data.p4k: only among the exporting nodes; here a single one, so nothing to compare
         assert!(e.differences_to(&Hello { p4k_id: Some("ffff".into()), ..same.clone() }, &head).is_empty());
+        // commit and version from the COMMIT stamp next to the binary
+        let sb_dir = root.join("sb");
+        fs::create_dir_all(&sb_dir).unwrap();
+        fs::write(sb_dir.join("COMMIT"), "8b5ae08a starbreaker-ps 0.3.2-ps.5 (release)\n").unwrap();
+        let bin = sb_dir.join("starbreaker");
+        assert_eq!((starbreaker_commit(&bin).as_deref(), starbreaker_version(&bin).as_deref()), (Some("8b5ae08a"), Some("0.3.2-ps.5")));
+        fs::write(sb_dir.join("COMMIT"), "8b5ae08a\n").unwrap();
+        assert_eq!(starbreaker_version(&bin), None, "no version in the stamp, no binary to ask");
         let _ = crate::store::remove_tree(&root);
     }
 
@@ -1107,7 +1153,7 @@ mod tests {
     }
 
     /// A starter's profile on the head node: its files into the profile cache (by content, the inbox gone), named
-    /// as sent; game-tile and unsafe names are refused, a profile without files is refused unless it is game-tile
+    /// as sent; default and unsafe names are refused, a profile without files is refused unless it is default
     #[test]
     fn profile_from_the_starter() {
         let root = std::env::temp_dir().join(format!("packshot-takeprofile-{}", std::process::id()));
@@ -1123,12 +1169,13 @@ mod tests {
         assert_eq!((p.name.as_str(), p.from.as_str(), p.param("samples").as_deref()), ("studio", "sent by a", Some("8")));
         assert!(p.dir.starts_with(root.join("work/profile-cache/started")) && !root.join("inbox/1").exists());
         assert_eq!(e.take_profile("a", "studio", Some(inbox(2))).unwrap().dir, p.dir, "the same content once");
-        for (name, n) in [("game-tile", 3), ("../x", 4), ("", 5)] {
+        // default is reserved (ADR 0048): a starter cannot send a profile under it, in any case
+        for (name, n) in [("default", 3), ("../x", 4), ("", 5), ("Default", 6)] {
             assert!(e.take_profile("a", name, Some(inbox(n))).is_err(), "{name:?}");
             assert!(!root.join(format!("inbox/{n}")).exists(), "the refused files go");
         }
         assert!(e.take_profile("a", "studio", None).is_err(), "no files");
-        assert_eq!(e.take_profile("a", "game-tile", None).unwrap().name, "game-tile", "the head node's own");
+        assert_eq!(e.take_profile("a", "default", None).unwrap().name, "default", "the head node's own");
         // size and format are the set's (ADR 0045): a profile that sets them is refused
         let big = inbox(9);
         fs::write(big.join("profile.toml"), "[params]\nsize = 1024\n").unwrap();
@@ -1544,9 +1591,9 @@ else:
         let rig = dir.join("rig.json");
         fs::write(&rig, "{}").unwrap();
         fs::write(dir.join("render.py"), "# render").unwrap();
-        fs::create_dir_all(dir.join("profiles/game-tile")).unwrap();
+        fs::create_dir_all(dir.join("profiles/default")).unwrap();
         // size and format are the set's (ADR 0045): a profile with them is refused
-        fs::write(dir.join("profiles/game-tile/profile.toml"), "[params]\nsamples = 16\n").unwrap();
+        fs::write(dir.join("profiles/default/profile.toml"), "[params]\nsamples = 16\n").unwrap();
         fs::write(dir.join("Data.p4k"), "").unwrap();
         let config = Config {
             p4k: dir.join("Data.p4k"),
@@ -2167,7 +2214,7 @@ mod real_tests {
         let [a, b] = &mut nodes;
         let own = a.store.root.join("profiles/own-look");
         fs::create_dir_all(&own).unwrap();
-        fs::write(own.join("profile.toml"), "# game-tile with fewer samples\n[params]\nsamples = 8\n").unwrap();
+        fs::write(own.join("profile.toml"), "# default with fewer samples\n[params]\nsamples = 8\n").unwrap();
         let p = crate::profile::resolve("own-look", &a.store.root.clone(), &a.cfg.render_script.clone(), &root).unwrap();
         a.set_profile(p);
         // b's main gets a target list (its state brings it to a)

@@ -76,7 +76,7 @@ texts() {
   local dir=$1 os=$2
   mkdir -p "$dir/cli"
   cp blender/render.py "$dir/cli/"
-  # the bundled profiles beside cli/ (render.py finds game-tile there); own ones in profiles/ stay
+  # the bundled profiles beside cli/ (render.py finds default there); own ones in profiles/ stay
   local p
   for p in profiles/*/; do
     rm -rf "$dir/profiles/$(basename "$p")"

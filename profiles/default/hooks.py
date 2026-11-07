@@ -1,4 +1,4 @@
-# game-tile: the look of the game's inventory tiles (ADR 0006). The default profile: a profile that leaves out a hook
+# default: the look of the game's inventory tiles (ADR 0006). The default profile: a profile that leaves out a hook
 # runs this one's (ADR 0042). Hooks take one context (render.py's Context: job, params, scene, paths, lap()).
 #   before_open(ctx)          before the item's file opens (add-on constants, method replacements): nothing here
 #   after_open(ctx)           over the materials and objects the add-on built: gloss, emission, screens, single meshes

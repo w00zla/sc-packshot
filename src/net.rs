@@ -79,6 +79,9 @@ pub struct Hello {
     /// StarBreaker commit (nodes with --export): part of the state the exporting nodes must share
     #[serde(default)]
     pub starbreaker: Option<String>,
+    /// StarBreaker version ("0.3.2-ps.5"), shown only
+    #[serde(default)]
+    pub starbreaker_version: Option<String>,
     /// CPU name and total RAM (bytes), shown in the details only
     #[serde(default)]
     pub cpu: Option<String>,
@@ -126,6 +129,11 @@ impl Hello {
             (false, true) => "export",
             (false, false) => "–",
         }
+    }
+
+    /// Its StarBreaker as version+commit ("0.3.2-ps.5+8b5ae08a")
+    pub fn starbreaker_text(&self) -> String {
+        crate::cluster::starbreaker_text(self.starbreaker.as_deref(), self.starbreaker_version.as_deref())
     }
 
     /// "/mnt/DATA: 412 / 1863 GB free (78%)" per disk (the share in use), joined with " · "
@@ -280,7 +288,7 @@ pub enum Msg {
     /// head node -> holder: these export chunks are done (every item rendered or failed), their folders can go
     Release { chunks: Vec<u64> },
     /// head node -> rendering node: render these items (by one Blender), fetching what is held elsewhere straight
-    /// from its holder (files: render.py, profiles/game-tile/..., profiles/<profile>/...); size and format only when
+    /// from its holder (files: render.py, profiles/default/..., profiles/<profile>/...); size and format only when
     /// the run sets them (else the profile's)
     Render {
         id: u64,
@@ -325,7 +333,7 @@ pub enum Msg {
     GetState { set: String },
     State { set: String, sets: Vec<crate::store::SetSummary>, images: Vec<String>, failed: Vec<String>, targets: Vec<Target>, stats: Option<crate::store::RunStats> },
     /// starting node -> head node: start a run over these targets into the set (created from main if missing), with the
-    /// starter's profile (its folder's files; none: game-tile, the head node's own)
+    /// starter's profile (its folder's files; none: default, the head node's own)
     StartRun {
         targets: Vec<Target>,
         set: String,
@@ -1091,7 +1099,7 @@ mod tests {
         fs::write(src.join("sub").join("b.bin"), vec![7u8; 100_000]).unwrap();
         let (files, paths) = collect_files(&src, "x/").unwrap();
         let mut buf = Vec::new();
-        write_frame(&mut buf, &Msg::Render { id: 3, size: Some(256), format: None, profile: "game-tile".into(), jobs: Vec::new(), files: files.clone() }, &Payload::Files(paths)).unwrap();
+        write_frame(&mut buf, &Msg::Render { id: 3, size: Some(256), format: None, profile: "default".into(), jobs: Vec::new(), files: files.clone() }, &Payload::Files(paths)).unwrap();
         write_frame(&mut buf, &Msg::Item { block: 3, item: 1, ok: true, info: "i".into() }, &Payload::Bytes(vec![1, 2, 3])).unwrap();
         let mut r = io::Cursor::new(buf);
         let mut seq = 0;
