@@ -817,6 +817,7 @@ impl Engine {
             "gpu_backend": "vulkan",
             "addon": self.me.addon,
             "starbreaker": self.me.starbreaker,
+            "starbreaker_version": self.me.starbreaker_version,
             "p4k": self.me.export.then(|| self.cfg.p4k.clone()),
             "p4k_from": exporter.as_ref().map(|h| h.name.clone()),
             "p4k_bytes": exporter.as_ref().and_then(|h| h.p4k_bytes),
@@ -852,6 +853,7 @@ impl Engine {
             "addon": copy.clone().or_else(|| self.me.addon.clone()),
             "addon_from": if copy.is_some() { "profile" } else { "installed" },
             "starbreaker": self.me.starbreaker,
+            "starbreaker_version": self.me.starbreaker_version,
         })
     }
 
@@ -1334,7 +1336,7 @@ impl Engine {
         let worker = self.workers.last().map(Worker::label).unwrap_or_default();
         let wait = if waits.is_empty() { 0.0 } else { waits.iter().sum::<f64>() / waits.len() as f64 };
         self.emit("render_start", json!({ "block": id, "worker": worker, "items": n, "queue_wait": round3(wait), "holders": holders }));
-        // the other nodes render with the head node's render.py, game-tile and the run's profile (ADR 0024); this one
+        // the other nodes render with the head node's render.py, default and the run's profile (ADR 0024); this one
         // with its own folders
         let Some(look) = self.run.as_ref().map(|r| r.look.clone()) else { return };
         let sent = match conn {

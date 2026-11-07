@@ -144,10 +144,11 @@ enum Input {
     Profile { choices: Vec<(Profile, String)>, sel: usize },
 }
 
-/// A profile's line in the start dialog: where it is, its hash, its add-on copy and scene
+/// A profile's line in the start dialog: where it is (not for the default, ADR 0048), its hash, its add-on copy and
+/// scene
 fn profile_choice(p: &Profile) -> String {
     let hash = p.hash().map(|h| h.chars().take(8).collect::<String>()).unwrap_or_else(|| "–".into());
-    let mut parts = vec![p.from.clone(), hash];
+    let mut parts = if p.name == crate::profile::BASE { vec![hash] } else { vec![p.from.clone(), hash] };
     if p.addon().is_some() {
         parts.push("own add-on".into());
     }
@@ -425,7 +426,7 @@ impl App {
         self.input = Some(Input::Targets { set: set.to_string(), choices, sel: 0, field: Field::default() });
     }
 
-    /// The start's profile dialog: the profiles here (game-tile first; an own one hides a bundled one of the same
+    /// The start's profile dialog: the profiles here (default first; an own one hides a bundled one of the same
     /// name), the one chosen last (at first --profile's) preselected
     fn open_profiles(&mut self) {
         let e = &self.engine;
@@ -1377,7 +1378,7 @@ fn draw_dialog(f: &mut Frame, app: &App) {
             }
             Some(Input::Profile { choices, sel }) => {
                 let head = e.head.clone().unwrap_or_else(|| e.me.name.clone());
-                lines.push(Line::from(format!("The run's look, sent to {head} with the run. game-tile is the base of every profile.")).fg(DIM));
+                lines.push(Line::from(format!("The run's look, sent to {head} with the run. Every profile builds on default.")).fg(DIM));
                 lines.push(Line::from(""));
                 let name_w = choices.iter().map(|(p, _)| p.name.chars().count()).max().unwrap_or(0).min(24);
                 for (i, (p, info)) in choices.iter().enumerate() {
@@ -1390,7 +1391,7 @@ fn draw_dialog(f: &mut Frame, app: &App) {
                     lines.push(l);
                 }
                 if choices.is_empty() {
-                    lines.push(Line::from("  no profile found (game-tile belongs beside render.py)").fg(BAD));
+                    lines.push(Line::from("  no profile found (profiles/default belongs beside render.py)").fg(BAD));
                 }
                 ("Profile for the run".to_string(), "Enter: take  ·  ↑↓: choose  ·  Esc: back", false)
             }
@@ -1805,8 +1806,13 @@ fn profile_line(o: &serde_json::Value) -> Line<'static> {
         Span::styled(name, Style::new().fg(ACCENT)),
         format!(" · {size} · {} · add-on {}", o["format"].as_str().unwrap_or("–"), tool_hash(o, "addon")).into(),
         "   │   Components ".fg(DIM),
-        format!("render.py {} · StarBreaker {}", tool_hash(o, "render_py"), short(o, "starbreaker")).into(),
+        format!("render.py {} · StarBreaker {}", tool_hash(o, "render_py"), sb_text(o)).into(),
     ])
+}
+
+/// A run record's StarBreaker as version+commit; only the commit in a record from before the version
+fn sb_text(o: &serde_json::Value) -> String {
+    crate::cluster::starbreaker_text(o["starbreaker"].as_str(), o["starbreaker_version"].as_str())
 }
 
 /// Header of another node's run: its progress as its head node reports it
@@ -2304,11 +2310,13 @@ fn draw_run_detail(f: &mut Frame, app: &mut App, area: Rect, id: &str) {
     let p4k_id = o["p4k_id"].as_str().map(|v| v.get(..8).unwrap_or(v).to_string());
     let p4k = [o["p4k_version"].as_str().map(String::from), p4k_gb, Some(p4k_date).filter(|d| !d.is_empty()), p4k_id].into_iter().flatten().collect::<Vec<_>>().join(" · ");
     let p4k = if p4k.is_empty() { "–".to_string() } else { p4k };
+    // the default profile without its origin (ADR 0048); a record of 1.0.0 as it was
     let profile = match o["profile"].as_str() {
+        Some(p) if p == crate::profile::BASE => format!("{p} · {}", short(o, "profile_hash")),
         Some(p) => format!("{p} · {} · {}", s("profile_from"), short(o, "profile_hash")),
         None => "– (a run before profiles)".into(),
     };
-    let addon = format!("{} · {}", short(o, "addon"), if o["addon_from"] == "profile" { "the profile's copy" } else { "installed" });
+    let addon = format!("{} · {}", short(o, "addon"), if o["addon_from"] == "profile" { "the profile's copy" } else { "default" });
     let render_py = format!("{} · {}", short(o, "render_py"), if o["render_py_from"] == "flag" { "--render-script" } else { "beside the tool" });
     // a block's title over its rows
     let block = |title: &str| Line::from(format!("── {title} {}", "─".repeat(60))).fg(DIM);
@@ -2328,7 +2336,7 @@ fn draw_run_detail(f: &mut Frame, app: &mut App, area: Rect, id: &str) {
         row("Scene", o["scene"].as_str().map(String::from).unwrap_or_else(|| "default".into())),
         block("Components"),
         row("render.py", render_py),
-        row("StarBreaker", s("starbreaker")),
+        row("StarBreaker", sb_text(o)),
         row("Blender", format!("{} · {}", s("blender_version"), s("gpu_backend"))),
     ];
     // the tile at its full height, the images below in what is left
@@ -2550,14 +2558,14 @@ fn draw_nodes(f: &mut Frame, app: &mut App, area: Rect) {
                 };
                 lines.push(row("Manifest (m)", m));
             }
-            lines.push(row("App", format!("packshot {} · StarBreaker {}", h.version, h.starbreaker.as_deref().unwrap_or("–"))));
+            // what it runs, in one row (the add-on's hash is part of the state check, not shown here)
+            let blender = if h.blender.is_empty() { "?" } else { h.blender.as_str() };
+            lines.push(row("Components", format!("packshot {} · StarBreaker {} · Blender {blender}", h.version, h.starbreaker_text())));
             let p4k = match h.p4k_bytes {
                 Some(b) => format!("{}{} · {:.0} GB", h.p4k_version.as_ref().map(|v| format!("{v} · ")).unwrap_or_default(), h.p4k_id.as_deref().unwrap_or("?").get(..8).unwrap_or("?"), b as f64 / 1e9),
                 None => "– (does not export)".into(),
             };
             lines.push(row("p4k", p4k));
-            let blender = if h.blender.is_empty() { "?".to_string() } else { format!("{} · add-on {}", h.blender, h.addon.as_deref().unwrap_or("?")) };
-            lines.push(row("Blender", blender));
         }
         None => {
             let addr = sel.as_ref().map(|(_, n)| n.clone()).unwrap_or_default();
@@ -2759,13 +2767,13 @@ mod tests {
         assert_eq!(f.text, "Gröe");
     }
 
-    /// The start asks for the profile after the name: the profiles here, game-tile first and the chosen one
+    /// The start asks for the profile after the name: the profiles here, default first and the chosen one
     /// preselected; Enter takes one for the run (and the next start), the selection tile shows it
     #[test]
     fn profile_dialog() {
         let root = std::env::temp_dir().join(format!("packshot-profiles-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
-        for (dir, text) in [("profiles/game-tile", "[params]\nsamples = 16\n"), ("store/profiles/studio", "addon = \"starbreaker_addon\"\n[params]\nquality = 70\n")] {
+        for (dir, text) in [("profiles/default", "[params]\nsamples = 16\n"), ("store/profiles/studio", "addon = \"starbreaker_addon\"\n[params]\nquality = 70\n")] {
             std::fs::create_dir_all(root.join(dir)).unwrap();
             std::fs::write(root.join(dir).join("profile.toml"), text).unwrap();
         }
@@ -2780,13 +2788,15 @@ mod tests {
         let args = Args { filter: String::new(), scope: Scope::Missing, plain: false, serve: false, dry_run: false, workers: 0, exporters: 0, name: String::new(), line: String::new() };
         let mut app = App::new(engine, Picker::halfblocks(), args);
         let s = screen(&mut app);
-        assert!(s.contains("Profile game-tile · 256 px · png · add-on ") && s.contains("│   Components render.py ") && !s.contains("(bundled)"), "{s}");
+        assert!(s.contains("Profile default · 256 px · png · add-on ") && s.contains("│   Components render.py ") && !s.contains("(bundled)"), "{s}");
         app.input = Some(Input::RunName(Field::new("look")));
         app.key(KeyCode::Enter, KeyModifiers::NONE).unwrap();
         let Some(Input::Profile { choices, sel }) = &app.input else { panic!("no profile dialog") };
-        assert_eq!((choices.iter().map(|(p, _)| p.name.as_str()).collect::<Vec<_>>(), *sel), (vec!["game-tile", "studio"], 0));
+        assert_eq!((choices.iter().map(|(p, _)| p.name.as_str()).collect::<Vec<_>>(), *sel), (vec!["default", "studio"], 0));
         let s = screen(&mut app);
         assert!(s.contains("Profile for the run") && s.contains("store · ") && s.contains("own add-on"), "{s}");
+        // the default shows no origin (ADR 0048)
+        assert!(!s.contains("bundled") && s.lines().any(|l| l.contains("▸ default ")), "{s}");
         app.key(KeyCode::Down, KeyModifiers::NONE).unwrap();
         app.key(KeyCode::Enter, KeyModifiers::NONE).unwrap();
         assert!(app.input.is_none());
@@ -3071,7 +3081,7 @@ mod tests {
             node: "DRAGONEGG".into(),
             started: "2026-11-04T10:00:00+00:00".into(),
             finished: Some("2026-11-04T10:05:00+00:00".into()),
-            origin: serde_json::json!({"filter": "", "addon": "1a2b3c4d5e", "render_py": "6da3cb0c523f77d7", "blender_version": "5.2.3", "profile": "studio", "profile_hash": "abcdef12", "addon_from": "profile"}),
+            origin: serde_json::json!({"filter": "", "addon": "1a2b3c4d5e", "render_py": "6da3cb0c523f77d7", "blender_version": "5.2.3", "profile": "studio", "profile_hash": "abcdef12", "addon_from": "profile", "starbreaker": "8b5ae08a", "starbreaker_version": "0.3.2-ps.5"}),
             ..Default::default()
         };
         std::fs::create_dir_all(app.engine.store.run_dir(&run.id)).unwrap();
@@ -3086,7 +3096,7 @@ mod tests {
         // the selected run: its tile on the right, Blender there now
         app.set_sel = app.set_rows.iter().position(|r| matches!(r, SetRow::Run { .. })).unwrap();
         let s = screen(&mut app);
-        for want in ["Run 11-04 10:00", "Blender     5.2.3", "Profile     studio", "render.py   6da3cb0c · beside the tool", "── Profile", "── Components", "Add-on      1a2b3c4d · the profile's copy", "Scene       default"] {
+        for want in ["Run 11-04 10:00", "Blender     5.2.3", "Profile     studio", "render.py   6da3cb0c · beside the tool", "── Profile", "── Components", "Add-on      1a2b3c4d · the profile's copy", "Scene       default", "StarBreaker 0.3.2-ps.5+8b5ae08a"] {
             assert!(s.contains(want), "{want}: {s}");
         }
 

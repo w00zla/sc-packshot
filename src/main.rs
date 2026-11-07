@@ -52,7 +52,7 @@ What to render
   --targets <file>       give the target set this target list
   --name <name>          run name (default: filter and scope)
   --profile <p>          the look: a profile name (own ones in profiles/ of the packshot folder) or
-                         a profile folder (default game-tile)
+                         a profile folder (default: default, the bundled one)
 
 Modes
   --plain                no TUI: run here, one line per item
@@ -132,11 +132,19 @@ fn pinned_blender(root: &Path) -> Option<String> {
     None
 }
 
-/// What the start tile says about a StarBreaker: the first line of the COMMIT stamp next to it (commit, name,
-/// version, how it was built)
+/// What the start tile says about a StarBreaker: version+commit from the COMMIT stamp next to it (commit, name,
+/// version, how it was built), with how it was built ("0.3.2-ps.5+8b5ae08a (release)")
 fn starbreaker_label(starbreaker: &Path) -> String {
     let stamp = starbreaker.parent().map(|d| d.join("COMMIT")).and_then(|f| fs::read_to_string(f).ok());
-    stamp.and_then(|s| s.lines().next().map(|l| l.trim().to_string())).filter(|l| !l.is_empty()).unwrap_or_else(|| "no COMMIT stamp next to it".into())
+    let Some(line) = stamp.and_then(|s| s.lines().next().map(|l| l.trim().to_string())).filter(|l| !l.is_empty()) else {
+        return "no COMMIT stamp next to it".into();
+    };
+    let words: Vec<&str> = line.split_whitespace().collect();
+    let text = cluster::starbreaker_text(words.first().copied(), cluster::starbreaker_version(starbreaker).as_deref());
+    match words.get(3..).filter(|w| !w.is_empty()) {
+        Some(how) => format!("{text} {}", how.join(" ")),
+        None => text,
+    }
 }
 
 /// SC_DATA_P4K from the environment
@@ -496,7 +504,7 @@ fn startup_notes(engine: &mut Engine, caps_line: &str, store_dir: &Path, work: &
         (Some(a), Some(_)) => (Info, format!("Assessment of {} stale, still used: {} (b assesses again)", a.info(false).date, engine.assess_stale.join(", "))),
     });
     notes.push(tool("Blender", (!engine.cfg.blender.as_os_str().is_empty()).then_some(me.blender.as_str()), &engine.cfg.blender));
-    notes.push(tool("StarBreaker", me.starbreaker.as_deref(), &engine.cfg.starbreaker));
+    notes.push(tool("StarBreaker", me.starbreaker.is_some().then(|| me.starbreaker_text()).as_deref(), &engine.cfg.starbreaker));
     if me.export {
         let gb = me.p4k_bytes.map(|b| format!(" · {:.0} GB", b as f64 / 1e9)).unwrap_or_default();
         notes.push((Info, format!("Data.p4k {}{gb} ({})", me.p4k_version.as_deref().unwrap_or("?"), engine.cfg.p4k.display())));

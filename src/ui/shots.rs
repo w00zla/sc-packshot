@@ -289,6 +289,7 @@ fn hello(name: &str, os: &str, render: bool, export: bool, slots: usize, exporte
         p4k_id: export.then(|| "a7c3e91f0b2d4e65".into()),
         p4k_version: export.then(|| "4.3.1 (4.3.141.9927)".into()),
         starbreaker: Some("fef53fd0".into()),
+        starbreaker_version: Some("0.3.2-ps.5".into()),
         disks: vec![DiskInfo { mount: if os == "windows" { "D:\\".into() } else { "/srv".into() }, free: free_gb * 1_000_000_000, total: total_gb * 1_000_000_000 }],
         ..Default::default()
     }

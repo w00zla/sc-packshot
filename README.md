@@ -53,7 +53,7 @@ On Linux run the check first: a headless Blender depends on the GPU driver and i
   stores and watches runs.
 - The TUI always opens: a **Start** tile in the Run view shows what is missing and what to do, and turns off only what
   needs it. In a bundle, `run.cmd` / `run.sh` refuse `--render` until the setup has run.
-- Starting a run asks for its name and **profile**, the look (default `game-tile`, the game's inventory tiles;
+- Starting a run asks for its name and **profile**, the look (`default`: the game's inventory tiles;
   [Profiles](#profiles)), and for a target list while the set has none (a JSON file or the target picker;
   [Target lists](#target-lists)). `--profile` preselects the profile. Size and format are the target set's: every set
   renders at one size in one format, chosen when it is created ([Runs and sets](#runs-and-sets)).
@@ -87,8 +87,9 @@ render. The image above shows a run on three nodes.
 
 The sets with their runs, newest first: per set its size and format (greyed after its image count), per run its
 profile. On the right the selected set's tile, or the selected run's: node, selection, result, workers, `Data.p4k`; its
-profile (where it came from, its hash), add-on (the installed one or the profile's copy), scene;
-its components `render.py` (beside the tool, or from `--render-script`), StarBreaker and Blender; its images below.
+profile (its hash, and where it came from unless it is `default`), add-on (default or the profile's copy), scene;
+its components `render.py` (beside the tool, or from `--render-script`), StarBreaker (version+commit) and Blender; its
+images below.
 
 | Key | |
 |---|---|
@@ -102,7 +103,8 @@ its components `render.py` (beside the tool, or from `--render-script`), StarBre
 <p align="center"><a href="docs/assets/tui-nodes.png"><img src="docs/assets/tui-nodes.png" alt="The Nodes view: the nodes with their workers and assessment, one node's details, the next run" width="600"></a><br><sub>click for full size</sub></p>
 
 Every node with its workers and assessed speed, its share of the run, runs to fetch, free disk and whether its state
-matches; below the selected node's details and where and how the next run would start.
+matches; below the selected node's details (its components: packshot, StarBreaker, Blender) and where and how the next
+run would start.
 
 | Key | |
 |---|---|
@@ -159,7 +161,7 @@ Every render slot runs one portable Blender of the version `deps.toml` pins (5.2
 |---|---|
 | Renderer | Eevee on the **Vulkan** backend, 16 samples, transparent film, at the target set's size and format (`main`: 256 px PNG) |
 | Staging | pose and light rig from the game's inventory data (per item type; an entry for a tag the entity carries wins, e.g. the sidearms rig for pistols), the item scaled to 0.7 m |
-| Look | (`game-tile`) linear EXR mapped by its own tone curve, a studio world, boosted emission with bloom, a second pass for light behind glass |
+| Look | (`default`) linear EXR mapped by its own tone curve, a studio world, boosted emission with bloom, a second pass for light behind glass |
 
 ### Runs and sets
 
@@ -205,16 +207,16 @@ The file is a JSON array, one object per entity; other tools can write it, packs
 
 ## Profiles
 
-A profile is a folder with two files. Anything it does not set falls back to `game-tile`, the default profile:
+A profile is a folder with two files. Anything it does not set falls back to `default`, the profile packshot comes with:
 
 | File | |
 |---|---|
-| `profile.toml` | `[params]` (below), and optionally `scene = "<file>.blend"`, a template whose world, cameras and lights the `stage` hook may take, and `addon = "starbreaker_addon"`, the profile's own copy of the add-on, used instead of the installed one |
+| `profile.toml` | `[params]` (below), and optionally `scene = "<file>.blend"`, a template whose world, cameras and lights the `stage` hook may take, and `addon = "starbreaker_addon"`, the profile's own copy of the add-on, used instead of the default one |
 | `hooks.py` | up to four functions, each taking one context `ctx` (`job`, `params`, `scene`, paths, `lap()`, `output_path()`, `scene_blend`, `use_scene_blend()`); `post` also takes the EXR paths |
 
-A profile's parameters lie over `game-tile`'s; size and format are not among them, they are the set's:
+A profile's parameters lie over `default`'s; size and format are not among them, they are the set's:
 
-| Parameter | `game-tile` | |
+| Parameter | `default` | |
 |---|---|---|
 | `samples` | `16` | Eevee render samples |
 | `quality` | `90` | JPEG quality, 0 to 100 |
@@ -226,9 +228,9 @@ A profile's parameters lie over `game-tile`'s; size and format are not among the
 | `az` · `el` | `20.0` · `15.0` | without a game pose: camera azimuth and elevation in degrees |
 
 Hooks are Python functions that `render.py` calls at four points of every render; each may change the scene. A profile
-defines only the ones it needs, the others come from `game-tile`:
+defines only the ones it needs, the others come from `default`:
 
-| Hook | When | `game-tile` does |
+| Hook | When | `default` does |
 |---|---|---|
 | `before_open(ctx)` | before the item's file opens | nothing (the place to set add-on constants or replace its methods) |
 | `after_open(ctx)` | after the add-on built the materials | sharper gloss on metal and glass, stronger emission, hides empty UI screens |
@@ -243,9 +245,9 @@ background = [1.0, 1.0, 1.0]
 ```
 
 Bundled profiles live in `profiles/` next to the tool; your own go into `profiles/` of the packshot folder (in a bundle
-that is the bundle's own `profiles/`) and hide a bundled one of the same name; `game-tile` itself cannot be replaced.
-Every run records its profile, the profile's content hash and the set's size and format; the Sets view shows the
-profile per run, the run's tile all of it. A `profile.toml` that sets `size` or `format` is refused.
+that is the bundle's own `profiles/`) and hide a bundled one of the same name; `default` itself cannot be replaced: the name is
+reserved. Every run records its profile, the profile's content hash and the set's size and format; the Sets view
+shows the profile per run, the run's tile all of it. A `profile.toml` that sets `size` or `format` is refused.
 
 ## Cluster
 
@@ -260,7 +262,7 @@ The nodes then find each other and show up in the Nodes view. Every node starts 
 **head node** and assigns the chunks; one run at a time in the cluster. The starter decides what a run renders, as on
 one node: it picks the target set on the head node (whose target list comes with the set's state), the selection
 (filter, scope) and the profile; the selected targets and the profile's folder go along to the head node, where the
-target set's size and format hold; it sends `render.py`, `game-tile` and the run's profile with every render chunk.
+target set's size and format hold; it sends `render.py`, `default` and the run's profile with every render chunk.
 
 Every node must run the same packshot build, Blender, add-on and StarBreaker, and the exporting nodes the same
 `Data.p4k`; otherwise no run starts and the TUI shows what differs.
@@ -271,7 +273,7 @@ Every node must run the same packshot build, Blender, add-on and StarBreaker, an
 |---|---|
 | `src/` | the orchestrator (Rust): selection, scheduler, cluster, runs and sets, assessment, TUI |
 | `blender/render.py` | runs inside Blender: opens the item, calls the profile's hooks, renders a linear EXR for its `post` hook |
-| `profiles/` | the bundled profiles: `game-tile` (pose, fit, light rig, material tweaks, tone curve; PNG, JPEG or EXR) |
+| `profiles/` | the bundled profiles: `default` (pose, fit, light rig, material tweaks, tone curve; PNG, JPEG or EXR) |
 | `shim/` | RDSEED shim for Blender on Linux (built by `build.rs`, embedded in the binary) |
 | `templates/bundle/` | templates of the per-OS bundles (setup, check, run, README, cluster config) |
 | `deps.toml` | the pins: Blender version and archive SHA256s, the StarBreaker release with its SHA256s and commit |
@@ -294,7 +296,7 @@ land on `main` through pull requests.
 
 ## Security
 
-In a cluster every rendering node runs Python it receives: `render.py` and `game-tile` from the head node, the run's
+In a cluster every rendering node runs Python it receives: `render.py` and `default` from the head node, the run's
 profile (`hooks.py`, any add-on copy) from the node that starts the run. Anyone with the token can make every node run code, so share a
 cluster only with machines and people you trust.
 

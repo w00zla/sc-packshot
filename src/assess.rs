@@ -55,7 +55,7 @@ const KEEP_LOGS: usize = 5;
 const MEASURED_PER_BLENDER: usize = 8;
 
 /// What an assessment was measured with: when any of it differs the assessment shows as stale, with what differs, and
-/// is still used (ADR 0046). Not the packshot build, the profile parts (game-tile, the add-on) or the host name: keys
+/// is still used (ADR 0046). Not the packshot build, the profile parts (default, the add-on) or the host name: keys
 /// an older file still has ("packshot", "addon", "host") are ignored
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
 pub struct Keys {
@@ -312,9 +312,9 @@ struct TestSetFile {
 pub struct SweepParams {
     pub blender: PathBuf,
     pub script: PathBuf,
-    /// game-tile beside it: the sweep always measures it, as PNG (the validity keys stay meaningful)
+    /// default beside it: the sweep always measures it, as PNG (the validity keys stay meaningful)
     pub profile: PathBuf,
-    /// the image size, game-tile's 256 always (the validity keys stay meaningful)
+    /// the image size, default's 256 always (the validity keys stay meaningful)
     pub size: Option<u32>,
     pub chunk: usize,
     /// test set: (entity, worn, scene.blend, rig, pose)

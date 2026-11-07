@@ -85,7 +85,7 @@ pub fn tree_hash(root: &Path) -> Option<String> {
 }
 
 /// Hash over files and folders, each under its label: a file by its content, a folder by every file in it (relative
-/// path and content, sorted by the path with /, without __pycache__): a profile with game-tile below it, render.py
+/// path and content, sorted by the path with /, without __pycache__): a profile with default below it, render.py
 /// beside them. The same on every OS for the same files
 pub fn content_hash(parts: &[(&str, &Path)]) -> Option<String> {
     let mut h = FNV0;

@@ -15,7 +15,7 @@ read by packshot itself. No database: the target list is a file per set.
 | Stage | What happens |
 |---|---|
 | Export | StarBreaker reads an entity from `Data.p4k` and writes a decomposed package: `scene.blend`, meshes, PNG textures and the material sidecars |
-| Render | Blender loads the package; the StarBreaker add-on builds the node trees from the sidecars; `render.py` calls the run's profile (default `game-tile`): pose, fit and light rig, an Eevee render to a linear EXR, the image: PNG or JPEG through the profile's tone curve, or a linear EXR |
+| Render | Blender loads the package; the StarBreaker add-on builds the node trees from the sidecars; `render.py` calls the run's profile (by default `default`): pose, fit and light rig, an Eevee render to a linear EXR, the image: PNG or JPEG through the profile's tone curve, or a linear EXR |
 | Store | the image goes into the run's folder, never changed afterwards, and as a hard link into the target set; consumers read `sets/main` |
 
 ## Material sidecars
@@ -65,7 +65,7 @@ assessment's sweep and sampler and the GPU sampling have threads of their own, w
 | `tables.rs` | pose and light tables of the inventory and the entities' tags from the DataCore (a tagged entry wins for an entity with that tag), cached in the work folder |
 | `blender.rs`, `shim/` | one command line for every Blender; on Linux the RDSEED shim via `LD_PRELOAD` |
 | `blender/render.py` | runs inside Blender: loads the package, calls the profile's hooks, renders, answers `icon:` or `failed:` with phase timings |
-| `profile.rs`, `profiles/` | profiles: resolution (`--profile`), content hash, the files a render chunk carries; `game-tile`, the default look |
+| `profile.rs`, `profiles/` | profiles: resolution (`--profile`), content hash, the files a render chunk carries; `default`, the default look |
 
 ## An item through a run
 
@@ -173,9 +173,9 @@ the versions of all connected nodes; if anything differs, no run starts and the 
 | packshot build | hash over the source, the same on Windows and Linux | all nodes |
 | Blender version | the node's Blender | all nodes |
 | add-on | hash over the add-on's files | all nodes |
-| StarBreaker | the commit in the `COMMIT` file next to the binary | all nodes |
+| StarBreaker | the commit in the `COMMIT` file next to the binary (shown as version+commit) | all nodes |
 | Data.p4k | size plus branch, version and build id from `build_manifest.id` | exporting nodes, among each other |
-| `render.py`, profile | travel with every render chunk from the head node (`render.py` and `game-tile` its own, the profile the starter's) | distributed, not compared |
+| `render.py`, profile | travel with every render chunk from the head node (`render.py` and `default` its own, the profile the starter's) | distributed, not compared |
 
 ## Compute assessment
 
@@ -196,21 +196,21 @@ sets and assessment do not depend on it.
 
 - **Core and look:** `render.py` is the core: it opens the item, calls the profile's hooks (`before_open`,
   `after_open`, `stage`, `post`), renders a linear multi-layer EXR and hands it to `post`, which writes the image. The
-  bundled `game-tile` is the default and the base of every profile: its parameters lie under a profile's, its hooks
-  run where a profile has none.
+  bundled `default` ([0048](adr/0048-default-profile-named-default.md), a reserved name) is the default profile and the
+  base of every other: its parameters lie under a profile's, its hooks run where a profile has none.
 - **Extras:** a profile may bring a `scene` .blend (world, cameras, lights; `ctx.use_scene_blend()`) and its own copy
-  of the StarBreaker add-on (`addon`, [ADR 0025](adr/0025-material-module.md)), which `render.py` enables instead of the installed one for its whole
-  process; the equality check still compares the installed add-on.
+  of the StarBreaker add-on (`addon`, [ADR 0025](adr/0025-material-module.md)), which `render.py` enables instead of the default one for its whole
+  process; the equality check still compares the default add-on.
 - **Choice:** per run, by the starter: `--profile` (a name, or a folder) or the TUI's start dialog. A start on another
   node picks the target set there (its target list comes with the set's state) and sends the selected targets, filter
   and scope and the profile's folder along, so the head node need not have the profile.
 - **Size and format:** the target set's ([ADR 0045](adr/0045-size-and-format-per-set.md)), fixed when the set is
   created (`main`: 256 px PNG; a set from before them counts as that); the head node puts them into every job. A
   `profile.toml` that sets `size` or `format` is refused.
-- **Distribution:** the head node sends `render.py`, `game-tile` (both its own) and the run's profile with every render
+- **Distribution:** the head node sends `render.py`, `default` (both its own) and the run's profile with every render
   chunk ([ADR 0024](adr/0024-head-node-distributes-profiles.md)); a node keeps them in `work/profile-cache/` by content
   hash and starts a Blender per `render.py` and profile.
 - **Record:** the run records `render.py`'s hash (and whether it came from `--render-script`), the profile (name,
   origin, hash, scene), the set's size and format, and the add-on it used; the Sets view shows the profile and
   the add-on in the run's tile, size and format on the set. The assessment always measures
-  `game-tile` as PNG.
+  `default` as PNG.
