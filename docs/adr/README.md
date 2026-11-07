@@ -40,7 +40,7 @@ supersedes the old one. 0001–0020 were recorded afterwards (2026-11-05) from t
 | [0033](0033-one-pin-file-for-dev-and-bundles.md) | One pin file for Blender and StarBreaker, used by the dev setup and the bundles | accepted | 2026-11-07 |
 | [0034](0034-changes-through-pull-requests.md) | Changes land on main through pull requests | accepted | 2026-11-07 |
 | [0035](0035-main-set-is-called-main.md) | The main set is called main | accepted | 2026-11-07 |
-| [0036](0036-releases-without-blender-and-workflows.md) | Releases are bundles without Blender; test and release workflows | accepted | 2026-11-07 |
+| [0036](0036-releases-without-blender-and-workflows.md) | Releases are bundles without Blender; test and release workflows | accepted; superseded in part by [0050](0050-tests-on-pull-requests-only.md) | 2026-11-07 |
 | [0037](0037-renders-allowed-in-example-screenshots.md) | Renders are allowed in example screenshots | accepted | 2026-11-07 |
 | [0038](0038-render-script-distributed-not-compared.md) | The render script is distributed, not compared | accepted | 2026-11-07 |
 | [0039](0039-target-lists-owned-by-packshot.md) | packshot owns the target-list format and builds lists from the DataCore | accepted | 2026-11-07 |
@@ -54,3 +54,4 @@ supersedes the old one. 0001–0020 were recorded afterwards (2026-11-05) from t
 | [0047](0047-assessment-per-os.md) | One assessment per operating system, in one file | accepted | 2026-11-07 |
 | [0048](0048-default-profile-named-default.md) | The default profile is called `default`, a reserved name | accepted | 2026-11-07 |
 | [0049](0049-addon-knobs-in-profile-toml.md) | The add-on's look knobs are profile parameters (`[addon]` in profile.toml) | accepted | 2026-11-08 |
+| [0050](0050-tests-on-pull-requests-only.md) | Tests run on pull requests only, not again on main | accepted | 2026-11-08 |

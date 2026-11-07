@@ -78,7 +78,7 @@ scripts/packshot-bundle.sh [--platform all|windows|linux] [--out <dir>] [--targe
 #   and linux (static packshot, the Linux StarBreaker (glibc: it prints the version it needs), addon/, blender.pin, render.py, profiles/, targets/targets.json, setup.sh, check.sh, run.sh)
 #   no Blender in the bundles (ADR 0036): their setup takes the archive blender.pin names (next to it, else from blender.org), checks the SHA256, builds portable/ with the add-on
 scripts/packshot-bundle.ps1 [-Platform all|windows|linux] [-Out <dir>] [-Targets <file>]   # on Windows, the same two bundles
-# CI: .github/workflows/test.yml (cargo test on Linux + Windows, clippy -D warnings, shellcheck) on PRs and main; release.yml on a tag v<Cargo version> on main: both bundles + SHA256SUMS as a release
+# CI: .github/workflows/test.yml (cargo test on Linux + Windows, clippy -D warnings, shellcheck) on PRs only (ADR 0050); release.yml on a tag v<Cargo version> on main: both bundles + SHA256SUMS as a release
 scripts/starbreaker-build.sh [--platform all|windows|linux] [--commit <rev>]   # (.ps1 -Platform -Commit on Windows) builds the pinned commit (git archive, --commit HEAD to try a fork change) of ../starbreaker-ps
 #   into local/starbreaker-ps/ (starbreaker.exe; starbreaker for Linux via cargo-zigbuild against glibc 2.31, needs zig + cargo-zigbuild + rustup target x86_64-unknown-linux-gnu,
 #   on Windows too; Windows from Linux via mingw); stamps each binary (<binary>.commit, the bundles copy it as COMMIT), COMMIT = this OS's binary

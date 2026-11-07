@@ -1,10 +1,9 @@
 name: Tests
 
-# Every pull request and every push to main: the Rust tests (fake tools, no game data) on Linux and Windows, clippy,
-# and shellcheck for the shell scripts. The ruleset on main requires these checks.
+# Every pull request (and by hand): the Rust tests (fake tools, no game data) on Linux and Windows, clippy, and
+# shellcheck for the shell scripts. The ruleset on main requires these checks; main changes only through pull
+# requests, so a run after the merge would test the same code twice (ADR 0050).
 on:
-  push:
-    branches: [main]
   pull_request:
     branches: [main]
   workflow_dispatch:
