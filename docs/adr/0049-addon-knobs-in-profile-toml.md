@@ -11,9 +11,12 @@ depth, lights, skin, hair) in `runtime/constants.py` and reads them at use time 
 them in `before_open`, but a few numbers should not need Python.
 
 ## Decision
-- `profile.toml` takes a section `[addon]`: names of `runtime/constants.py` of the add-on the run uses (the installed
-  one, or the profile's own copy) with their values. `render.py` sets them on that module before every item's file
-  opens; `before_open` still runs after it, for anything beyond values.
+- Everything about the add-on goes into one table `[addon]` in `profile.toml`: `copy = "<folder>"` names the profile's
+  own add-on copy ([0025](0025-material-module.md); before: a top-level key `addon`, which a table of that name cannot
+  sit beside), and upper-case keys are knobs: names of `runtime/constants.py` of the add-on the run uses (the
+  installed one, or the copy) with their values. `render.py` sets them on that module before every item's file opens;
+  `before_open` still runs after it, for anything beyond values. Other lower-case keys are refused.
+- 1.0.0's top-level `addon = "<folder>"` (a string, no table) still means the copy, without knobs.
 - A name the add-on does not define, or a value whose type differs from the constant's (number, list, bool, string),
   is refused: a start check in the TUI, an error in console modes, and `render.py` refuses it too.
 - The `default` profile sets none: the defaults live in the add-on only. The README lists the knobs with their default
