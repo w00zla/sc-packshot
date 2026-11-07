@@ -1517,7 +1517,11 @@ fn draw_tabs(f: &mut Frame, app: &App, area: Rect) {
     let problem = if e.state_problems().is_empty() { String::new() } else { " · not the same state: no run ".to_string() };
     let head = e.head.clone().unwrap_or_else(|| "here".into());
     let right = format!("head node {head} · set {} · {net} ", e.target_set());
-    let left = vec![tab(app.view == View::Run, "1 Run"), " ".into(), tab(app.view == View::Sets, "2 Sets"), " ".into(), tab(app.view == View::Nodes, "3 Nodes")];
+    let left = vec![
+        Span::styled(" packshot", Style::new().bold()),
+        Span::styled(concat!(" (v", env!("CARGO_PKG_VERSION"), ")"), Style::new().fg(DIM)),
+        Span::styled(" │ ", Style::new().fg(DIM)),
+        tab(app.view == View::Run, "1 Run"), " ".into(), tab(app.view == View::Sets, "2 Sets"), " ".into(), tab(app.view == View::Nodes, "3 Nodes")];
     let width = (right.chars().count() + problem.chars().count()) as u16;
     let [l, r] = Layout::horizontal([Constraint::Min(30), Constraint::Length(width)]).areas(area);
     f.render_widget(Paragraph::new(Line::from(left)), l);
