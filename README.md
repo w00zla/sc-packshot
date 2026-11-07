@@ -167,9 +167,19 @@ phase timings, slot use per node, slowest entities.
 
 ### Target lists
 
-A target list is a JSON array, one object per entity to render; every set keeps its own copy. Other tools can write
-it, packshot reads only these fields. The files live in `targets/` of the packshot folder (subfolders are fine); the `t`
-dialog lists every list there, `targets/targets.json` first:
+A target list says which entities a run renders; every set keeps its own copy. The lists live in `targets/` of the
+packshot folder (subfolders are fine); `t` in the Sets view lists every list there, `targets/targets.json` first, and
+offers the target picker.
+
+The **target picker** ("From the DataCore …") builds one from the game's entities: a search field (class names with
+`*`, display names, types; terms are or'ed), a tree of item types and subtypes with counts to tick, and the result
+next to them. Ticked types (none ticked: all) narrowed by the search make the list; several exact class names pasted
+into the search make exactly that list, e.g. a fixed sample to compare builds. In the type tree `+` ticks every type
+shown and `-` clears all ticks. `Enter` asks for a name and writes the list as `targets/<name>.json` (letters, digits,
+`-`, `_`, `.`; the dialog offers it again) and takes it as the set's list; `Esc` cancels the picker. The entity list
+behind it is read once per game build (a few seconds) and cached in the work folder.
+
+The file is a JSON array, one object per entity; other tools can write it, packshot reads only these fields:
 
 | Field | |
 |---|---|
@@ -183,14 +193,6 @@ dialog lists every list there, `targets/targets.json` first:
 [{ "uuids": ["02d4cd2e-fa98-4086-aee1-6b2dfce8ea27"], "names": ["P4-AR Rifle"], "entity": "behr_rifle_ballistic_01",
    "type": "WeaponPersonal", "subType": "Medium", "worn": false }]
 ```
-
-The **target picker** (`t` in the Sets view, "From the DataCore …") builds one from the game's entities: a search
-field (class names with `*`, display names, types; terms are or'ed), a tree of item types and subtypes with counts to
-tick, and the result next to them. Ticked types (none ticked: all) narrowed by the search make the list; several exact
-class names pasted into the search make exactly that list, e.g. a fixed sample to compare builds. In the type tree `+`
-ticks every type shown and `-` clears all ticks. `Enter` asks for a name and writes the list as `targets/<name>.json`
-(letters, digits, `-`, `_`, `.`; the dialog offers it again) and takes it as the set's list; `Esc` cancels the picker.
-The entity list behind it is read once per game build (a few seconds) and cached in the work folder.
 
 ### Cluster
 
