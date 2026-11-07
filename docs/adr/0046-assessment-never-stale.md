@@ -14,7 +14,7 @@ changes barely move the throughput, and a sweep takes minutes and the whole mach
 ## Decision
 - An existing assessment is always used: its process counts are the defaults and the head node sizes chunks by its
   items/s, whatever changed since.
-- The keys are still recorded; what differs from them is shown as a note ("measured with …"), not as an error. A new
+- The keys are still recorded; when one differs the assessment is shown as stale, with what differs, but still used. A new
   assessment (`--assess` or `b`) replaces the old one.
 
 ## Alternatives
