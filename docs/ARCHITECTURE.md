@@ -199,8 +199,13 @@ sets and assessment do not depend on it.
   bundled `default` ([0048](adr/0048-default-profile-named-default.md), a reserved name) is the default profile and the
   base of every other: its parameters lie under a profile's, its hooks run where a profile has none.
 - **Extras:** a profile may bring a `scene` .blend (world, cameras, lights; `ctx.use_scene_blend()`) and its own copy
-  of the StarBreaker add-on (`addon`, [ADR 0025](adr/0025-material-module.md)), which `render.py` enables instead of the default one for its whole
-  process; the equality check still compares the default add-on.
+  of the StarBreaker add-on (`[addon] override`, [ADR 0025](adr/0025-material-module.md)), which `render.py` enables
+  instead of the default one for its whole process; the equality check still compares the default add-on.
+- **Add-on knobs:** the other keys of `[addon]` are constants of the add-on's `runtime/constants.py` with their values
+  ([ADR 0049](adr/0049-addon-knobs-in-profile-toml.md)); `render.py` sets them on that module before every item's
+  file opens. A name the add-on does not define or a value of another type is refused before a run starts: packshot
+  reads the names and literal types from the `runtime/constants.py` of the add-on the run uses (the profile's copy,
+  else the one installed with Blender), `render.py` checks again at its start.
 - **Choice:** per run, by the starter: `--profile` (a name, or a folder) or the TUI's start dialog. A start on another
   node picks the target set there (its target list comes with the set's state) and sends the selected targets, filter
   and scope and the profile's folder along, so the head node need not have the profile.

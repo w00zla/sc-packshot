@@ -733,6 +733,8 @@ impl Engine {
         let targets: Vec<Target> = todo.iter().map(|&t| self.targets[t].clone()).collect();
         // the starter decides the profile: its folder goes along (default itself does not: the head node has it)
         let profile = self.cfg.profile.clone().map_err(|e| anyhow::anyhow!("no profile: {e}"))?;
+        // the head node has the same add-on (state check): its knobs are refused here already
+        self.check_knobs(&profile)?;
         let (files, payload) = if crate::profile::same_dir(&profile.dir, &profile.base) {
             (Vec::new(), Payload::None)
         } else {
@@ -1180,6 +1182,25 @@ mod tests {
         let big = inbox(9);
         fs::write(big.join("profile.toml"), "[params]\nsize = 1024\n").unwrap();
         assert!(e.take_profile("a", "big", Some(big)).unwrap_err().to_string().contains("belong to the set"));
+        // [addon] (ADR 0049): a table packshot cannot read is refused when taken; a knob the head node's add-on does
+        // not define when the run starts, before anything of it exists
+        let odd = inbox(10);
+        fs::write(odd.join("profile.toml"), "[addon]\nfoo = 1\n").unwrap();
+        assert!(e.take_profile("a", "odd", Some(odd)).unwrap_err().to_string().contains("[addon] foo: unknown option"));
+        fs::write(&e.cfg.blender, "").unwrap();
+        let constants = addon_dir(&e.cfg.blender).join("runtime/constants.py");
+        fs::create_dir_all(constants.parent().unwrap()).unwrap();
+        fs::write(&constants, "POM_SCALE_MULTIPLIER = 30.0\n").unwrap();
+        let typo = inbox(11);
+        fs::write(typo.join("profile.toml"), "[addon]\nPOM_SCALE_MULTIPLER = 60.0\n").unwrap();
+        let p = e.take_profile("a", "typo", Some(typo)).unwrap();
+        let err = e.start_for("a", vec![target("gun")], MAIN, "x", "", "all", "t", p).unwrap_err().to_string();
+        assert!(err.contains("POM_SCALE_MULTIPLER: the add-on defines no such constant"), "{err}");
+        assert!(!e.running() && e.record.is_none());
+        let good = inbox(12);
+        fs::write(good.join("profile.toml"), "[addon]\nPOM_SCALE_MULTIPLIER = 60\n").unwrap();
+        let p = e.take_profile("a", "good", Some(good)).unwrap();
+        e.check_knobs(&p).unwrap();
         let _ = fs::remove_dir_all(&root);
     }
 

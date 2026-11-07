@@ -1,13 +1,19 @@
 # default: the look of the game's inventory tiles; the default profile (ADRs 0022, 0042).
-# A profile is this folder: profile.toml (parameters, optional `scene` and `addon`) and hooks.py; its parameters lie
+# A profile is this folder: profile.toml (parameters, optional `scene` and [addon]) and hooks.py; its parameters lie
 # over these. Size and format are no parameters: they belong to the target set (ADR 0045), packshot puts them into
 # every job. A hook another profile leaves out runs this one's.
 
 # a .blend template next to this file whose world, cameras and lights stage() may take (default uses none)
 # scene = "scene.blend"
-# its own copy of the StarBreaker add-on, a folder starbreaker_addon next to this file, used instead of the default
-# one (default uses the one packshot comes with); not inherited by other profiles
-# addon = "starbreaker_addon"
+
+# [addon] (ADR 0049), not inherited by other profiles; default sets none (the defaults live in the add-on):
+#   override: its own copy of the StarBreaker add-on, a folder starbreaker_addon next to this file, used instead of
+#     the one packshot comes with
+#   UPPER_CASE names: the add-on's look knobs, constants of its runtime/constants.py (the README lists them), set
+#     before every item opens; a name the add-on does not define or a value of another type is refused
+# [addon]
+# override = "starbreaker_addon"
+# POM_SCALE_MULTIPLIER = 30.0
 
 [params]
 samples = 16        # Eevee render samples

@@ -884,6 +884,12 @@ impl App {
                     KeyCode::Enter => {
                         if let Some((p, _)) = choices.get(*sel) {
                             let p = p.clone();
+                            // its add-on knobs: refused before the start, the dialog stays (ADR 0049)
+                            if let Err(e) = self.engine.check_knobs(&p) {
+                                self.engine.note(Level::Error, format!("No run with profile {}: {e:#}", p.name));
+                                self.input = Some(input);
+                                return Ok(());
+                            }
                             self.engine.set_profile(p);
                             self.start_flow(1)?;
                         }
@@ -2779,11 +2785,19 @@ mod tests {
         }
         std::fs::create_dir_all(root.join("store/profiles/studio/starbreaker_addon")).unwrap();
         std::fs::write(root.join("store/profiles/studio/starbreaker_addon/__init__.py"), "").unwrap();
+        // a profile with a knob the installed add-on does not define (ADR 0049)
+        std::fs::create_dir_all(root.join("store/profiles/typo")).unwrap();
+        std::fs::write(root.join("store/profiles/typo/profile.toml"), "[addon]\nPOM_SCALE_MULTIPLER = 60.0\n").unwrap();
+        let blender = root.join("blender/blender.exe");
+        let constants = crate::node::addon_dir(&blender).join("runtime/constants.py");
+        std::fs::create_dir_all(constants.parent().unwrap()).unwrap();
+        std::fs::write(&blender, "").unwrap();
+        std::fs::write(&constants, "POM_SCALE_MULTIPLIER = 30.0\n").unwrap();
         let store = Store::open(&root.join("store")).unwrap();
         let set = store.load_set(MAIN).unwrap();
         let x = root.join("x");
         let base = crate::profile::Profile::base(&x).unwrap();
-        let cfg = Config { p4k: x.clone(), starbreaker: x.clone(), blender: x.clone(), render_script: x.clone(), work: root.join("work"), profile: Ok(base), chunk: 50, cache_limit: 0 };
+        let cfg = Config { p4k: x.clone(), starbreaker: x.clone(), blender, render_script: x.clone(), work: root.join("work"), profile: Ok(base), chunk: 50, cache_limit: 0 };
         let engine = Engine::new(cfg, Vec::new(), Tables::default(), store, set, None, Hello { name: "N".into(), ..Default::default() }).unwrap();
         let args = Args { filter: String::new(), scope: Scope::Missing, plain: false, serve: false, dry_run: false, workers: 0, exporters: 0, name: String::new(), line: String::new() };
         let mut app = App::new(engine, Picker::halfblocks(), args);
@@ -2792,7 +2806,7 @@ mod tests {
         app.input = Some(Input::RunName(Field::new("look")));
         app.key(KeyCode::Enter, KeyModifiers::NONE).unwrap();
         let Some(Input::Profile { choices, sel }) = &app.input else { panic!("no profile dialog") };
-        assert_eq!((choices.iter().map(|(p, _)| p.name.as_str()).collect::<Vec<_>>(), *sel), (vec!["default", "studio"], 0));
+        assert_eq!((choices.iter().map(|(p, _)| p.name.as_str()).collect::<Vec<_>>(), *sel), (vec!["default", "studio", "typo"], 0));
         let s = screen(&mut app);
         assert!(s.contains("Profile for the run") && s.contains("store · ") && s.contains("own add-on"), "{s}");
         // the default shows no origin (ADR 0048)
@@ -2807,6 +2821,13 @@ mod tests {
         app.input = Some(Input::RunName(Field::new("again")));
         app.key(KeyCode::Enter, KeyModifiers::NONE).unwrap();
         assert!(matches!(app.input, Some(Input::Profile { sel: 1, .. })));
+        // a knob the add-on does not define: refused at Enter, the dialog stays, the profile stays the one before
+        app.key(KeyCode::Down, KeyModifiers::NONE).unwrap();
+        app.key(KeyCode::Enter, KeyModifiers::NONE).unwrap();
+        assert!(matches!(app.input, Some(Input::Profile { sel: 2, .. })));
+        assert_eq!(app.engine.cfg.profile.as_ref().unwrap().name, "studio");
+        let last = &app.engine.log.back().unwrap().text;
+        assert!(last.starts_with("No run with profile typo: ") && last.contains("POM_SCALE_MULTIPLER: the add-on defines no such constant"), "{last}");
         let _ = std::fs::remove_dir_all(&root);
     }
 

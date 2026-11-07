@@ -1,6 +1,6 @@
 # 0036. Releases are bundles without Blender; test and release workflows
 
-- Status: accepted
+- Status: accepted; superseded in part by [0050](0050-tests-on-pull-requests-only.md) (tests on pull requests only)
 - Date: 2026-11-07
 - Scope: bundles, `templates/bundle/`, `scripts/packshot-bundle.*`, `.github/workflows/`
 

@@ -3,7 +3,7 @@
 <h1 align="center">packshot</h1>
 
 <p align="center">
-  <a href="https://github.com/w00zla/sc-packshot/actions/workflows/test.yml"><img src="https://github.com/w00zla/sc-packshot/actions/workflows/test.yml/badge.svg?branch=main" alt="Tests"></a>
+  <a href="https://github.com/w00zla/sc-packshot/actions/workflows/test.yml"><img src="https://github.com/w00zla/sc-packshot/actions/workflows/test.yml/badge.svg?event=pull_request" alt="Tests"></a>
   <a href="https://github.com/w00zla/sc-packshot/releases"><img src="https://img.shields.io/github/v/release/w00zla/sc-packshot?color=54adf7" alt="Release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-54adf7" alt="License: MIT"></a>
   <a href="Cargo.toml"><img src="https://img.shields.io/badge/rust-1.89%2B-54adf7?logo=rust" alt="Rust 1.89+"></a>
@@ -181,14 +181,18 @@ A target list says which entities a run renders; every set keeps its own copy. T
 packshot folder (subfolders are fine); `t` in the Sets view lists every list there, `targets/targets.json` first, and
 offers the target picker.
 
-The **target picker** ("From Data.p4k / DataCore …") builds one from the game's entities: a search field (class
-names with `*`, display names, types; terms are or'ed), a tree of item types and subtypes with counts to tick, and the
-result next to them. Ticked types (none ticked: all) narrowed by the search make the list; several exact class names pasted
-into the search make exactly that list, e.g. a fixed sample to compare builds. In the type tree `+` ticks every type
-shown and `-` clears all ticks; `Tab` switches between search and tree, `Space` ticks a type or subtype, `→` `←`
-unfold and fold a type's subtypes. `Enter` asks for a name and writes the list as `targets/<name>.json` (letters, digits,
-`-`, `_`, `.`; the dialog offers it again) and takes it as the set's list; `Esc` cancels the picker. The entity list
-behind it is read once per game build (a few seconds) and cached in the work folder.
+The **target picker** ("From Data.p4k / DataCore …") builds one from the game's entities: the ticked types (none
+ticked: all), narrowed by the search, make the list. Its entity list is read once per game build (a few seconds) and
+cached in the work folder.
+
+| Key | |
+|---|---|
+| typing | search: class names with `*`, display names, types; terms are or'ed. Several exact class names pasted make exactly that list (a fixed sample to compare builds) |
+| `Tab` | switches between search and type tree |
+| `Space` · `+` · `-` | in the tree: tick a type or subtype · tick every type shown · clear all ticks |
+| `→` · `←` | unfold · fold a type's subtypes |
+| `Enter` | asks for a name, writes the list as `targets/<name>.json` (letters, digits, `-`, `_`, `.`; the list dialog offers it from then on) and takes it as the set's list |
+| `Esc` | cancels the picker |
 
 The file is a JSON array, one object per entity; other tools can write it, packshot reads only these fields:
 
@@ -211,7 +215,7 @@ A profile is a folder with two files. Anything it does not set falls back to `de
 
 | File | |
 |---|---|
-| `profile.toml` | `[params]` (below), and optionally `scene = "<file>.blend"`, a template whose world, cameras and lights the `stage` hook may take, and `addon = "starbreaker_addon"`, the profile's own copy of the add-on, used instead of the default one |
+| `profile.toml` | `[params]` and `[addon]` (below), and optionally `scene = "<file>.blend"`, a template whose world, cameras and lights the `stage` hook may take |
 | `hooks.py` | up to four functions, each taking one context `ctx` (`job`, `params`, `scene`, paths, `lap()`, `output_path()`, `scene_blend`, `use_scene_blend()`); `post` also takes the EXR paths |
 
 A profile's parameters lie over `default`'s; size and format are not among them, they are the set's:
@@ -227,12 +231,46 @@ A profile's parameters lie over `default`'s; size and format are not among them,
 | `mirror` | `false` | the camera from the other side (a mirrored image) |
 | `az` · `el` | `20.0` · `15.0` | without a game pose: camera azimuth and elevation in degrees |
 
+`[addon]` is about the StarBreaker add-on ([ADR 0049](docs/adr/0049-addon-knobs-in-profile-toml.md)), not inherited
+from `default`, which sets none: `override = "starbreaker_addon"` names the profile's own copy of the add-on (a folder
+in the profile), used instead of the default one (1.0.0's top-level `addon = "..."` still means that). Every other key
+is one of the add-on's look knobs, by its UPPER_CASE name in the add-on's `runtime/constants.py`, set before every
+item's file opens (before `before_open`). Another lowercase key, a name the add-on does not define or a value of
+another type (numbers for numbers, a list of as many numbers for a tuple; for a knob that may be None a number, or
+`false` for None: TOML has no null) is refused before the run starts.
+
+```toml
+[addon]
+POM_SCALE_MULTIPLIER = 45.0
+SKIN_SUBSURFACE_RADIUS = [1.0, 0.4, 0.25]
+```
+
+The look knobs of the add-on (StarBreaker 0.3.2-ps.6), with their defaults:
+
+| Knob | Default | |
+|---|---|---|
+| `MONITOR_ROUGHNESS` | `0.35` | roughness of monitor-like surfaces (screens, eyeballs); 0.15 mirror-like, 0.6 matt |
+| `LAYER_BLEND_GLOW_TINT_WEIGHT` | `0.5` | colour of a glowing layer: 0 its emissive colour, 1 the layer's tint, between a mix |
+| `ORE_VEIN_SMOOTHSTEP` | `[0.6, 0.8]` | the range of an ore's vein map that turns rock into vein (lower: more vein) |
+| `ORGANIC_TINT_GAIN` | `2.0` | brightness of organic materials (minerals such as Hadanite, Beradom) |
+| `METAL_TINT_HUE_ONLY_BELOW` | `0.1` | a metal tint darker than this keeps only its hue in the reflection, a brighter one scales it |
+| `LAYER_BLEND_WEAR_MASK_GAIN` | `4.0` | how strongly the wear mask hides layered materials' edge wear; `false`: not at all, the authored edge wear shows |
+| `WEAR_STRENGTH_OVERRIDE` | none | wear of two-layer wear materials (e.g. some weapons), 0 to 2; unset or `false`: pristine |
+| `POM_SCALE_MULTIPLIER` | `30.0` | parallax (POM) depth: the material's displacement times this |
+| `POM_SCALE_MAX` | `3.0` | the cap on that depth (higher makes the surface swim) |
+| `LIGHT_VISUAL_GAIN` | `20.0` | brightness of the item's own lights |
+| `HEADLIGHT_GOBO_THROW_GAIN` | `10.0` | brightness of headlights with a projector texture |
+| `SKIN_SUBSURFACE_RADIUS` | `[1.0, 0.35, 0.2]` | skin: how far red, green and blue scatter under the surface, relative |
+| `SKIN_SUBSURFACE_SCALE` | `0.004` | skin: the scatter distance in metres |
+| `SKIN_TRANSMITTANCE_SCALE_GAIN` | `4.0` | skin: how much thin parts (ears, nostrils) widen the scatter |
+| `HAIR_DIFFUSE_SCALE` | `0.5` | hair: the share of the hair colour in its diffuse light |
+
 Hooks are Python functions that `render.py` calls at four points of every render; each may change the scene. A profile
 defines only the ones it needs, the others come from `default`:
 
 | Hook | When | `default` does |
 |---|---|---|
-| `before_open(ctx)` | before the item's file opens | nothing (the place to set add-on constants or replace its methods) |
+| `before_open(ctx)` | before the item's file opens, after `[addon]`'s knobs | nothing (the place to replace the add-on's methods) |
 | `after_open(ctx)` | after the add-on built the materials | sharper gloss on metal and glass, stronger emission, hides empty UI screens |
 | `stage(ctx)` | then | the game's pose, the camera fit, the game's light rig, a studio world, Eevee settings |
 | `post(ctx, exr_paths)` | after the render, a linear multi-layer EXR | bloom, contrast, tone curve, a second pass for glow behind glass; writes the image, returns the list of files it wrote, the image first |

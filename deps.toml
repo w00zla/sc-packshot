@@ -12,10 +12,10 @@ sha256-linux-x64 = "78486c018b4443efe5e75ab54c290ed8c15abafd249b862c2c9ce2530a91
 # The fork's release (ADR 0026): its files from <url>/releases/download/<release>/, checked against these SHA256 (the
 # release's SHA256SUMS); commit is the commit it was built from, what the nodes compare
 url = "https://github.com/w00zla/starbreaker-ps"
-release = "0.3.2-ps.5"
-commit = "8b5ae08af35480229fd6c2f42fb58e5dcbae7b53"
-sha256-windows-x64 = "0ab85f47ee88abaa3c386ec345f040200d007e950b645187a8e17721c56566bd"
-sha256-linux-x64 = "ed3ac504c187fef97c1f5a3d4b50329d38709ed73f5183ee5e2e169de416291d"
-sha256-addon = "03c45416f03a6f6593c8ac9b26942927f41bb6966c4b51774a63efccd673135d"
+release = "0.3.2-ps.6"
+commit = "aa0ad09f1a44cfb924e3c5d71cc1b301ded69377"
+sha256-windows-x64 = "96dec73fd2ac9c79afc410fd5c9a084d1c182841f7c1f84d9f038f4ef41f6bb6"
+sha256-linux-x64 = "2d9210c11f6a100b0e8a227a5be00bdde3c0a643aafbfcf359138c1104e8ea6a"
+sha256-addon = "46ccd1025a25628cd2f78c0c670ef14292dd2e25ccf7ef125cbc84cb4d3931bc"
 # fork development only (scripts/setup.ps1 -FromSource / scripts/setup.sh --from-source, scripts/starbreaker-build.*): the checkout next to this repository
 repo = "../starbreaker-ps"
