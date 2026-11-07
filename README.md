@@ -205,7 +205,7 @@ the run's profile with every render chunk; a node keeps them while it runs.
 
 ## Profiles
 
-A profile is a folder; the run's look is whatever it says, and what it leaves out comes from `game-tile`:
+A profile is a folder with two files. Anything it does not set falls back to `game-tile`, the default profile:
 
 | File | |
 |---|---|
