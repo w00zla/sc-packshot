@@ -53,3 +53,4 @@ supersedes the old one. 0001–0020 were recorded afterwards (2026-11-05) from t
 | [0046](0046-assessment-never-stale.md) | An assessment stays in use until a new one replaces it | accepted | 2026-11-07 |
 | [0047](0047-assessment-per-os.md) | One assessment per operating system, in one file | accepted | 2026-11-07 |
 | [0048](0048-default-profile-named-default.md) | The default profile is called `default`, a reserved name | accepted | 2026-11-07 |
+| [0049](0049-addon-knobs-in-profile-toml.md) | The add-on's look knobs are profile parameters (`[addon]` in profile.toml) | accepted | 2026-11-08 |
