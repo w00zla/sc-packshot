@@ -1,6 +1,6 @@
 # 0030. Flat repository layout
 
-- Status: accepted
+- Status: accepted; the bundle templates moved to `templates/bundle/` ([0036](0036-releases-without-blender-and-workflows.md))
 - Date: 2026-11-06
 - Scope: repository layout, scripts, docs
 

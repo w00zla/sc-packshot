@@ -2,7 +2,7 @@
 
 - Status: accepted
 - Date: 2026-11-07
-- Scope: bundles, `bundle/`, `scripts/packshot-bundle.*`, `.github/workflows/`
+- Scope: bundles, `templates/bundle/`, `scripts/packshot-bundle.*`, `.github/workflows/`
 
 ## Context
 A bundle carried the official Blender archive (about 400 MB per OS) and a `portable/` folder copied from the
@@ -16,8 +16,9 @@ shellcheck ran only by hand.
   SHA256 of the official archive for that OS, from `deps.toml`). The bundle's `setup.cmd` / `setup.sh` takes that
   archive from the bundle's folder if it is there (offline nodes), else downloads it from blender.org, checks the
   SHA256, unpacks it and builds `portable/` itself: the add-on copied in and enabled headless.
+- The bundle templates move from `bundle/` to `templates/bundle/`, a home for further templates.
 - **`.github/workflows/test.yml`**, on pull requests and pushes to `main`: `cargo test --release` on Linux and Windows,
-  `cargo clippy --all-targets -D warnings`, `shellcheck` for `scripts/` and `bundle/linux/`.
+  `cargo clippy --all-targets -D warnings`, `shellcheck` for `scripts/` and `templates/bundle/linux/`.
 - **`.github/workflows/release.yml`**, on a tag `v<version>` (as in `Cargo.toml`) on a commit of `main`: both bundles
   built by `scripts/packshot-bundle.sh` on Linux, published as `packshot-<tag>-windows-x64.zip`,
   `packshot-<tag>-linux-x64.tar.gz` and `SHA256SUMS`.

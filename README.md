@@ -174,7 +174,7 @@ cluster. Every node must run the same packshot build, Blender, add-on and StarBr
 | `src/` | the orchestrator (Rust): selection, scheduler, cluster, runs and sets, assessment, TUI |
 | `blender/render.py` | runs inside Blender: pose, fit, light rig, material tweaks, Eevee render, tone curve, PNG |
 | `shim/` | RDSEED shim for Blender on Linux (built by `build.rs`, embedded in the binary) |
-| `bundle/` | templates of the per-OS bundles (setup, check, run, README, cluster config) |
+| `templates/bundle/` | templates of the per-OS bundles (setup, check, run, README, cluster config) |
 | `deps.toml` | the pins: Blender version and archive SHA256s, the StarBreaker release with its SHA256s and commit |
 | `scripts/` | `setup.{ps1,sh}` (a dev checkout), `starbreaker-build.{ps1,sh}` (the fork), `packshot-bundle.{ps1,sh}` (the bundles) |
 | `docs/` | [`ARCHITECTURE.md`](docs/ARCHITECTURE.md), `assets/` (images and their sources) |

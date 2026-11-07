@@ -2,7 +2,7 @@
 
 packshot: renders Star Citizen items (StarBreaker export + Blender) in parallel, on one machine or a cluster, with a
 ratatui TUI. Public repository, MIT. Split out of sc-quartermaster (the consuming org tool) on 2026-11-05.
-Layout: the Rust crate at the root (`src/`, `build.rs`, `shim/`), `blender/render.py` (the Blender script), `bundle/`
+Layout: the Rust crate at the root (`src/`, `build.rs`, `shim/`), `blender/render.py` (the Blender script), `templates/bundle/`
 (bundle templates), `scripts/`, `docs/`.
 
 Architecture for readers: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). The full technical notes (export, render look, scheduler, runs

@@ -40,7 +40,7 @@ esac
 cd "$(dirname "$0")/.."
 # shellcheck source=lib/deps.sh
 . scripts/lib/deps.sh
-tpl=bundle
+tpl=templates/bundle
 blender_version=$(pin blender version)
 mkdir -p "$out"
 

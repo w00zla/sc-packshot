@@ -24,7 +24,7 @@ $root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 Set-Location $root
 . (Join-Path $root 'scripts/lib/deps.ps1')
 $Out = [System.IO.Path]::GetFullPath((Join-Path $root $Out))
-$tpl = Join-Path $root 'bundle'
+$tpl = Join-Path $root 'templates/bundle'
 $crate = $root
 New-Item -ItemType Directory -Force -Path $Out | Out-Null
 $doWin = $Platform -in 'all', 'windows'
