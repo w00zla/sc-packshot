@@ -1975,7 +1975,7 @@ mod tests {
         let root = std::env::temp_dir().join(format!("packshot-node-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
         let tables = crate::cas::tests::repo_tables(&root.join("tables"));
-        let rig = tables.rig("", "").unwrap().to_string_lossy().to_string();
+        let rig = tables.rig("", "", "").unwrap().to_string_lossy().to_string();
         let port = crate::net::test_port();
         let me = |name: &str| Hello { name: name.into(), version: "t".into(), render: true, export: true, slots: 1, ..Default::default() };
         // a: the head node (listens), b: the node that exports, holds and renders

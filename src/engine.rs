@@ -869,7 +869,7 @@ impl Engine {
 
     pub fn pose_rig(&self, t: usize) -> Result<([f64; 3], PathBuf)> {
         let tg = &self.targets[t];
-        Ok((self.tables.pose(&tg.kind, &tg.sub_type), self.tables.rig(&tg.kind, &tg.sub_type)?.clone()))
+        Ok((self.tables.pose(&tg.entity, &tg.kind, &tg.sub_type), self.tables.rig(&tg.entity, &tg.kind, &tg.sub_type)?.clone()))
     }
 
     /// Filter: terms separated by spaces or commas, a match in class name, display name or
@@ -1170,10 +1170,10 @@ impl Engine {
         let mut out = Vec::new();
         let mut bad = Vec::new();
         for mut j in jobs {
-            match self.tables.rig(&j.kind, &j.sub_type) {
+            match self.tables.rig(&j.entity, &j.kind, &j.sub_type) {
                 Ok(rig) => {
                     j.rig = rig.to_string_lossy().to_string();
-                    j.pose = self.tables.pose(&j.kind, &j.sub_type);
+                    j.pose = self.tables.pose(&j.entity, &j.kind, &j.sub_type);
                     out.push(j);
                 }
                 Err(e) => bad.push((j.item, format!("rig: {e}"))),
