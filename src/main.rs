@@ -137,16 +137,9 @@ fn starbreaker_label(starbreaker: &Path) -> String {
     stamp.and_then(|s| s.lines().next().map(|l| l.trim().to_string())).filter(|l| !l.is_empty()).unwrap_or_else(|| "no COMMIT stamp next to it".into())
 }
 
-/// SC_DATA_P4K from .env when the environment has none (like node --env-file-if-exists)
-fn env_p4k(root: &Path) -> Option<String> {
-    if let Ok(v) = env::var("SC_DATA_P4K") && !v.is_empty() {
-        return Some(v);
-    }
-    let text = fs::read_to_string(root.join(".env")).ok()?;
-    text.lines().find_map(|l| {
-        let v = l.trim().strip_prefix("SC_DATA_P4K=")?.trim();
-        Some(v.trim_matches(|c| c == '"' || c == '\'').to_string())
-    })
+/// SC_DATA_P4K from the environment
+fn env_p4k() -> Option<String> {
+    env::var("SC_DATA_P4K").ok().filter(|v| !v.is_empty())
 }
 
 /// An exclusive lock on <dir>/packshot.lock, held as long as the returned file is open; the OS releases it when the
@@ -302,7 +295,7 @@ fn real_main() -> Result<()> {
         },
     )?;
     // Data.p4k with build_manifest.id next to it: for exports and the target picker's entity list
-    let p4k_found = path("p4k").or_else(|| env_p4k(&root).map(PathBuf::from)).or_else(|| first_existing(&[root.join("Data.p4k")]));
+    let p4k_found = path("p4k").or_else(|| env_p4k().map(PathBuf::from)).or_else(|| first_existing(&[root.join("Data.p4k")]));
     let off = if export { "this node does not export and the target picker is off" } else { "the target picker is off" };
     let p4k_res = match &p4k_found {
         None => Err(("not found".to_string(), format!("Give --p4k or set SC_DATA_P4K; {off}."))),
