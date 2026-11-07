@@ -9,8 +9,8 @@
 # the materials on opening). This file is the core: it opens the item, calls the profile's hooks, renders a linear
 # multi-layer EXR and hands it to the profile's post hook, which writes the output. The look lives in the profile
 # (profile.toml + hooks.py, default profiles/game-tile); a hook the profile leaves out runs game-tile's.
-# Parameters: profile.toml [params], then this script's flags, then the job's fields (packshot sends size and format
-# only when --size or --format was given).
+# Parameters: profile.toml [params], then this script's flags, then the job's fields. Size and format are the target
+# set's (ADR 0045): packshot puts them into every job; a profile does not set them, by hand they default to 256 png.
 import argparse
 import importlib.util
 import json
@@ -24,6 +24,8 @@ import bpy
 
 HOOKS = ('before_open', 'after_open', 'stage', 'post')
 DEFAULT_PROFILE = 'game-tile'
+# size and format without a job's or a flag's: render.py used by hand (packshot always sends the target set's)
+OUTPUT = {'size': 256, 'format': 'png'}
 
 
 def parse_args():
@@ -85,7 +87,11 @@ class Profile:
             own = tomllib.load(f)
         self.folder = folder
         self.name = os.path.basename(folder)
-        self.params = {**base.get('params', {}), **own.get('params', {})}
+        for p in (base, own):
+            bad = [k for k in OUTPUT if k in p.get('params', {})]
+            if bad:
+                sys.exit(f'profile.toml of {folder if p is own else default} sets {", ".join(bad)}: size and format belong to the set')
+        self.params = {**OUTPUT, **base.get('params', {}), **own.get('params', {})}
         flags = {'size': a.size, 'samples': a.samples, 'format': a.format, 'light_scale': a.light_scale, 'fit': a.fit,
                  'mirror': a.mirror, 'az': a.az, 'el': a.el, 'margin': a.margin}
         self.params.update({k: v for k, v in flags.items() if v is not None})

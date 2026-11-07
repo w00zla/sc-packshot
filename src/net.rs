@@ -252,16 +252,12 @@ pub struct RunStatus {
     pub profile: serde_json::Value,
 }
 
-/// What a starter chose for the run it starts on another node: the profile's name, --size and --format (None: the
-/// profile's)
+/// What a starter chose for the run it starts on another node: the profile's name (size and format are the target
+/// set's there, ADR 0045)
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct StartLook {
     #[serde(default)]
     pub profile: String,
-    #[serde(default)]
-    pub size: Option<u32>,
-    #[serde(default)]
-    pub format: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -328,7 +324,7 @@ pub enum Msg {
     GetState { set: String },
     State { set: String, sets: Vec<crate::store::SetSummary>, images: Vec<String>, failed: Vec<String>, targets: Vec<Target>, stats: Option<crate::store::RunStats> },
     /// starting node -> head node: start a run over these targets into the set (created from main if missing), with the
-    /// starter's profile (its folder's files; none: game-tile, the head node's own), size and format
+    /// starter's profile (its folder's files; none: game-tile, the head node's own)
     StartRun {
         targets: Vec<Target>,
         set: String,

@@ -18,6 +18,9 @@ use serde_json::Value;
 pub const MAIN: &str = "main";
 /// The target list in a set's folder
 pub const TARGETS: &str = "targets.json";
+/// The sizes a set may have, in px
+pub const MIN_SIZE: u32 = 16;
+pub const MAX_SIZE: u32 = 8192;
 
 /// A set as other nodes see it (the Sets view of a remote head node)
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
@@ -32,6 +35,11 @@ pub struct SetSummary {
     pub files: usize,
     #[serde(default)]
     pub targets: Option<TargetsInfo>,
+    /// the set's output size and format (None: an older node, 256 png)
+    #[serde(default)]
+    pub size: Option<u32>,
+    #[serde(default)]
+    pub format: Option<String>,
 }
 
 /// Throughput and image size of the latest finished run with at least 50 results: the estimate for the next one
@@ -98,9 +106,26 @@ pub struct SetInfo {
     /// the set's target list (targets.json in its folder); None = none yet
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub targets: Option<TargetsInfo>,
+    /// its output size and format, fixed when it is created (ADR 0045); None: a set from before them, 256 png
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub size: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub format: Option<String>,
 }
 
+/// A set's output without its own: 256 px PNG (main's, and every set's from before ADR 0045)
+pub const DEFAULT_SIZE: u32 = 256;
+pub const DEFAULT_FORMAT: &str = "png";
+
 impl SetInfo {
+    /// The size every run of the set renders at
+    pub fn size(&self) -> u32 {
+        self.size.unwrap_or(DEFAULT_SIZE)
+    }
+    /// The format every run of the set renders in
+    pub fn format(&self) -> &str {
+        self.format.as_deref().unwrap_or(DEFAULT_FORMAT)
+    }
     pub fn chain(&self) -> impl Iterator<Item = &String> {
         self.base_runs.iter().chain(&self.runs)
     }
@@ -194,7 +219,7 @@ impl Store {
         let store = Self { root: root.to_path_buf(), runs: HashMap::new() };
         if !store.set_dir(MAIN).join("set.json").exists() {
             fs::create_dir_all(store.set_dir(MAIN))?;
-            store.save_set(&SetInfo { name: MAIN.into(), ..Default::default() })?;
+            store.save_set(&SetInfo { name: MAIN.into(), size: Some(DEFAULT_SIZE), format: Some(DEFAULT_FORMAT.into()), ..Default::default() })?;
         }
         Ok(store)
     }
@@ -291,7 +316,21 @@ impl Store {
     }
 
     /// New set, branched off `base` (key n)
+    /// A new set off `base` with the base's size and format
     pub fn create_set(&mut self, name: &str, base: &str) -> Result<SetInfo> {
+        let b = self.load_set(base)?;
+        let (size, format) = (b.size(), b.format().to_string());
+        self.create_set_with(name, base, size, &format)
+    }
+
+    /// A new set off `base` with its own size and format (the new-set dialog); they never change afterwards
+    pub fn create_set_with(&mut self, name: &str, base: &str, size: u32, format: &str) -> Result<SetInfo> {
+        if !(MIN_SIZE..=MAX_SIZE).contains(&size) {
+            bail!("Size {size}: {MIN_SIZE} to {MAX_SIZE} px");
+        }
+        if !crate::profile::FORMATS.contains(&format) {
+            bail!("Format {format}: png, jpeg or exr");
+        }
         if slug(name) != name || name.is_empty() {
             bail!("Set name \"{name}\": only letters, digits, - and _");
         }
@@ -299,7 +338,7 @@ impl Store {
             bail!("Set {name} exists already");
         }
         let b = self.load_set(base)?;
-        let mut set = SetInfo { name: name.into(), base: Some(base.into()), base_runs: b.chain().cloned().collect(), ..Default::default() };
+        let mut set = SetInfo { name: name.into(), base: Some(base.into()), base_runs: b.chain().cloned().collect(), size: Some(size), format: Some(format.into()), ..Default::default() };
         fs::create_dir_all(self.set_dir(name))?;
         // the base's target list comes along
         if b.targets.is_some() {
@@ -324,7 +363,7 @@ impl Store {
         let mut out = Vec::new();
         for name in self.sets()? {
             let s = self.load_set(&name)?;
-            out.push(SetSummary { name, base: s.base.clone(), base_runs: s.base_runs.len(), runs: s.runs.clone(), files: s.files.len(), targets: s.targets.clone() });
+            out.push(SetSummary { name, base: s.base.clone(), base_runs: s.base_runs.len(), runs: s.runs.clone(), files: s.files.len(), targets: s.targets.clone(), size: Some(s.size()), format: Some(s.format().into()) });
         }
         Ok(out)
     }
@@ -709,6 +748,28 @@ mod tests {
         assert_eq!(fs::read_to_string(store.set_dir(MAIN).join("A neu 0000.png")).unwrap(), "a2");
         assert!(fs::metadata(store.run_dir("r1").join("a 0000.png")).unwrap().permissions().readonly());
         remove_tree(&root).unwrap();
+    }
+
+    /// Size and format per set (ADR 0045): main 256 png, a set from before them too; a new set takes its base's or
+    /// its own, within bounds; the summary carries them
+    #[test]
+    fn set_output() {
+        let root = tmp("output");
+        let mut store = Store::open(&root).unwrap();
+        let main = store.load_set(MAIN).unwrap();
+        assert_eq!((main.size(), main.format(), main.size), (256, "png", Some(256)));
+        let old: SetInfo = serde_json::from_str(r#"{"name": "old"}"#).unwrap();
+        assert_eq!((old.size(), old.format()), (256, "png"), "an older store's set");
+        let big = store.create_set_with("big", MAIN, 1024, "jpeg").unwrap();
+        assert_eq!((big.size(), big.format()), (1024, "jpeg"));
+        assert_eq!(store.load_set("big").unwrap().format(), "jpeg", "saved");
+        let child = store.create_set("child", "big").unwrap();
+        assert_eq!((child.size(), child.format()), (1024, "jpeg"), "the base's");
+        assert!(store.create_set_with("tiny", MAIN, 8, "png").is_err());
+        assert!(store.create_set_with("webp", MAIN, 256, "webp").is_err());
+        let s = store.set_summaries().unwrap().into_iter().find(|s| s.name == "big").unwrap();
+        assert_eq!((s.size, s.format.as_deref()), (Some(1024), Some("jpeg")));
+        let _ = fs::remove_dir_all(&root);
     }
 
     #[test]

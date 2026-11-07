@@ -92,7 +92,18 @@ pub fn resolve(arg: &str, store: &Path, script: &Path, cwd: &Path) -> std::resul
     if p.name == BASE && !same_dir(&p.dir, &p.base) {
         return Err(format!("{}: an own profile cannot be called {BASE}, the base of every profile; give it another name", p.dir.display()));
     }
+    check_params(&p.dir)?;
+    check_params(&p.base)?;
     Ok(p)
+}
+
+/// Size and format are the set's (ADR 0045): a profile.toml that still sets them is refused
+pub fn check_params(dir: &Path) -> std::result::Result<(), String> {
+    let text = fs::read_to_string(dir.join("profile.toml")).unwrap_or_default();
+    match ["size", "format"].into_iter().find(|k| value(&text, "[params]", k).is_some()) {
+        Some(k) => Err(format!("{}: profile.toml sets `{k}`: size and format belong to the set, remove it", dir.join("profile.toml").display())),
+        None => Ok(()),
+    }
 }
 
 /// The profiles to choose from: game-tile first, then by name; an own one (in <store>/profiles) hides a bundled one
@@ -150,6 +161,7 @@ impl Profile {
     }
 
     /// A `[params]` value of the profile, else game-tile's
+    #[cfg(test)]
     pub fn param(&self, key: &str) -> Option<String> {
         let of = |dir: &Path| fs::read_to_string(dir.join("profile.toml")).ok().and_then(|t| value(&t, "[params]", key));
         of(&self.dir).or_else(|| of(&self.base))
@@ -191,7 +203,7 @@ impl Profile {
 }
 
 /// The fields of a run record's origin that say what it renders with (Engine::profile_origin)
-pub const ORIGIN_KEYS: [&str; 14] = ["render_py", "render_py_from", "profile", "profile_from", "profile_dir", "profile_hash", "scene", "size", "size_from", "format", "format_from", "addon", "addon_from", "starbreaker"];
+pub const ORIGIN_KEYS: [&str; 12] = ["render_py", "render_py_from", "profile", "profile_from", "profile_dir", "profile_hash", "scene", "size", "format", "addon", "addon_from", "starbreaker"];
 
 /// Those fields of a run record's origin
 pub fn origin_fields(origin: &serde_json::Value) -> serde_json::Value {
@@ -205,7 +217,7 @@ pub fn param(toml: &str, key: &str) -> Option<String> {
 }
 
 /// A value of a profile.toml as text (`key = value  # comment`, a string without its quotes) in `section` ("" for the
-/// top level): packshot needs only size, format, scene and addon, render.py reads the whole file
+/// top level): packshot needs only scene and addon (and refuses size and format), render.py reads the whole file
 fn value(toml: &str, want: &str, key: &str) -> Option<String> {
     let mut section = "";
     for line in toml.lines().map(str::trim) {
@@ -236,11 +248,11 @@ mod tests {
         let root = std::env::temp_dir().join(format!("packshot-profile-{name}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
         write(&root.join("blender/render.py"), "# core");
-        write(&root.join("profiles/game-tile/profile.toml"), "[params]\nsize = 256          # px\nformat = \"png\"      # png | jpeg | exr\n");
+        write(&root.join("profiles/game-tile/profile.toml"), "[params]\nsamples = 16        # Eevee\nquality = 90\n");
         write(&root.join("profiles/game-tile/hooks.py"), "def post(ctx, exr): pass\n");
         write(&root.join("profiles/game-tile/__pycache__/hooks.cpython-313.pyc"), "bytecode");
-        write(&root.join("profiles/studio/profile.toml"), "[params]\nformat = \"jpeg\"\n");
-        write(&root.join("store/profiles/mine/profile.toml"), "[params]\nsize = 512\n");
+        write(&root.join("profiles/studio/profile.toml"), "[params]\nquality = 70\n");
+        write(&root.join("store/profiles/mine/profile.toml"), "[params]\nsamples = 64\n");
         (root.join("blender/render.py"), root.join("store"), root)
     }
 
@@ -264,12 +276,19 @@ mod tests {
         let gt = resolve(BASE, &store, &script, &root).unwrap();
         assert!(same_dir(&gt.dir, &root.join("profiles/game-tile")) && same_dir(&gt.base, &gt.dir));
         let studio = resolve("studio", &store, &script, &root).unwrap();
-        assert_eq!((studio.name.as_str(), studio.param("format").as_deref(), studio.param("size").as_deref()), ("studio", Some("jpeg"), Some("256")));
+        assert_eq!((studio.name.as_str(), studio.param("quality").as_deref(), studio.param("samples").as_deref()), ("studio", Some("70"), Some("16")));
         let mine = resolve("mine", &store, &script, &root).unwrap();
-        assert_eq!(mine.param("size").as_deref(), Some("512"));
+        assert_eq!(mine.param("samples").as_deref(), Some("64"));
         // an own one hides the bundled one of the same name
-        write(&store.join("profiles/studio/profile.toml"), "[params]\nformat = \"exr\"\n");
-        assert_eq!(resolve("studio", &store, &script, &root).unwrap().param("format").as_deref(), Some("exr"));
+        write(&store.join("profiles/studio/profile.toml"), "[params]\nquality = 50\n");
+        assert_eq!(resolve("studio", &store, &script, &root).unwrap().param("quality").as_deref(), Some("50"));
+        // size and format are the set's (ADR 0045): a profile that sets one is refused
+        for (name, toml) in [("big", "[params]\nsize = 1024\n"), ("jpg", "[params]\nformat = \"jpeg\"\n")] {
+            write(&store.join("profiles").join(name).join("profile.toml"), toml);
+            let err = resolve(name, &store, &script, &root).unwrap_err();
+            assert!(err.contains("belong to the set"), "{err}");
+        }
+        assert_eq!(available(&store, &script, &root).iter().filter(|p| p.name == "big" || p.name == "jpg").count(), 0, "not offered");
         // a folder path, relative to the current folder
         let by_path = resolve("store/profiles/mine", &store, &script, &root).unwrap();
         assert_eq!(by_path.name, "mine");
@@ -324,7 +343,7 @@ mod tests {
     #[test]
     fn listing_addon_and_template() {
         let (script, store, root) = layout("list");
-        write(&store.join("profiles/studio/profile.toml"), "scene = \"stage.blend\"  # template\naddon = \"starbreaker_addon\"\n[params]\nformat = \"exr\"\n");
+        write(&store.join("profiles/studio/profile.toml"), "scene = \"stage.blend\"  # template\naddon = \"starbreaker_addon\"\n[params]\nquality = 80\n");
         write(&store.join("profiles/studio/stage.blend"), "blend");
         write(&store.join("profiles/studio/starbreaker_addon/__init__.py"), "VERSION = 1\n");
         write(&store.join("profiles/studio/starbreaker_addon/runtime/constants.py"), "GAIN = 1.0\n");
@@ -333,7 +352,7 @@ mod tests {
         let names: Vec<(&str, &str)> = list.iter().map(|p| (p.name.as_str(), p.from.as_str())).collect();
         assert_eq!(names, vec![("game-tile", "bundled"), ("mine", "store"), ("studio", "store")]);
         let studio = &list[2];
-        assert_eq!((studio.scene().as_deref(), studio.param("format").as_deref()), (Some("stage.blend"), Some("exr")));
+        assert_eq!((studio.scene().as_deref(), studio.param("quality").as_deref()), (Some("stage.blend"), Some("80")));
         assert_eq!(studio.addon(), Some(store.join("profiles/studio/starbreaker_addon")));
         assert!(list[0].addon().is_none() && list[0].scene().is_none(), "game-tile has neither");
         let (h, a) = (studio.hash().unwrap(), studio.addon_hash().unwrap());

@@ -1,6 +1,7 @@
 # game-tile: the look of the game's inventory tiles; the default profile (ADRs 0022, 0042).
-# A profile is this folder: profile.toml (parameters, optional `scene`) and hooks.py. Its parameters are defaults: a
-# packshot or render.py flag overrides them (--size over size). A hook another profile leaves out runs this one's.
+# A profile is this folder: profile.toml (parameters, optional `scene` and `addon`) and hooks.py; its parameters lie
+# over these. Size and format are no parameters: they belong to the target set (ADR 0045), packshot puts them into
+# every job. A hook another profile leaves out runs this one's.
 
 # a .blend template next to this file whose world, cameras and lights stage() may take (game-tile uses none)
 # scene = "scene.blend"
@@ -9,9 +10,7 @@
 # addon = "starbreaker_addon"
 
 [params]
-size = 256          # px, square
 samples = 16        # Eevee render samples
-format = "png"      # png | jpeg | exr (linear, with bloom, no tone curve)
 quality = 90        # jpeg
 background = [0.0, 0.0, 0.0]  # jpeg: sRGB colour under the item
 fit = 0.7           # pose mode: the largest box edge in m the item is scaled to

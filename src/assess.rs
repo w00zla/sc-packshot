@@ -297,7 +297,7 @@ pub struct SweepParams {
     pub script: PathBuf,
     /// game-tile beside it: the sweep always measures it, as PNG (the validity keys stay meaningful)
     pub profile: PathBuf,
-    /// --size (None: game-tile's)
+    /// the image size, game-tile's 256 always (the validity keys stay meaningful)
     pub size: Option<u32>,
     pub chunk: usize,
     /// test set: (entity, worn, scene.blend, rig, pose)
@@ -1477,7 +1477,7 @@ impl Engine {
             blender: self.cfg.blender.clone(),
             script: self.cfg.render_script.clone(),
             profile: crate::profile::base_dir(&self.cfg.render_script).unwrap_or_default(),
-            size: self.cfg.size,
+            size: Some(crate::store::DEFAULT_SIZE),
             chunk: self.cfg.chunk,
             items,
             export,

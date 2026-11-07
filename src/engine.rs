@@ -49,9 +49,6 @@ pub struct Config {
     pub blender: PathBuf,
     pub render_script: PathBuf,
     pub work: PathBuf,
-    /// --size and --format: they override the profile's (None: the profile's applies, render.py reads it)
-    pub size: Option<u32>,
-    pub format: Option<String>,
     /// the runs' profile (--profile); Err: why there is none (no run starts here)
     pub profile: std::result::Result<Profile, String>,
     pub chunk: usize,
@@ -59,36 +56,18 @@ pub struct Config {
     pub cache_limit: u64,
 }
 
-/// What a run renders with, as its starter chose it: the profile and the --size and --format overrides (None: the
-/// profile's)
+/// What a run renders with: its starter's profile, its target set's size and format (ADR 0045)
 #[derive(Clone, Debug)]
 pub struct RunLook {
     pub profile: Profile,
-    pub size: Option<u32>,
-    pub format: Option<String>,
+    pub size: u32,
+    pub format: String,
 }
 
 impl RunLook {
-    /// A profile without overrides: engines in tests
-    #[cfg(test)]
-    pub fn of(profile: Profile) -> Self {
-        Self { profile, size: None, format: None }
-    }
-
-    /// The output format: the override, else the profile's (png without either)
-    pub fn out_format(&self) -> String {
-        self.format.clone().or_else(|| self.profile.param("format")).unwrap_or_else(|| "png".into())
-    }
-    /// The image size: the override, else the profile's
-    pub fn out_size(&self) -> Option<u32> {
-        self.size.or_else(|| self.profile.param("size").and_then(|s| s.parse().ok()))
-    }
-}
-
-impl Config {
-    /// What a run started here renders with: the chosen profile and this node's --size and --format
-    pub fn look(&self) -> std::result::Result<RunLook, String> {
-        self.profile.clone().map(|profile| RunLook { profile, size: self.size, format: self.format.clone() })
+    /// `profile` at the size and format of `set`
+    pub fn of(profile: Profile, set: &SetInfo) -> Self {
+        Self { profile, size: set.size(), format: set.format().to_string() }
     }
 }
 
@@ -293,7 +272,7 @@ pub struct Run {
     logged_end: bool,
     /// the extension of the run's output format (fixed at its start)
     pub(crate) ext: &'static str,
-    /// what the run renders with: the profile, size and format its starter chose (this node or the one that sent it)
+    /// what the run renders with: its starter's profile, its target set's size and format
     pub(crate) look: RunLook,
 }
 
@@ -714,8 +693,9 @@ impl Engine {
 
     /// What a run started here would render with (the selection tile), taken once per choice: its hashes read files
     pub fn refresh_profile_info(&mut self) {
-        self.profile_info = match self.cfg.look() {
-            Ok(look) => self.profile_origin(&look),
+        // at this node's target set's size and format; the selection tile shows the chosen target set's
+        self.profile_info = match self.cfg.profile.clone() {
+            Ok(p) => self.profile_origin(&RunLook::of(p, &self.set)),
             Err(e) => json!({ "error": e }),
         };
     }
@@ -853,8 +833,7 @@ impl Engine {
     }
 
     /// What a run renders with, as the run record keeps it: render.py's hash, the profile (name, where from, folder,
-    /// hash, template), size and format with where they come from (the profile or the starter's flag), and the add-on
-    /// (the installed one, or the profile's copy)
+    /// hash, template), size and format (the target set's), and the add-on (the installed one, or the profile's copy)
     pub fn profile_origin(&self, look: &RunLook) -> serde_json::Value {
         let p = &look.profile;
         let copy = p.addon_hash();
@@ -867,10 +846,8 @@ impl Engine {
             "profile_dir": p.dir,
             "profile_hash": p.hash(),
             "scene": p.scene(),
-            "size": look.out_size(),
-            "size_from": if look.size.is_some() { "flag" } else { "profile" },
-            "format": look.out_format(),
-            "format_from": if look.format.is_some() { "flag" } else { "profile" },
+            "size": look.size,
+            "format": look.format,
             "addon": copy.clone().or_else(|| self.me.addon.clone()),
             "addon_from": if copy.is_some() { "profile" } else { "installed" },
             "starbreaker": self.me.starbreaker,
@@ -960,6 +937,15 @@ impl Engine {
         }
     }
 
+    /// The target set's size and format, what the next run renders at: on another head node from its set list (a
+    /// set it does not have yet branches off main there and takes main's)
+    pub fn target_output(&self) -> (u32, String) {
+        let Some(r) = self.remote_sel() else { return (self.set.size(), self.set.format().to_string()) };
+        let of = |name: &str| r.set_list.iter().find(|s| s.name == name);
+        let s = of(&r.set).or_else(|| of(crate::store::MAIN));
+        (s.and_then(|s| s.size).unwrap_or(crate::store::DEFAULT_SIZE), s.and_then(|s| s.format.clone()).unwrap_or_else(|| crate::store::DEFAULT_FORMAT.into()))
+    }
+
     pub fn run_dir(&self) -> Option<PathBuf> {
         self.record.as_ref().map(|r| self.store.run_dir(&r.id))
     }
@@ -1015,10 +1001,11 @@ impl Engine {
     }
 
     /// Starts a run over `todo` as a new run (`name`, empty = from filter and scope) in the target set; `nodes`: the
-    /// connected nodes that take part, `starter`: the node that asked for it (cluster.rs), `look`: what the starter
-    /// chose to render with
+    /// connected nodes that take part, `starter`: the node that asked for it (cluster.rs), `profile`: the one the starter
+    /// chose; size and format are the target set's (ADR 0045)
     #[allow(clippy::too_many_arguments)]
-    pub fn start(&mut self, todo: &[usize], args_line: &str, filter: &str, scope: Scope, name: &str, nodes: Vec<String>, starter: &str, look: RunLook) -> Result<()> {
+    pub fn start(&mut self, todo: &[usize], args_line: &str, filter: &str, scope: Scope, name: &str, nodes: Vec<String>, starter: &str, profile: Profile) -> Result<()> {
+        let look = RunLook::of(profile, &self.set);
         if let Some(s) = self.serve.as_mut() {
             s.blender_log(&format!("=== {}", chrono::Local::now().to_rfc3339()));
             // this node's own render chunks render with the run's profile
@@ -1052,7 +1039,7 @@ impl Engine {
             phase_sum: [0.0; 5],
             phase_n: 0,
             logged_end: false,
-            ext: crate::profile::ext(&look.out_format()),
+            ext: crate::profile::ext(&look.format),
             look,
         });
         // The run: folder with start time and name, run.json with the origin, at the end of the chain in the target set
@@ -1363,8 +1350,8 @@ impl Engine {
                 return;
             }
         };
-        // size and format: the starter's overrides
-        self.dispatch(conn, Msg::Render { id, size: look.size, format: look.format, profile: look.profile.name, jobs, files }, payload);
+        // size and format: the target set's
+        self.dispatch(conn, Msg::Render { id, size: Some(look.size), format: Some(look.format), profile: look.profile.name, jobs, files }, payload);
     }
 
     /// Result of an item (export failure or render result); a failure's first line is the message, further lines the

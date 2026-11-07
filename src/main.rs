@@ -48,7 +48,7 @@ What to render
   --filter <terms>       class name, display name or type contains a term (TUI: /)
   --scope <s>            missing (default) · failed · all
   --force                same as --scope all
-  --set <name>           target set (default main; a new name branches off main)
+  --set <name>           target set (default main; new: branches off main, with its size and format)
   --targets <file>       give the target set this target list
   --name <name>          run name (default: filter and scope)
   --profile <p>          the look: a profile name (own ones in profiles/ of the packshot folder) or
@@ -66,8 +66,6 @@ Tuning
   --exporters <n>        export processes (default: the assessment, else ¼ of the cores, at least 2)
   --chunk <n>            at most n items per chunk (default 50)
   --cache-limit <GB>     cache of files fetched from other nodes (default 20, 0 = no limit)
-  --size <px>            icon edge length (default: the profile's)
-  --format <f>           png · jpeg · exr (default: the profile's)
   --refresh-tables       read the pose and light tables from the DataCore again
 
 Paths
@@ -208,7 +206,7 @@ fn real_main() -> Result<()> {
                     it.next();
                 }
             }
-            "filter" | "scope" | "set" | "name" | "workers" | "exporters" | "chunk" | "cache-limit" | "size" | "format" | "profile" | "targets" | "p4k" | "starbreaker" | "blender" | "render-script" | "store" | "work" => {
+            "filter" | "scope" | "set" | "name" | "workers" | "exporters" | "chunk" | "cache-limit" | "profile" | "targets" | "p4k" | "starbreaker" | "blender" | "render-script" | "store" | "work" => {
                 let v = it.next().ok_or_else(|| anyhow!("--{key} needs a value"))?;
                 opt.insert(key.to_string(), v.clone());
             }
@@ -326,8 +324,6 @@ fn real_main() -> Result<()> {
         Err(e) => Err((e.clone(), "Give --profile a profile name or folder; runs do not start here.".to_string())),
     };
     check("Profile", profile_res)?;
-    let format = opt.get("format").map(|f| if profile::FORMATS.contains(&f.as_str()) { Ok(f.clone()) } else { Err(anyhow!("--format {f}: png, jpeg or exr")) }).transpose()?;
-    let size = opt.get("size").map(|v| v.parse::<u32>().with_context(|| format!("--size {v}"))).transpose()?;
 
     let scope = match opt.get("scope") {
         Some(s) => Scope::parse(s).ok_or_else(|| anyhow!("--scope {s}: missing, failed or all"))?,
@@ -403,7 +399,7 @@ fn real_main() -> Result<()> {
         bail!("--plain and --dry-run need a target list in set {} (--targets <file>)", set.name);
     }
     let tables = if export && !tables_later { Tables::load(starbreaker.as_deref().unwrap_or(Path::new("")), &p4k, &work, flags.contains("refresh-tables"), |s| println!("{s}"))? } else { Tables::default() };
-    let cfg = Config { p4k, starbreaker: starbreaker.unwrap_or_default(), blender: blender.unwrap_or_default(), render_script, work: work.clone(), size, format, profile, chunk: num("chunk", 50)?.max(1), cache_limit: num("cache-limit", 20)? as u64 * (1 << 30) };
+    let cfg = Config { p4k, starbreaker: starbreaker.unwrap_or_default(), blender: blender.unwrap_or_default(), render_script, work: work.clone(), profile, chunk: num("chunk", 50)?.max(1), cache_limit: num("cache-limit", 20)? as u64 * (1 << 30) };
     // Network only with a token and not for a dry run; files of an earlier session in the inbox are stale
     if net_cfg.enabled() && !args.dry_run {
         let _ = fs::remove_dir_all(work.join("inbox"));

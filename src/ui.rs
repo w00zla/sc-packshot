@@ -131,6 +131,8 @@ enum Input {
     Filter,
     RunName(Field),
     NewSet(Field),
+    /// the new set's size and format, after its name (ADR 0045): preset with main's, fixed once it is created
+    SetOutput { name: String, size: Field, format: usize, on_format: bool },
     /// a set's target list: the picker (`sel` == 0), one of the files in targets/ (`sel` == 1..=choices.len()) or another
     /// path (`sel` == choices.len() + 1)
     Targets { set: String, choices: Vec<TargetsChoice>, sel: usize, field: Field },
@@ -142,10 +144,10 @@ enum Input {
     Profile { choices: Vec<(Profile, String)>, sel: usize },
 }
 
-/// A profile's line in the start dialog: where it is, its hash, size and format, its add-on copy and template
+/// A profile's line in the start dialog: where it is, its hash, its add-on copy and template
 fn profile_choice(p: &Profile) -> String {
     let hash = p.hash().map(|h| h.chars().take(8).collect::<String>()).unwrap_or_else(|| "–".into());
-    let mut parts = vec![p.from.clone(), hash, format!("{} px · {}", p.param("size").unwrap_or_else(|| "?".into()), p.param("format").unwrap_or_else(|| "png".into()))];
+    let mut parts = vec![p.from.clone(), hash];
     if p.addon().is_some() {
         parts.push("own add-on".into());
     }
@@ -235,7 +237,7 @@ enum Confirm {
 
 /// A blocking action that waits for the busy dialog to be drawn first
 enum Deferred {
-    NewSet(String),
+    NewSet { name: String, size: u32, format: String },
     DeleteRun(String),
     DeleteSet(String),
     Adopt(String),
@@ -533,9 +535,9 @@ impl App {
     fn run_deferred(&mut self) {
         let Some(d) = self.deferred.take() else { return };
         match d {
-            Deferred::NewSet(n) => {
-                match self.engine.store.create_set(&n, MAIN) {
-                    Ok(_) => self.engine.note(Level::Ok, format!("Set {n} created from main")),
+            Deferred::NewSet { name: n, size, format } => {
+                match self.engine.store.create_set_with(&n, MAIN, size, &format) {
+                    Ok(_) => self.engine.note(Level::Ok, format!("Set {n} created from main, {size} px {format}")),
                     Err(e) => self.engine.note(Level::Error, format!("Set not created: {e:#}")),
                 }
                 self.refresh_sets();
@@ -887,11 +889,43 @@ impl App {
                     }
                     _ => self.input = Some(input),
                 },
+                Input::SetOutput { name, size, format, on_format } => match code {
+                    KeyCode::Esc => {}
+                    KeyCode::Tab | KeyCode::Up | KeyCode::Down => {
+                        *on_format = !*on_format;
+                        self.input = Some(input);
+                    }
+                    KeyCode::Left | KeyCode::Right if *on_format => {
+                        let n = crate::profile::FORMATS.len();
+                        *format = if code == KeyCode::Left { (*format + n - 1) % n } else { (*format + 1) % n };
+                        self.input = Some(input);
+                    }
+                    KeyCode::Enter => match size.text.trim().parse::<u32>() {
+                        Ok(px) if (crate::store::MIN_SIZE..=crate::store::MAX_SIZE).contains(&px) => {
+                            let (name, format) = (name.clone(), crate::profile::FORMATS[*format].to_string());
+                            self.defer(format!("Creating set {name} …"), Deferred::NewSet { name, size: px, format });
+                        }
+                        _ => {
+                            self.engine.note(Level::Error, format!("Size {:?}: {} to {} px", size.text.trim(), crate::store::MIN_SIZE, crate::store::MAX_SIZE));
+                            self.input = Some(input);
+                        }
+                    },
+                    // digits into the size
+                    _ => {
+                        if !*on_format && !matches!(code, KeyCode::Char(c) if !c.is_ascii_digit()) {
+                            size.key(code, mods);
+                        }
+                        self.input = Some(input);
+                    }
+                },
                 Input::NewSet(field) => match code {
                     KeyCode::Esc => {}
+                    // then its size and format, preset with main's
                     KeyCode::Enter => {
-                        let n = field.text.trim().to_string();
-                        self.defer(format!("Creating set {n} …"), Deferred::NewSet(n));
+                        let name = field.text.trim().to_string();
+                        let main = self.engine.store.load_set(MAIN).unwrap_or_default();
+                        let format = crate::profile::FORMATS.iter().position(|f| *f == main.format()).unwrap_or(0);
+                        self.input = Some(Input::SetOutput { name, size: Field::new(main.size().to_string()), format, on_format: false });
                     }
                     _ => {
                         field.key(code, mods);
@@ -1366,7 +1400,28 @@ fn draw_dialog(f: &mut Frame, app: &App) {
                 let mut l = vec![Span::styled("Name  ", Style::new().fg(DIM))];
                 l.extend(field.spans(inner_w.saturating_sub(6), true));
                 lines.push(Line::from(l));
-                ("New set".to_string(), "Enter: create  ·  Esc: back", false)
+                ("New set".to_string(), "Enter: next  ·  Esc: back", false)
+            }
+            Some(Input::SetOutput { name, size, format, on_format }) => {
+                lines.push(Line::from(format!("Every run of {name} renders at this size and format; they cannot change later.")).fg(DIM));
+                lines.push(Line::from(""));
+                let mut l = vec![Span::styled("Size    ", Style::new().fg(DIM))];
+                l.extend(size.spans(6, !*on_format));
+                l.push(Span::styled(format!(" px  ({} to {})", crate::store::MIN_SIZE, crate::store::MAX_SIZE), Style::new().fg(DIM)));
+                lines.push(Line::from(l));
+                // every choice the same width, selected or not
+                let mut l = vec![Span::styled("Format  ", Style::new().fg(DIM))];
+                for (i, f) in crate::profile::FORMATS.iter().enumerate() {
+                    let style = match (i == *format, *on_format) {
+                        (true, true) => Style::new().fg(Color::Black).bg(ACCENT),
+                        (true, false) => Style::new().fg(ACCENT),
+                        _ => Style::new().fg(DIM),
+                    };
+                    l.push(Span::styled(format!(" {f:<4} "), style));
+                    l.push(" ".into());
+                }
+                lines.push(Line::from(l));
+                ("New set: size and format".to_string(), "Enter: create  ·  Tab: size / format  ·  ←/→: format  ·  Esc: back", false)
             }
             Some(Input::Targets { set, choices, sel, field }) => {
                 let current = e.store.load_set(set).ok().and_then(|s| s.targets);
@@ -1712,7 +1767,14 @@ fn draw_head(f: &mut Frame, app: &App, area: Rect) {
     let block = boxed("Run · selection");
     let inner = block.inner(area);
     f.render_widget(block, area);
-    f.render_widget(Paragraph::new(vec![l1, Line::from(l2), l3, profile_line(&e.profile_info)]), inner);
+    // what the next run renders with: the chosen profile at the target set's size and format
+    let mut info = e.profile_info.clone();
+    let (size, format) = e.target_output();
+    if info.get("error").is_none() {
+        info["size"] = size.into();
+        info["format"] = format.into();
+    }
+    f.render_widget(Paragraph::new(vec![l1, Line::from(l2), l3, profile_line(&info)]), inner);
 }
 
 /// The first 8 characters of a run record's text field, "–" without it
@@ -2036,7 +2098,7 @@ fn draw_sets(f: &mut Frame, app: &mut App, area: Rect) {
     let top = app.set_sel.saturating_sub(h.saturating_sub(1).min(h / 2)).min(app.set_rows.len().saturating_sub(h));
     let me = app.engine.me.name.clone();
     let active = app.engine.set.name.clone();
-    let mut lines = vec![Line::from(format!("{:<31}{:<11}{:<14}{:>8} {:<11} {:>4} {:<6} {:<9} │ {:<9} {:<11}", "Set / run", "Node", "Targets/filter", "Images", "Profile", "px", "Format", "Add-on", "render.py", "StarBreaker")).fg(DIM)];
+    let mut lines = vec![Line::from(format!("{:<36}{:<12}{:<16}{:>8}  {:<15}", "Set / run", "Node", "Targets / filter", "Images", "Profile")).fg(DIM)];
     let rows: Vec<SetRow> = app.set_rows.iter().skip(top).take(h.saturating_sub(1)).cloned().collect();
     for (i, row) in rows.iter().enumerate() {
         let mut line = match row {
@@ -2050,7 +2112,10 @@ fn draw_sets(f: &mut Frame, app: &mut App, area: Rect) {
                 }
                 let used: usize = spans.iter().map(|s| s.content.chars().count()).sum();
                 let targets = s.as_ref().and_then(|s| s.targets.as_ref()).map(|t| format!("{} targets", num(t.count))).unwrap_or_else(|| "no targets".into());
-                spans.push(format!("{:w$}{:<11}{:<14}{:>8}", "", format!("{runs} runs"), targets, num(files), w = 31usize.saturating_sub(used)).fg(DIM));
+                spans.push(format!("{:w$}{:<12}{:<16}{:>8}", "", format!("{runs} runs"), targets, num(files), w = 36usize.saturating_sub(used)).fg(DIM));
+                // every run of the set renders at its size and format (ADR 0045)
+                let output = s.as_ref().map(|s| format!("  ({} {})", s.size(), s.format())).unwrap_or_default();
+                spans.push(Span::styled(output, Style::new().fg(DIM)));
                 Line::from(spans)
             }
             SetRow::Run { id, .. } => {
@@ -2061,23 +2126,16 @@ fn draw_sets(f: &mut Frame, app: &mut App, area: Rect) {
                 let filter = r.as_ref().map(|r| r.origin["filter"].as_str().unwrap_or("").to_string()).unwrap_or_default();
                 let images = r.as_ref().map(|r| r.entities.values().filter(|e| e.ok).count()).unwrap_or(0);
                 let origin = |k: &str, n: usize| r.as_ref().and_then(|r| r.origin[k].as_str().map(|s| s.chars().take(n).collect::<String>())).unwrap_or_else(|| "–".into());
-                // the profile with its output and add-on, then the tools (not part of the profile); `*`: overridden
-                let o = r.as_ref().map(|r| r.origin.clone()).unwrap_or_default();
-                let profile = origin("profile", 11);
-                let px = o["size"].as_u64().map(|s| s.to_string()).unwrap_or_else(|| "–".into());
-                let fmt = o["format"].as_str().unwrap_or("–").to_string();
-                let (addon, render_py, starbreaker) = (tool_hash(&o, "addon"), tool_hash(&o, "render_py"), short(&o, "starbreaker"));
+                // the run's profile; size and format are its set's (shown on the set's row), the hashes in its tile
+                let profile = origin("profile", 15);
                 let running = r.as_ref().is_some_and(|r| r.finished.is_none());
                 let label = format!("    {}  {}", run_date(id), name);
                 Line::from(vec![
-                    Span::raw(format!("{label:<31.31}")),
-                    Span::raw(format!("{:<11.11}", format!("{node}{}", if foreign { " ⇣" } else { "" }))),
-                    Span::styled(format!("{:<14.14}", if filter.is_empty() { "all".into() } else { filter }), Style::new().fg(DIM)),
+                    Span::raw(format!("{label:<36.36}")),
+                    Span::raw(format!("{:<12.12}", format!("{node}{}", if foreign { " ⇣" } else { "" }))),
+                    Span::styled(format!("{:<16.16}", if filter.is_empty() { "all".into() } else { filter }), Style::new().fg(DIM)),
                     Span::raw(format!("{:>8}", num(images))),
-                    Span::raw(format!(" {profile:<11.11} {px:>4} {fmt:<6}")),
-                    Span::styled(format!(" {addon:<9}"), Style::new().fg(DIM)),
-                    " │ ".fg(DIM),
-                    Span::styled(format!("{render_py:<9} {starbreaker:<11}"), Style::new().fg(DIM)),
+                    Span::raw(format!("  {profile:<15}")),
                     if running { Span::styled(" running", Style::new().fg(WARN)) } else { "".into() },
                 ])
             }
@@ -2088,7 +2146,7 @@ fn draw_sets(f: &mut Frame, app: &mut App, area: Rect) {
         lines.push(line);
     }
     f.render_widget(Paragraph::new(lines), list_area);
-    let foot_line = Line::from("⇣ = run from another node, fetched with h in view 3  ·  * = overridden: the profile's add-on, --render-script").fg(DIM);
+    let foot_line = Line::from("⇣ = run from another node, fetched with h in view 3").fg(DIM);
     f.render_widget(Paragraph::new(foot_line), foot);
 
     // right: the selected run (or set)
@@ -2105,6 +2163,7 @@ fn draw_sets(f: &mut Frame, app: &mut App, area: Rect) {
                 lines.push(Line::from(format!("Base       {}", s.base.clone().unwrap_or_else(|| "–".into()))));
                 lines.push(Line::from(format!("Runs       {} own, {} from the base", s.runs.len(), s.base_runs.len())));
                 lines.push(Line::from(format!("Images     {}", num(s.files.len()))));
+                lines.push(Line::from(format!("Output     {} px · {} (every run, fixed at its creation)", s.size(), s.format())));
                 lines.push(Line::from(match &s.targets {
                     Some(t) => format!("Targets    {} · {} · {}", num(t.count), t.source, t.at.get(..16).unwrap_or(&t.at).replace('T', " ")),
                     None => "Targets    none (t takes a target list)".into(),
@@ -2145,6 +2204,9 @@ fn draw_remote_sets(f: &mut Frame, app: &mut App, area: Rect) {
                 let chain = s.map(|s| s.base_runs + s.runs.len()).unwrap_or(0);
                 let targets = s.and_then(|s| s.targets.as_ref()).map(|t| format!("{} targets", num(t.count))).unwrap_or_else(|| "no targets".into());
                 spans.push(format!("{:w$}{:<14}{:<18}{:>8}", "", format!("{chain} runs"), targets, num(s.map(|s| s.files).unwrap_or(0)), w = 44usize.saturating_sub(used)).fg(DIM));
+                // its size and format, as there (an older head node sends none: 256 png)
+                let (size, format) = s.map(|s| (s.size.unwrap_or(crate::store::DEFAULT_SIZE), s.format.clone().unwrap_or_else(|| crate::store::DEFAULT_FORMAT.into()))).unwrap_or((crate::store::DEFAULT_SIZE, crate::store::DEFAULT_FORMAT.into()));
+                spans.push(Span::styled(format!("  ({size} {format})"), Style::new().fg(DIM)));
                 Line::from(spans)
             }
             SetRow::Run { id, .. } => {
@@ -2230,7 +2292,6 @@ fn draw_run_detail(f: &mut Frame, app: &mut App, area: Rect, id: &str) {
     let s = |k: &str| o[k].as_str().filter(|v| !v.is_empty()).map(String::from).unwrap_or_else(|| "–".into());
     let row = |k: &str, v: String| Line::from(vec![Span::styled(format!("{k:<12}"), Style::new().fg(DIM)), Span::raw(v)]);
     let nodes: Vec<String> = o["nodes"].as_array().map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect()).unwrap_or_default();
-    let from = |k: &str| if o[k] == "flag" { "flag" } else { "profile" };
     let filter = o["filter"].as_str().map(|f| if f.is_empty() { "all".to_string() } else { f.to_string() }).unwrap_or_else(|| "–".into());
     // version, size, date and id, as far as the run record has them
     let p4k_date = o["p4k_mtime"].as_i64().and_then(|t| chrono::DateTime::from_timestamp(t, 0)).map(|d| d.format("%Y-%m-%d").to_string()).unwrap_or_default();
@@ -2238,8 +2299,8 @@ fn draw_run_detail(f: &mut Frame, app: &mut App, area: Rect, id: &str) {
     let p4k_id = o["p4k_id"].as_str().map(|v| v.get(..8).unwrap_or(v).to_string());
     let p4k = [o["p4k_version"].as_str().map(String::from), p4k_gb, Some(p4k_date).filter(|d| !d.is_empty()), p4k_id].into_iter().flatten().collect::<Vec<_>>().join(" · ");
     let p4k = if p4k.is_empty() { "–".to_string() } else { p4k };
-    let size = o["size"].as_u64().map(|v| format!("{v} px ({})", from("size_from"))).unwrap_or_else(|| "–".into());
-    let format = o["format"].as_str().map(|v| format!("{v} ({})", from("format_from"))).unwrap_or_else(|| "–".into());
+    let size = o["size"].as_u64().map(|v| format!("{v} px")).unwrap_or_else(|| "–".into());
+    let format = o["format"].as_str().unwrap_or("–").to_string();
     let profile = match o["profile"].as_str() {
         Some(p) => format!("{p} · {} · {}", s("profile_from"), short(o, "profile_hash")),
         None => "– (a run before profiles)".into(),
@@ -2702,7 +2763,7 @@ mod tests {
     fn profile_dialog() {
         let root = std::env::temp_dir().join(format!("packshot-profiles-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
-        for (dir, text) in [("profiles/game-tile", "[params]\nsize = 256\n"), ("store/profiles/studio", "addon = \"starbreaker_addon\"\n[params]\nformat = \"jpeg\"\n")] {
+        for (dir, text) in [("profiles/game-tile", "[params]\nsamples = 16\n"), ("store/profiles/studio", "addon = \"starbreaker_addon\"\n[params]\nquality = 70\n")] {
             std::fs::create_dir_all(root.join(dir)).unwrap();
             std::fs::write(root.join(dir).join("profile.toml"), text).unwrap();
         }
@@ -2712,7 +2773,7 @@ mod tests {
         let set = store.load_set(MAIN).unwrap();
         let x = root.join("x");
         let base = crate::profile::Profile::base(&x).unwrap();
-        let cfg = Config { p4k: x.clone(), starbreaker: x.clone(), blender: x.clone(), render_script: x.clone(), work: root.join("work"), size: None, format: None, profile: Ok(base), chunk: 50, cache_limit: 0 };
+        let cfg = Config { p4k: x.clone(), starbreaker: x.clone(), blender: x.clone(), render_script: x.clone(), work: root.join("work"), profile: Ok(base), chunk: 50, cache_limit: 0 };
         let engine = Engine::new(cfg, Vec::new(), Tables::default(), store, set, None, Hello { name: "N".into(), ..Default::default() }).unwrap();
         let args = Args { filter: String::new(), scope: Scope::Missing, plain: false, serve: false, dry_run: false, workers: 0, exporters: 0, name: String::new(), line: String::new() };
         let mut app = App::new(engine, Picker::halfblocks(), args);
@@ -2729,11 +2790,48 @@ mod tests {
         assert!(app.input.is_none());
         assert_eq!(app.engine.cfg.profile.as_ref().unwrap().name, "studio");
         let s = screen(&mut app);
-        assert!(s.contains("Profile studio · 256 px · jpeg · add-on ") && s.lines().any(|l| l.contains("Profile studio") && l.contains("*   │")), "{s}");
+        assert!(s.contains("Profile studio · 256 px · png · add-on ") && s.lines().any(|l| l.contains("Profile studio") && l.contains("*   │")), "{s}");
         // the next start preselects it
         app.input = Some(Input::RunName(Field::new("again")));
         app.key(KeyCode::Enter, KeyModifiers::NONE).unwrap();
         assert!(matches!(app.input, Some(Input::Profile { sel: 1, .. })));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A new set (n in view 2): its name, then size and format preset with main's (ADR 0045); a size out of bounds
+    /// keeps the dialog; the set is created with the chosen values and its row shows them
+    #[test]
+    fn new_set_dialog() {
+        let root = std::env::temp_dir().join(format!("packshot-newset-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let store = Store::open(&root.join("store")).unwrap();
+        let set = store.load_set(MAIN).unwrap();
+        let x = root.join("x");
+        let cfg = Config { p4k: x.clone(), starbreaker: x.clone(), blender: x.clone(), render_script: x.clone(), work: root.join("work"), profile: Ok(crate::profile::Profile::stub(&x)), chunk: 50, cache_limit: 0 };
+        let engine = Engine::new(cfg, Vec::new(), Tables::default(), store, set, None, Hello { name: "N".into(), ..Default::default() }).unwrap();
+        let args = Args { filter: String::new(), scope: Scope::Missing, plain: false, serve: false, dry_run: false, workers: 0, exporters: 0, name: String::new(), line: String::new() };
+        let mut app = App::new(engine, Picker::halfblocks(), args);
+        let key = |app: &mut App, k: KeyCode| app.key(k, KeyModifiers::NONE).unwrap();
+        app.view = View::Sets;
+        key(&mut app, KeyCode::Char('n'));
+        "small".chars().for_each(|c| key(&mut app, KeyCode::Char(c)));
+        key(&mut app, KeyCode::Enter);
+        let Some(Input::SetOutput { size, format, .. }) = &app.input else { panic!("no size and format") };
+        assert_eq!((size.text.as_str(), crate::profile::FORMATS[*format]), ("256", "png"), "main's");
+        assert!(screen(&mut app).contains("New set: size and format"));
+        // the format: Tab to it, → twice: exr, ← once: jpeg; the size: back with Tab, letters ignored
+        for k in [KeyCode::Tab, KeyCode::Right, KeyCode::Right, KeyCode::Left, KeyCode::Tab, KeyCode::Backspace, KeyCode::Backspace, KeyCode::Backspace, KeyCode::Char('x'), KeyCode::Char('9')] {
+            key(&mut app, k);
+        }
+        key(&mut app, KeyCode::Enter);
+        assert!(matches!(app.input, Some(Input::SetOutput { .. })), "9 px is too small: the dialog stays");
+        for k in [KeyCode::Backspace, KeyCode::Char('1'), KeyCode::Char('2'), KeyCode::Char('8'), KeyCode::Enter] {
+            key(&mut app, k);
+        }
+        app.run_deferred();
+        let small = app.engine.store.load_set("small").unwrap();
+        assert_eq!((small.size(), small.format()), (128, "jpeg"));
+        assert!(screen(&mut app).contains("(128 jpeg)"));
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -2746,7 +2844,7 @@ mod tests {
         let store = Store::open(&root.join("store")).unwrap();
         let set = store.load_set(MAIN).unwrap();
         let x = root.join("x");
-        let cfg = Config { p4k: x.clone(), starbreaker: x.clone(), blender: x.clone(), render_script: x.clone(), work: root.join("work"), size: None, format: None, profile: Ok(crate::profile::Profile::stub(&x)), chunk: 50, cache_limit: 0 };
+        let cfg = Config { p4k: x.clone(), starbreaker: x.clone(), blender: x.clone(), render_script: x.clone(), work: root.join("work"), profile: Ok(crate::profile::Profile::stub(&x)), chunk: 50, cache_limit: 0 };
         let mut engine = Engine::new(cfg, Vec::new(), Tables::default(), store, set, None, Hello { name: "N".into(), ..Default::default() }).unwrap();
         engine.targets_file = root.join("store").join("targets").join("targets.json");
         let args = Args { filter: String::new(), scope: Scope::Missing, plain: false, serve: false, dry_run: false, workers: 0, exporters: 0, name: String::new(), line: String::new() };
@@ -2853,10 +2951,12 @@ mod tests {
         assert!(screen(&mut app).contains("Esc: back"));
         key(&mut app, KeyCode::Esc);
         assert!(app.confirm.is_none() && !app.quit);
-        app.defer("Creating set foo …".into(), Deferred::NewSet("foo".into()));
+        app.defer("Creating set foo …".into(), Deferred::NewSet { name: "foo".into(), size: 128, format: "jpeg".into() });
         assert!(screen(&mut app).contains("Creating set foo …"));
         app.run_deferred();
         assert!(app.busy.is_none() && app.engine.store.sets().unwrap().contains(&"foo".to_string()));
+        let foo = app.engine.store.load_set("foo").unwrap();
+        assert_eq!((foo.size(), foo.format()), (128, "jpeg"));
 
         // the start tile: a failed check with its hint, the steps that need it skipped; gone when all are done
         app.engine.start = vec![
@@ -2903,7 +3003,7 @@ mod tests {
             ..Default::default()
         };
         let x = root.join("x");
-        let cfg = Config { p4k: x.clone(), starbreaker: x.clone(), blender: x.clone(), render_script: x.clone(), work: root.join("work"), size: None, format: None, profile: Ok(crate::profile::Profile::stub(&x)), chunk: 50, cache_limit: 0 };
+        let cfg = Config { p4k: x.clone(), starbreaker: x.clone(), blender: x.clone(), render_script: x.clone(), work: root.join("work"), profile: Ok(crate::profile::Profile::stub(&x)), chunk: 50, cache_limit: 0 };
         let targets = vec![Target { uuids: vec!["0".into()], names: Some(vec!["Gun".into()]), entity: "gun_a".into(), kind: "WeaponPersonal".into(), sub_type: "Small".into(), worn: false }];
         let mut engine = Engine::new(cfg, targets, Tables::default(), store, set, None, me).unwrap();
         engine.max_renderers = 6;
@@ -2978,9 +3078,9 @@ mod tests {
         app.engine.store.save_set(&app.engine.set).unwrap();
         app.refresh_sets();
         let s = screen(&mut app);
-        assert!(s.contains("Add-on") && s.contains("render.py") && !s.contains("Blender") && s.contains("StarBreaker") && s.contains("Profile"), "{s}");
-        let row = s.lines().find(|l| l.contains("full") && l.contains("6da3cb0c")).unwrap_or_else(|| panic!("no run row: {s}"));
-        assert!(row.contains("1a2b3c4d") && !row.contains("5.2.3") && row.contains("–") && row.contains("studio") && !row.contains("abcde") && row.contains("1a2b3c4d*"), "{row}");
+        assert!(s.contains("Profile") && s.contains("(256 png)") && s.contains("Output     256 px · png") && !s.contains("StarBreaker") && !s.contains("Add-on"), "{s}");
+        let row = s.lines().find(|l| l.contains("full") && l.contains("studio")).unwrap_or_else(|| panic!("no run row: {s}"));
+        assert!(!row.contains("6da3cb0c") && !row.contains("1a2b3c4d") && !row.contains("5.2.3"), "the hashes are in the run's tile only: {row}");
         // the selected run: its tile on the right, Blender there now
         app.set_sel = app.set_rows.iter().position(|r| matches!(r, SetRow::Run { .. })).unwrap();
         let s = screen(&mut app);
@@ -2991,7 +3091,7 @@ mod tests {
         // another node as head node, its state not there yet
         app.view = View::Run;
         app.engine.head = Some("servbox".into());
-        let set_list = vec![crate::store::SetSummary { name: "exp".into(), base: Some("main".into()), base_runs: 3, runs: vec!["2026-11-04_10-00_x".into()], files: 120, targets: None }];
+        let set_list = vec![crate::store::SetSummary { name: "exp".into(), base: Some("main".into()), base_runs: 3, runs: vec!["2026-11-04_10-00_x".into()], files: 120, targets: None, size: Some(512), format: Some("jpeg".into()) }];
         app.engine.remote = Some(RemoteSel { node: "servbox".into(), set: "exp".into(), sets: vec!["exp".into()], set_list, stats: None, images: Default::default(), failed: Default::default(), loaded: false });
         let s = screen(&mut app);
         assert!(s.contains("Head node  servbox") && s.contains("waiting for the state of servbox"), "{s}");

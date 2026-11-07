@@ -142,7 +142,7 @@ runs/
     <Name> (<class>) <uuid>.png   read-only (.jpg/.exr with another format)
     run.json  events.jsonl  run.log
 sets/
-  main/            hard links · set.json · targets.json
+  main/            hard links · set.json (chain, size and format) · targets.json
   glow-test/       an experiment
 manifests/         other nodes' main sets, for "missing"
 work/
@@ -199,13 +199,15 @@ sets and assessment do not depend on it.
 - **Extras:** a profile may bring a `scene` template and its own copy of the StarBreaker add-on (`addon`,
   [ADR 0025](adr/0025-material-module.md)), which `render.py` enables instead of the installed one for its whole
   process; the equality check still compares the installed add-on.
-- **Choice:** per run, by the starter: `--profile` (a name, or a folder) or the TUI's start dialog; `--size` and
-  `--format` override its values. A start on another node picks the target set there (its target list comes with the
-  set's state) and sends the selected targets, filter and scope, the profile's folder, size and format along, so the
-  head node need not have the profile.
+- **Choice:** per run, by the starter: `--profile` (a name, or a folder) or the TUI's start dialog. A start on another
+  node picks the target set there (its target list comes with the set's state) and sends the selected targets, filter
+  and scope and the profile's folder along, so the head node need not have the profile.
+- **Size and format:** the target set's ([ADR 0045](adr/0045-size-and-format-per-set.md)), fixed when the set is
+  created (`main`: 256 px PNG; a set from before them counts as that); the head node puts them into every job. A
+  `profile.toml` that sets `size` or `format` is refused.
 - **Distribution:** the head node sends `render.py`, `game-tile` (both its own) and the run's profile with every render
   chunk ([ADR 0024](adr/0024-head-node-distributes-profiles.md)); a node keeps them in `work/profile-cache/` by content
   hash and starts a Blender per `render.py` and profile.
-- **Record:** the run records `render.py`'s hash, the profile (name, origin, hash, template), size and format with
-  their source, and the add-on it used; the Sets view shows them in the run's tile. The assessment always measures
+- **Record:** the run records `render.py`'s hash (and whether it came from `--render-script`), the profile (name,
+  origin, hash, template), the set's size and format, and the add-on it used; the Sets view shows them in the run's tile. The assessment always measures
   `game-tile` as PNG.
