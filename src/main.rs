@@ -56,10 +56,10 @@ What to render
 
 Modes
   --plain                no TUI: run here, one line per item
-  --serve                no TUI: only work for other nodes' runs
+  --serve                no TUI: only work for other nodes' runs (needs a token)
   --dry-run              list what would be rendered, then exit
   --report [log|dir]     evaluate a run's event log (default: the latest run), then exit
-  --assess               measure this node, save assessment.json, then exit (TUI: b in view 3)
+  --assess               measure this node into assessment.json (needs --render; TUI: b in view 3)
 
 Tuning
   --workers <n>          Blender processes (default: the assessment, else ¾ of the cores)
@@ -73,7 +73,7 @@ Tuning
 Paths
   --store <dir>          packshot folder
   --work <dir>           work folder (default: work/ in the packshot folder)
-  --p4k <path>           Data.p4k (default: $SC_DATA_P4K)
+  --p4k <path>           Data.p4k (default: $SC_DATA_P4K, else Data.p4k in the current folder)
   --starbreaker <bin>    StarBreaker
   --blender <bin>        Blender
   --render-script <py>   render.py";

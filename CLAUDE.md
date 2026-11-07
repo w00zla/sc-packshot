@@ -41,6 +41,7 @@ cargo test --release     # tests with fake tools; real-tool tests are #[ignore]
 SC_DATA_P4K=<Data.p4k> cargo test --release -- --ignored   # real StarBreaker + Blender (Data.p4k with build_manifest.id next to it)
 PACKSHOT_SHOT_FONT=<mono.ttf>[;<fallback.ttf>] [PACKSHOT_SHOT_RENDERS=<a set folder>] cargo test --release tui_screenshots -- --ignored
 #   the README's TUI screenshots docs/assets/tui-*.png from a synthetic state (src/ui/shots.rs); then oxipng -o max --strip safe
+#   the font list is split like PATH: `;` on Windows (C:\Windows\Fonts\CascadiaMono.ttf;C:\Windows\Fonts\seguisym.ttf), `:` on Linux
 resvg --zoom 2 docs/assets/src/<name>.svg docs/assets/<name>.png   # the ARCHITECTURE.md diagrams from their SVG sources; then oxipng as above
 
 P [--render] [--export] [--filter <terms>] [--scope missing|failed|all] [--set <name>] [--name <run>] [--plain|--serve] [--workers n] [--exporters n]

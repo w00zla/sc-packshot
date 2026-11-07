@@ -15,7 +15,7 @@ read by packshot itself. No database: the target list is a file per set.
 | Stage | What happens |
 |---|---|
 | Export | StarBreaker reads an entity from `Data.p4k` and writes a decomposed package: `scene.blend`, meshes, PNG textures and the material sidecars |
-| Render | Blender loads the package; the StarBreaker add-on builds the node trees from the sidecars; `render.py` calls the run's profile (default `game-tile`): pose, fit and light rig, an Eevee render to a linear EXR, the image (PNG, JPEG or EXR) through the profile's tone curve |
+| Render | Blender loads the package; the StarBreaker add-on builds the node trees from the sidecars; `render.py` calls the run's profile (default `game-tile`): pose, fit and light rig, an Eevee render to a linear EXR, the image: PNG or JPEG through the profile's tone curve, or a linear EXR |
 | Store | the image goes into the run's folder, never changed afterwards, and as a hard link into the target set; consumers read `sets/main` |
 
 ## Material sidecars
@@ -45,7 +45,8 @@ textures, and since sidecars and textures are shared between items, they cross t
 ## Modules
 
 Everything runs on the main thread: the engine ticks, the TUI draws its state, the processes answer in stdout lines.
-Only network reads and process output have threads of their own, which hand over messages.
+Only network reads, process output, the DataCore tables and the picker's entity list while they load, the
+assessment's sweep and sampler and the GPU sampling have threads of their own, which hand over messages.
 
 | Module | Role |
 |---|---|
@@ -59,6 +60,8 @@ Only network reads and process output have threads of their own, which hand over
 | `events.rs` | the event log per run (`events.jsonl`) and `--report` |
 | `net.rs` | TCP frames of JSON plus payload, hello with token and versions, UDP discovery, checks on all data from other nodes |
 | `cas.rs` | an item's closure, content hashes (xxh3-128), the renderer's content cache with its size limit |
+| `entities.rs` | the game's entities for the target picker (`dcb query`, display names from `global.ini`), cached per game build; the picker's selection rules |
+| `config.rs` | `packshot.json`: token, listen address, peers, discovery |
 | `tables.rs` | pose and light tables of the inventory and the entities' tags from the DataCore (a tagged entry wins for an entity with that tag), cached in the work folder |
 | `blender.rs`, `shim/` | one command line for every Blender; on Linux the RDSEED shim via `LD_PRELOAD` |
 | `blender/render.py` | runs inside Blender: loads the package, calls the profile's hooks, renders, answers `icon:` or `failed:` with phase timings |
@@ -130,7 +133,7 @@ the newest run in its chain. Experiments branch off `main` and are adopted by ap
 packshot.json      cluster: token, port, peers
 assessment.json    measured process counts
 targets/
-  targets.json     template for target lists
+  targets.json     the list the dialog offers first
   <name>.json      lists from the picker or by hand (subfolders are listed too)
 profiles/
   <name>/          own profiles: profile.toml, hooks.py (hide a bundled one of the same name)
@@ -146,10 +149,19 @@ work/
   export/          export chunks, deleted after use
   cas/             content cache of fetched files
   fetch/           render chunks, linked from cas/
-  dcb/             pose and light tables, entity tags
-  profile-cache/   render.py and profiles received for render chunks, by content hash
+  render/          images from the Blenders before they move into the run
+  inbox/           files from other nodes as they arrive
+  send/            files on their way to another node
+  dcb/             pose and light tables, entity tags, the picker's entity list
+  profile-cache/   render.py and profiles received for render chunks, by content hash; started/: starters' profiles
   assess/          the assessment's test set
+  preview.<ext>    the latest image rendered on this node
+  blender.log      the Blenders' output
+  rdseed-shim-<hash>.so   Linux: the RDSEED shim
 ```
+
+At every start packshot clears `export/`, `cas/`, `fetch/`, `send/` and `profile-cache/` (with a cluster `inbox/`
+too): what an earlier session left there is stale.
 
 ## Same state or no run
 
@@ -187,9 +199,10 @@ sets and assessment do not depend on it.
 - **Extras:** a profile may bring a `scene` template and its own copy of the StarBreaker add-on (`addon`,
   [ADR 0025](adr/0025-material-module.md)), which `render.py` enables instead of the installed one for its whole
   process; the equality check still compares the installed add-on.
-- **Choice:** per run, by the starter: `--profile` (a name, or a folder) or the TUI's start dialog; a start on another
-  node sends the profile's folder along, so the head node need not have it. `--size` and `--format` override its
-  values.
+- **Choice:** per run, by the starter: `--profile` (a name, or a folder) or the TUI's start dialog; `--size` and
+  `--format` override its values. A start on another node picks the target set there (its target list comes with the
+  set's state) and sends the selected targets, filter and scope, the profile's folder, size and format along, so the
+  head node need not have the profile.
 - **Distribution:** the head node sends `render.py`, `game-tile` (both its own) and the run's profile with every render
   chunk ([ADR 0024](adr/0024-head-node-distributes-profiles.md)); a node keeps them in `work/profile-cache/` by content
   hash and starts a Blender per `render.py` and profile.
