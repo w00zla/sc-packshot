@@ -1,6 +1,6 @@
 # 0012. Per-OS bundles built by script
 
-- Status: accepted
+- Status: superseded in part (bundle contents) by [0026](0026-starbreaker-by-release-pin.md) (StarBreaker from the pinned release), [0033](0033-one-pin-file-for-dev-and-bundles.md) (one pin file) and [0036](0036-releases-without-blender-and-workflows.md) (no Blender in the bundles, templates in `templates/bundle/`)
 - Date: 2026-11-03
 - Recorded: 2026-11-05
 - Scope: `scripts/packshot-bundle.{sh,ps1}`, `tools/packshot/bundle/`

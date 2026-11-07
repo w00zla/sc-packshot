@@ -1,6 +1,6 @@
 # 0015. Export and render chunks with node-to-node fetch by content hash
 
-- Status: accepted
+- Status: accepted; the render cache is bounded since [0031](0031-render-cache-limit.md)
 - Date: 2026-11-04
 - Recorded: 2026-11-05
 - Scope: packshot (`engine.rs`, `node.rs`, `cas.rs`, `net.rs`)

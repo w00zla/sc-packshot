@@ -1,6 +1,6 @@
 # 0004. Renders are fan content; no game data in the repository
 
-- Status: accepted; the open guideline check is settled by [0032](0032-fan-disclaimer-suffices.md)
+- Status: accepted; the open guideline check is settled by [0032](0032-fan-disclaimer-suffices.md); renders in example screenshots allowed by [0037](0037-renders-allowed-in-example-screenshots.md)
 - Date: 2026-10-25
 - Recorded: 2026-11-05
 - Scope: repository content, published images
