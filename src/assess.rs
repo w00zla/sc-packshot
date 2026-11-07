@@ -902,6 +902,8 @@ impl Sweep {
                 alongside(self, id)?;
             }
         }
+        // the table's head after the intro line above, as in the render sweep
+        self.say(EXPORT_HEAD.to_string());
         let mut steps: Vec<Step> = Vec::new();
         let mut rss = 0u64;
         for e in 1..=EXPORT_MAX {
@@ -1104,7 +1106,6 @@ pub fn sweep(p: SweepParams, cancel: Arc<AtomicBool>, out: Sender<SweepEv>) -> R
     let (mut exporters, mut export, mut render, mut export_steps, mut export_cap) = (None, None, alone, Vec::new(), usize::MAX);
     if s.p.export.is_some() {
         s.settle()?;
-        s.say(EXPORT_HEAD.to_string());
         let (steps, rss) = s.export_sweep(workers)?;
         export_steps = steps;
         // the exporters must fit RAM next to the chosen Blenders, with the most one export process took
