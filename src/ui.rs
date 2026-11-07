@@ -2164,12 +2164,16 @@ fn draw_sets(f: &mut Frame, app: &mut App, area: Rect) {
                 lines.push(Line::from(format!("Base       {}", s.base.clone().unwrap_or_else(|| "–".into()))));
                 lines.push(Line::from(format!("Runs       {} own, {} from the base", s.runs.len(), s.base_runs.len())));
                 lines.push(Line::from(format!("Images     {}", num(s.files.len()))));
-                lines.push(Line::from(format!("Output     {} px · {} (every run, fixed at its creation)", s.size(), s.format())));
+                lines.push(Line::from(format!("Output     {} px · {}", s.size(), s.format())));
+                // paths relative to the packshot folder; a list from outside it by its file name
+                let root = &app.engine.store.root;
+                let rel = |p: &std::path::Path| p.strip_prefix(root).map(|r| r.display().to_string()).unwrap_or_else(|_| p.file_name().map(|f| f.to_string_lossy().into_owned()).unwrap_or_default());
                 lines.push(Line::from(match &s.targets {
-                    Some(t) => format!("Targets    {} · {} · {}", num(t.count), t.source, t.at.get(..16).unwrap_or(&t.at).replace('T', " ")),
+                    Some(t) if t.source.starts_with('<') => format!("Targets    {} · {}", num(t.count), t.source),
+                    Some(t) => format!("Targets    {} · {}", num(t.count), rel(std::path::Path::new(&t.source))),
                     None => "Targets    none (t takes a target list)".into(),
                 }));
-                lines.push(Line::from(format!("Folder     {}", app.engine.store.set_dir(&n).display())).fg(DIM));
+                lines.push(Line::from(format!("Folder     {}", rel(&app.engine.store.set_dir(&n)))).fg(DIM));
             }
             f.render_widget(Paragraph::new(lines), inner);
         }
@@ -2300,8 +2304,6 @@ fn draw_run_detail(f: &mut Frame, app: &mut App, area: Rect, id: &str) {
     let p4k_id = o["p4k_id"].as_str().map(|v| v.get(..8).unwrap_or(v).to_string());
     let p4k = [o["p4k_version"].as_str().map(String::from), p4k_gb, Some(p4k_date).filter(|d| !d.is_empty()), p4k_id].into_iter().flatten().collect::<Vec<_>>().join(" · ");
     let p4k = if p4k.is_empty() { "–".to_string() } else { p4k };
-    let size = o["size"].as_u64().map(|v| format!("{v} px")).unwrap_or_else(|| "–".into());
-    let format = o["format"].as_str().unwrap_or("–").to_string();
     let profile = match o["profile"].as_str() {
         Some(p) => format!("{p} · {} · {}", s("profile_from"), short(o, "profile_hash")),
         None => "– (a run before profiles)".into(),
@@ -2319,10 +2321,9 @@ fn draw_run_detail(f: &mut Frame, app: &mut App, area: Rect, id: &str) {
         row("Data.p4k", p4k),
         // in the packshot folder
         row("Folder", app.engine.store.run_dir(id).strip_prefix(&app.engine.store.root).map(|p| p.display().to_string()).unwrap_or_default()).fg(DIM),
-        // the profile with its output and add-on (ADR 0025), then the components that are not part of it
+        // the profile with its add-on (ADR 0025), then the components that are not part of it; size and format are the set's
         block("Profile"),
         row("Profile", profile),
-        row("Output", format!("{size} · {format}")),
         row("Add-on", addon),
         row("Template", o["scene"].as_str().map(String::from).unwrap_or_else(|| "none".into())),
         block("Components"),
