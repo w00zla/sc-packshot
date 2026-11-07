@@ -46,3 +46,4 @@ supersedes the old one. 0001–0020 were recorded afterwards (2026-11-05) from t
 | [0039](0039-target-lists-owned-by-packshot.md) | packshot owns the target-list format and builds lists from the DataCore | accepted | 2026-11-07 |
 | [0040](0040-start-checks-in-the-tui.md) | Start checks run inside the TUI | accepted | 2026-11-07 |
 | [0041](0041-profile-hooks.md) | Profile hooks: before_open, after_open, stage, post | accepted | 2026-11-07 |
+| [0042](0042-profile-folder-and-hook-signatures.md) | A profile is a folder with profile.toml and hooks.py; hooks take one context | accepted | 2026-11-07 |
