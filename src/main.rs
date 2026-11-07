@@ -59,7 +59,7 @@ Modes
   --serve                no TUI: only work for other nodes' runs (needs a token)
   --dry-run              list what would be rendered, then exit
   --report [log|dir]     evaluate a run's event log (default: the latest run), then exit
-  --assess               measure this node into assessment.json (needs --render; TUI: b in view 3)
+  --assess               measure this node (needs --render; TUI: b in view 3)
 
 Tuning
   --workers <n>          Blender processes (default: the assessment, else ¾ of the cores)
@@ -337,7 +337,7 @@ fn real_main() -> Result<()> {
     let mut me = cluster::own_hello(&net_cfg.name, caps, 0, 0, auto.2, cluster::disk_info(&disk_paths));
     // the node's assessment: its counts are the defaults, whatever changed since (ADR 0046); what differs from what it
     // was measured with only shows it as stale
-    let assessment = assess::load(&store_dir.join(assess::FILE));
+    let assessment = assess::load(&store_dir.join(assess::file()));
     let stale = assessment.as_ref().map(|a| a.keys.diff(&assess::Keys::of(&me, &render_script))).unwrap_or_default();
     let workers = assessment.as_ref().map(|a| a.workers).unwrap_or(auto.0);
     let exporters = assessment.as_ref().and_then(|a| a.exporters).unwrap_or(auto.1);

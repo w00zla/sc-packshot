@@ -51,3 +51,4 @@ supersedes the old one. 0001–0020 were recorded afterwards (2026-11-05) from t
 | [0044](0044-profile-per-run.md) | The profile is chosen per run, not per set | accepted | 2026-11-07 |
 | [0045](0045-size-and-format-per-set.md) | Output size and format belong to the set, without overrides | accepted | 2026-11-07 |
 | [0046](0046-assessment-never-stale.md) | An assessment stays in use until a new one replaces it | accepted | 2026-11-07 |
+| [0047](0047-assessment-per-os.md) | One assessment per operating system | accepted | 2026-11-07 |

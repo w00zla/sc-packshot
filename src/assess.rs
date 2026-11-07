@@ -12,7 +12,7 @@
 // the best, capped by memory. An exporting node then runs export-batch with e = 1 … EXPORT_MAX while the chosen n
 // Blender render alongside (export-batch --stdin as in a run when StarBreaker has it) and takes the e where the
 // smaller of export and render rate stops improving, capped by RAM with the most an export process took. The result
-// goes into its own file, assessment.json in the packshot folder, with what it was measured with; it stays in use until a
+// goes into its own file, assessment-<os>.json in the packshot folder, with what it was measured with; it stays in use until a
 // new one replaces it, shown as stale when that differs (ADR 0046).
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::fs::{self, File, OpenOptions};
@@ -66,7 +66,7 @@ pub struct Keys {
     pub render_py: Option<String>,
     #[serde(default)]
     pub starbreaker: Option<String>,
-    /// an assessment.json copied to another machine shows as stale there (also without nvidia-smi)
+    /// an assessment file copied to another machine shows as stale there (also without nvidia-smi)
     #[serde(default)]
     pub cpu: Option<String>,
     /// total RAM in whole GB (rounded: small reporting differences do not count); None in an older file: unknown
@@ -147,7 +147,7 @@ pub struct Step {
     pub secs: f64,
 }
 
-/// The result of an assessment: assessment.json in the packshot folder
+/// The result of an assessment: assessment-<os>.json in the packshot folder
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
 pub struct Assessment {
     pub date: String,
@@ -193,8 +193,12 @@ impl Assessment {
     }
 }
 
-/// The node's assessment file in the packshot folder
-pub const FILE: &str = "assessment.json";
+/// The node's assessment file in the packshot folder, one per operating system (ADR 0047): a PC that boots Windows
+/// and Linux into the same packshot folder measures each on its own (one PC measured 48 items/s on Linux and 23 on
+/// Windows at 8-10 Blender)
+pub fn file() -> String {
+    format!("assessment-{}.json", std::env::consts::OS)
+}
 
 /// The assessment in its file, if there is one
 pub fn load(path: &Path) -> Option<Assessment> {
@@ -1546,7 +1550,7 @@ impl Engine {
                 let _ = writeln!(f, "{l}");
             }
         }
-        let path = self.store.root.join(FILE);
+        let path = self.store.root.join(file());
         match save(&path, &a) {
             Ok(()) => self.assess_note(Level::Ok, format!("Assessment saved in {}: {}", path.display(), summary(&a))),
             Err(e) => self.assess_note(Level::Error, format!("Assessment not saved: {e:#}")),
@@ -1687,7 +1691,7 @@ mod tests {
         }
     }
 
-    /// Stale when a key differs: CPU, RAM, Blender, GPU, render.py, StarBreaker (an assessment.json copied to a
+    /// Stale when a key differs: CPU, RAM, Blender, GPU, render.py, StarBreaker (an assessment file copied to a
     /// machine without nvidia-smi is stale there); an older file's extra keys (addon, host) load and count for nothing,
     /// its missing RAM is unknown; a peer's p4k fingerprint stays one folder name
     #[test]
@@ -1722,7 +1726,7 @@ mod tests {
         fs::create_dir_all(&dir).unwrap();
         let cfg = r#"{"token": "s3cret", "peers": ["servbox"], "discovery": false}"#;
         fs::write(dir.join("packshot.json"), cfg).unwrap();
-        let path = dir.join(FILE);
+        let path = dir.join(file());
         assert_eq!(load(&path), None);
         let a = Assessment { workers: 6, render: 6.3, keys: keys(), ..Default::default() };
         save(&path, &a).unwrap();
@@ -1730,7 +1734,7 @@ mod tests {
         let b = Assessment { workers: 4, ..a };
         save(&path, &b).unwrap();
         assert_eq!(load(&path).unwrap().workers, 4);
-        assert!(!dir.join("assessment.json.tmp").exists());
+        assert!(!dir.join(format!("{}.tmp", file())).exists());
         assert_eq!(fs::read_to_string(dir.join("packshot.json")).unwrap(), cfg, "packshot.json untouched");
     }
 

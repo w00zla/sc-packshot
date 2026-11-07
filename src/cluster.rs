@@ -2009,7 +2009,7 @@ else:
     }
 
     /// Assessments on request with fake tools: x (no capabilities) asks r (renders only) to assess itself; r gets
-    /// the test set exported by b (renders and exports) and fetches it from there, sweeps, saves its assessment.json
+    /// the test set exported by b (renders and exports) and fetches it from there, sweeps, saves its assessment file
     /// (the token kept) and announces the result; while it assesses, x's head node work skips it and r refuses a
     /// second one. Then b assesses itself (test set exported here, export sweep as well); its rates size the chunks
     #[test]
@@ -2041,7 +2041,7 @@ else:
         assert!(a.workers >= 1 && a.workers <= 3 && a.render > 0.0 && a.exporters.is_none() && a.export_steps.is_empty(), "{a:?}");
         assert_eq!(a.items, 6);
         assert!(r.log.iter().any(|l| l.text.contains("items exported on b")), "the test set came from b");
-        let saved: serde_json::Value = serde_json::from_slice(&fs::read(r.store.root.join(crate::assess::FILE)).unwrap()).unwrap();
+        let saved: serde_json::Value = serde_json::from_slice(&fs::read(r.store.root.join(crate::assess::file())).unwrap()).unwrap();
         assert_eq!(saved["workers"].as_u64(), Some(a.workers as u64));
         assert_eq!(fs::read_to_string(r.store.root.join("packshot.json")).unwrap(), r#"{"token": "t", "discovery": false}"#, "packshot.json untouched");
         assert!(b.serve.as_ref().is_some_and(|s| !s.busy()), "b released the test set's chunk");
