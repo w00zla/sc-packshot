@@ -143,6 +143,8 @@ pub enum Constant {
     Str,
     /// a tuple or list of this many numbers
     Numbers(usize),
+    /// a number that may be None (its annotation says so, or it is None): a number, or false for None
+    OptionalNumber,
     Unknown,
 }
 
@@ -154,10 +156,12 @@ pub fn check_knob(knob: &Knob, c: &Constant) -> std::result::Result<(), String> 
         (Constant::Number, k) => k.is_number(),
         (Constant::Bool, Knob::Bool(_)) | (Constant::Str, Knob::Str(_)) => true,
         (Constant::Numbers(n), Knob::Array(v)) => v.len() == *n && v.iter().all(Knob::is_number),
+        (Constant::OptionalNumber, k) => k.is_number() || matches!(k, Knob::Bool(false)),
         _ => false,
     };
     let want = match c {
         Constant::Number => "a number".to_string(),
+        Constant::OptionalNumber => "a number or None (give a number, or false for None)".to_string(),
         Constant::Bool => "a bool".to_string(),
         Constant::Str => "a string".to_string(),
         Constant::Numbers(n) => format!("{n} numbers"),
@@ -195,7 +199,9 @@ pub fn constants(py: &str) -> std::collections::HashMap<String, Constant> {
             continue;
         }
         let mut rest = line[name.len()..].trim_start();
+        let mut annotation = "";
         if let Some(r) = rest.strip_prefix(':') {
+            annotation = r.find('=').map_or(r, |at| &r[..at]);
             rest = r.find('=').map_or("", |at| &r[at..]);
         }
         let Some(v) = rest.strip_prefix('=').filter(|v| !v.starts_with('=')) else { continue };
@@ -206,7 +212,14 @@ pub fn constants(py: &str) -> std::collections::HashMap<String, Constant> {
             value.push_str(&py_code(lines[i]));
             i += 1;
         }
-        out.insert(name, py_literal(value.trim()));
+        // a constant that may be None (`X: float | None = 4.0`, or `= None`): a number, or false for None
+        let literal = value.trim();
+        let constant = match py_literal(literal) {
+            Constant::Number if annotation.contains("None") => Constant::OptionalNumber,
+            _ if literal == "None" => Constant::OptionalNumber,
+            c => c,
+        };
+        out.insert(name, constant);
     }
     out
 }
@@ -828,6 +841,24 @@ mod tests {
             let err = addon_table(toml).unwrap_err();
             assert!(err.contains(want), "{toml:?}: {err}");
         }
+    }
+
+    /// A constant that may be None (annotated `| None`, or None itself) takes a number, or false for None; true or
+    /// a string are refused (TOML has no null)
+    #[test]
+    fn optional_constants() {
+        let c = constants("MASK: float | None = 4.0\nOVR: float | None = None\nBARE = None\nPLAIN: float = 2.0\n");
+        assert_eq!(c["MASK"], Constant::OptionalNumber);
+        assert_eq!(c["OVR"], Constant::OptionalNumber);
+        assert_eq!(c["BARE"], Constant::OptionalNumber);
+        assert_eq!(c["PLAIN"], Constant::Number);
+        let o = Constant::OptionalNumber;
+        assert!(check_knob(&Knob::Float(1.5), &o).is_ok());
+        assert!(check_knob(&Knob::Int(0), &o).is_ok());
+        assert!(check_knob(&Knob::Bool(false), &o).is_ok());
+        assert!(check_knob(&Knob::Bool(true), &o).unwrap_err().contains("false for None"));
+        assert!(check_knob(&Knob::Str("x".into()), &o).is_err());
+        assert!(check_knob(&Knob::Bool(false), &Constant::Number).is_err(), "false only for an optional constant");
     }
 
     /// A runtime/constants.py as the add-on writes it: top-level upper-case literals by type; expressions, calls,

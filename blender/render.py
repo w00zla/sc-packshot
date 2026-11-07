@@ -271,10 +271,25 @@ def is_number(v):
     return isinstance(v, (int, float)) and not isinstance(v, bool)
 
 
-def fit_knob(value, cur):
+def is_optional(mod, name):
+    """Whether the constant may be None: its annotation says so (`X: float | None = 4.0`) or it is None"""
+    if getattr(mod, name, 0) is None:
+        return True
+    ann = getattr(mod, '__annotations__', {}).get(name)
+    return 'None' in ann if isinstance(ann, str) else type(None) in getattr(ann, '__args__', ())
+
+
+def fit_knob(value, cur, optional=False):
     """A profile's [addon] value as the constant's type: (value, None), or (None, why) when the types differ (int and
     float are both numbers, a bool is none; a list for a tuple or list of the same length, item by item; a list
-    becomes a tuple for a tuple)"""
+    becomes a tuple for a tuple). An optional constant (may be None) takes a number, or false for None: TOML has no
+    null"""
+    if optional:
+        if value is False:
+            return None, None
+        if is_number(value):
+            return value, None
+        return None, f'the constant is a number or None ({cur!r}): give a number, or false for None'
     if isinstance(cur, bool):
         return (value, None) if isinstance(value, bool) else (None, f'the constant is a bool ({cur!r})')
     if is_number(cur):
@@ -313,7 +328,7 @@ def check_knobs(knobs, folder):
         if not hasattr(mod, name):
             bad.append(f'{name}: the add-on defines no such constant')
             continue
-        v, why = fit_knob(value, getattr(mod, name))
+        v, why = fit_knob(value, getattr(mod, name), is_optional(mod, name))
         if why:
             bad.append(f'{name} = {value!r}: {why}')
         else:

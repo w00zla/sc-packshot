@@ -236,7 +236,8 @@ from `default`, which sets none: `override = "starbreaker_addon"` names the prof
 in the profile), used instead of the default one (1.0.0's top-level `addon = "..."` still means that). Every other key
 is one of the add-on's look knobs, by its UPPER_CASE name in the add-on's `runtime/constants.py`, set before every
 item's file opens (before `before_open`). Another lowercase key, a name the add-on does not define or a value of
-another type (numbers for numbers, a list of as many numbers for a tuple) is refused before the run starts.
+another type (numbers for numbers, a list of as many numbers for a tuple; for a knob that may be None a number, or
+`false` for None: TOML has no null) is refused before the run starts.
 
 ```toml
 [addon]
@@ -244,11 +245,17 @@ POM_SCALE_MULTIPLIER = 45.0
 SKIN_SUBSURFACE_RADIUS = [1.0, 0.4, 0.25]
 ```
 
-The look knobs of the add-on, with its defaults (the add-on reads them at use time from StarBreaker 0.3.2-ps.6 on;
-0.3.2-ps.5 accepts them but keeps its own copies, so they change nothing there):
+The look knobs of the add-on (StarBreaker 0.3.2-ps.6), with their defaults:
 
 | Knob | Default | |
 |---|---|---|
+| `MONITOR_ROUGHNESS` | `0.35` | roughness of monitor-like surfaces (screens, eyeballs); 0.15 mirror-like, 0.6 matt |
+| `LAYER_BLEND_GLOW_TINT_WEIGHT` | `0.5` | colour of a glowing layer: 0 its emissive colour, 1 the layer's tint, between a mix |
+| `ORE_VEIN_SMOOTHSTEP` | `[0.6, 0.8]` | the range of an ore's vein map that turns rock into vein (lower: more vein) |
+| `ORGANIC_TINT_GAIN` | `2.0` | brightness of organic materials (minerals such as Hadanite, Beradom) |
+| `METAL_TINT_HUE_ONLY_BELOW` | `0.1` | a metal tint darker than this keeps only its hue in the reflection, a brighter one scales it |
+| `LAYER_BLEND_WEAR_MASK_GAIN` | `4.0` | how strongly the wear mask hides layered materials' edge wear; `false`: not at all, the authored edge wear shows |
+| `WEAR_STRENGTH_OVERRIDE` | none | wear of two-layer wear materials (e.g. some weapons), 0 to 2; unset or `false`: pristine |
 | `POM_SCALE_MULTIPLIER` | `30.0` | parallax (POM) depth: the material's displacement times this |
 | `POM_SCALE_MAX` | `3.0` | the cap on that depth (higher makes the surface swim) |
 | `LIGHT_VISUAL_GAIN` | `20.0` | brightness of the item's own lights |
