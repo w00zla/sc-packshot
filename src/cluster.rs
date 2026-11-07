@@ -3,16 +3,16 @@
 // set and its images, hands export chunks to the exporting nodes and render chunks to the rendering ones (itself
 // included), takes their results back (back into the queue when a node drops or a chunk stalls) and tells every node
 // the run's status once a second; every node can abort it. Nodes fetch each other's runs (key h, they attach to main) and main manifests (m, for "missing").
-// All connected nodes must have the same state, else no run starts and the TUI says what differs: the packshot
-// build everywhere, Blender and add-on between the rendering nodes, Data.p4k and StarBreaker between the exporting
-// ones (each compared with the first node of that capability, this one first, then by name).
+// All connected nodes must have the same state, else no run starts and the TUI says what differs: packshot build,
+// Blender, add-on and StarBreaker on every node as on the head node, whatever it does; Data.p4k in sync among the
+// exporting nodes (the head node needs none).
 use std::collections::{BTreeMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 
-use crate::engine::{Engine, Kind, Level, Manifest, Pool, RemoteRun, RemoteSel, Scope, Target, blender_version};
+use crate::engine::{Engine, Kind, Level, Manifest, Pool, RemoteRun, RemoteSel, RunLook, Scope, Target, blender_version};
 use crate::net::{DiskInfo, Hello, HubEv, Msg, Payload, RunStatus, RunSummary, WorkerStatus, collect_files, safe_name};
 use crate::node::addon_dir;
 use crate::profile::Profile;
@@ -486,11 +486,16 @@ impl Engine {
                     self.use_targets(targets);
                 }
             }
-            Msg::StartRun { targets, set, name, filter, scope, line, profile, files } => {
+            Msg::StartRun { targets, set, name, filter, scope, line, files, look } => {
+                let crate::net::StartLook { profile, size, format } = *look;
                 let from = self.peer_name(conn);
                 let me = self.me.name.clone();
-                let sent = self.take_profile(&from, &profile, dir.filter(|_| !files.is_empty()));
-                match sent.and_then(|p| self.start_for(&from, targets, &set, &name, &filter, &scope, &line, p)) {
+                // the starter decides what the run renders with: its profile, size and format
+                let sent = self.take_profile(&from, &profile, dir.filter(|_| !files.is_empty())).and_then(|profile| match &format {
+                    Some(f) if !crate::profile::FORMATS.contains(&f.as_str()) => bail!("format {f:?} not taken"),
+                    _ => Ok(RunLook { profile, size, format }),
+                });
+                match sent.and_then(|look| self.start_for(&from, targets, &set, &name, &filter, &scope, &line, look)) {
                     Ok(run) => self.reply(conn, Msg::Started { run }, Payload::None),
                     Err(e) => {
                         self.note(Level::Error, format!("No run for {from}: {e:#}"));
@@ -633,9 +638,9 @@ impl Engine {
     }
 
     /// Start a run that another node asked for, with this node as head node: its targets appended, the set
-    /// (created from main if missing) becomes the target set, the starter's profile the run's
+    /// (created from main if missing) becomes the target set, what the starter chose to render with the run's
     #[allow(clippy::too_many_arguments)]
-    fn start_for(&mut self, starter: &str, targets: Vec<Target>, set: &str, name: &str, filter: &str, scope: &str, line: &str, profile: Profile) -> Result<String> {
+    fn start_for(&mut self, starter: &str, targets: Vec<Target>, set: &str, name: &str, filter: &str, scope: &str, line: &str, look: RunLook) -> Result<String> {
         if self.running() {
             bail!("a run is going here");
         }
@@ -655,20 +660,20 @@ impl Engine {
         }
         let todo = self.add_targets(targets);
         let scope = Scope::parse(scope).unwrap_or(Scope::Missing);
-        self.start_local_as(&todo, line, filter, scope, name, starter, profile)?;
+        self.start_local_as(&todo, line, filter, scope, name, starter, look)?;
         Ok(self.record.as_ref().map(|r| r.id.clone()).unwrap_or_default())
     }
 
     /// Start a run with this node as head node, with every connected node: only with the same state everywhere, no
     /// other run going, and someone to export and render
     pub fn start_local(&mut self, todo: &[usize], line: &str, filter: &str, scope: Scope, name: &str, starter: &str) -> Result<()> {
-        let profile = self.cfg.profile.clone().map_err(|e| anyhow::anyhow!("no profile: {e}"))?;
-        self.start_local_as(todo, line, filter, scope, name, starter, profile)
+        let look = self.cfg.look().map_err(|e| anyhow::anyhow!("no profile: {e}"))?;
+        self.start_local_as(todo, line, filter, scope, name, starter, look)
     }
 
-    /// start_local with the run's profile (the starter's)
+    /// start_local with what the run renders with (the starter's choice)
     #[allow(clippy::too_many_arguments)]
-    fn start_local_as(&mut self, todo: &[usize], line: &str, filter: &str, scope: Scope, name: &str, starter: &str, profile: Profile) -> Result<()> {
+    fn start_local_as(&mut self, todo: &[usize], line: &str, filter: &str, scope: Scope, name: &str, starter: &str, look: RunLook) -> Result<()> {
         if let Some(other) = self.running_elsewhere() {
             bail!("{other} has a run going: the nodes work on one run at a time");
         }
@@ -684,7 +689,7 @@ impl Engine {
             bail!("{p}");
         }
         let nodes: Vec<String> = self.connected_nodes().into_iter().map(|(_, h)| h.name).collect();
-        self.start(todo, line, filter, scope, name, nodes, starter, profile)
+        self.start(todo, line, filter, scope, name, nodes, starter, look)
     }
 
     /// Ask another head node to start a run over `todo` into the chosen set there
@@ -696,7 +701,8 @@ impl Engine {
         }
         let conn = self.conn_of(&node).with_context(|| format!("{node} is not connected"))?;
         let targets: Vec<Target> = todo.iter().map(|&t| self.targets[t].clone()).collect();
-        // the starter decides the profile: its folder goes along (game-tile itself does not: the head node has it)
+        // the starter decides the profile, size and format: the profile's folder goes along (game-tile itself does not:
+        // the head node has it)
         let profile = self.cfg.profile.clone().map_err(|e| anyhow::anyhow!("no profile: {e}"))?;
         let (files, payload) = if crate::profile::same_dir(&profile.dir, &profile.base) {
             (Vec::new(), Payload::None)
@@ -704,7 +710,7 @@ impl Engine {
             let (files, paths) = collect_files(&profile.dir, "")?;
             (files, Payload::Files(paths))
         };
-        let msg = Msg::StartRun { targets, set: set.clone(), name: name.to_string(), filter: filter.to_string(), scope: scope.key().to_string(), line: line.to_string(), profile: profile.name, files };
+        let msg = Msg::StartRun { targets, set: set.clone(), name: name.to_string(), filter: filter.to_string(), scope: scope.key().to_string(), line: line.to_string(), files, look: Box::new(crate::net::StartLook { profile: profile.name, size: self.cfg.size, format: self.cfg.format.clone() }) };
         self.reply(conn, msg, payload);
         Ok(())
     }
@@ -1161,6 +1167,10 @@ mod tests {
         let p = crate::profile::resolve("studio", &a.store.root.clone(), &a.cfg.render_script.clone(), &root).unwrap();
         a.set_profile(p);
         assert!(crate::profile::resolve("studio", &m.store.root.clone(), &m.cfg.render_script.clone(), &root).is_err());
+        // and its --size and --format, over the profile's and m's own
+        a.cfg.size = Some(64);
+        a.cfg.format = Some("exr".into());
+        m.cfg.size = Some(512);
         a.start_remote_run(&sel.todo, "test", "", Scope::Missing, "remote").unwrap();
         // m runs it (its fake StarBreaker fails every export) and reports the end to a
         until(&mut [&mut m, &mut a], "run over on a", &|e| e[1].remote_run.as_ref().is_some_and(|r| r.status.finished));
@@ -1171,7 +1181,8 @@ mod tests {
         assert_eq!(m.store.load_targets(&m.set).unwrap().len(), 2, "with main's target list");
         assert!(m.record.as_ref().is_some_and(|r| r.origin["starter"] == "a"));
         let o = &m.record.as_ref().unwrap().origin;
-        assert_eq!((o["profile"].as_str(), o["profile_from"].as_str(), o["format"].as_str()), (Some("studio"), Some("sent by a"), Some("jpeg")), "{o}");
+        assert_eq!((o["profile"].as_str(), o["profile_from"].as_str(), o["format"].as_str(), o["format_from"].as_str()), (Some("studio"), Some("sent by a"), Some("exr"), Some("flag")), "{o}");
+        assert_eq!((o["size"].as_u64(), o["size_from"].as_str()), (Some(64), Some("flag")), "the starter's size, not m's");
         assert_eq!(st.profile["profile"], "studio", "the status carries it");
         // the failures are part of m's set now: the selection on a sees them after the end
         until(&mut [&mut m, &mut a], "state after the run", &|e| e[1].remote_sel().is_some_and(|r| r.loaded && r.failed.len() == 2));
@@ -1302,7 +1313,7 @@ mod tests {
         let mut e = engine(&root, NetConfig { name: "h".into(), ..Default::default() }, true, true);
         let bad = |entity: &str, uuid: &str| Target { uuids: vec!["0000".into(), uuid.into()], entity: entity.into(), ..target("x") };
         for (t, want) in [(bad("../../evil", "0001"), "target \"../../evil\": not a file name"), (bad("a/b", "0001"), "not a file name"), (bad("gun", "../x"), "target gun: UUID \"../x\" is not a file name")] {
-            let err = e.start_for("a", vec![target("gun_ok"), t], MAIN, "x", "", "all", "t", crate::profile::Profile::stub(&root)).unwrap_err().to_string();
+            let err = e.start_for("a", vec![target("gun_ok"), t], MAIN, "x", "", "all", "t", crate::engine::RunLook::of(crate::profile::Profile::stub(&root))).unwrap_err().to_string();
             assert!(err.contains(want), "{err}");
         }
         assert!(!e.running() && e.record.is_none());
@@ -1319,7 +1330,7 @@ mod tests {
         // h renders itself (LOCAL); r stands for a rendering node
         let mut e = engine(&root, NetConfig { name: "h".into(), ..Default::default() }, true, false);
         let todo = e.add_targets(vec![target("gun_a"), target("gun_b")]);
-        e.start(&todo, "t", "", Scope::All, "x", Vec::new(), "h", crate::profile::Profile::stub(&root)).unwrap();
+        e.start(&todo, "t", "", Scope::All, "x", Vec::new(), "h", crate::engine::RunLook::of(crate::profile::Profile::stub(&root))).unwrap();
         let (a, b) = (todo[0], todo[1]);
         {
             let run = e.run.as_mut().unwrap();
@@ -2135,11 +2146,14 @@ mod real_tests {
         // then a starts a run on b as its head node with a's own profile, which b does not have: b renders with it
         // (run_with closed the connections: b dials a again)
         let [a, b] = &mut nodes;
-        let own = a.store.root.join("profiles/jpeg-look");
+        let own = a.store.root.join("profiles/own-look");
         fs::create_dir_all(&own).unwrap();
-        fs::write(own.join("profile.toml"), "# game-tile as JPEG\n[params]\nformat = \"jpeg\"\n").unwrap();
-        let p = crate::profile::resolve("jpeg-look", &a.store.root.clone(), &a.cfg.render_script.clone(), &root).unwrap();
+        fs::write(own.join("profile.toml"), "# game-tile as EXR\n[params]\nformat = \"exr\"\n").unwrap();
+        let p = crate::profile::resolve("own-look", &a.store.root.clone(), &a.cfg.render_script.clone(), &root).unwrap();
         a.set_profile(p);
+        // and a's --size and --format: JPEG at 96 px, over the profile's EXR and b's 128 px
+        a.cfg.size = Some(96);
+        a.cfg.format = Some("jpeg".into());
         // b's main gets a target list (its state brings it to a)
         let list: Vec<Target> = b.targets.iter().filter(|t| t.entity == "thumbnailentity_resource_rock_gold").cloned().collect();
         let file = root.join("rock.json");
@@ -2167,11 +2181,13 @@ mod real_tests {
             tick(a, b, "run on b", 240);
         }
         let o = &b.record.as_ref().unwrap().origin;
-        assert_eq!((o["profile"].as_str(), o["profile_from"].as_str(), o["format"].as_str()), (Some("jpeg-look"), Some("sent by a"), Some("jpeg")), "{o}");
+        assert_eq!((o["profile"].as_str(), o["profile_from"].as_str(), o["format"].as_str()), (Some("own-look"), Some("sent by a"), Some("jpeg")), "{o}");
+        assert_eq!((o["size"].as_u64(), o["size_from"].as_str(), o["format_from"].as_str()), (Some(96), Some("flag"), Some("flag")), "{o}");
         let run = b.run.as_ref().unwrap();
         assert_eq!((run.ok, run.failed), (1, 0));
         let img = b.image(*b.history.back().unwrap()).unwrap();
         assert!(img.extension().is_some_and(|x| x == "jpg") && fs::read(&img).unwrap().starts_with(&[0xFF, 0xD8]), "{}", img.display());
+        assert_eq!(image::image_dimensions(&img).unwrap(), (96, 96), "the starter's size");
         for n in nodes.iter_mut() {
             n.hub.as_mut().unwrap().close_all();
         }

@@ -59,14 +59,36 @@ pub struct Config {
     pub cache_limit: u64,
 }
 
-impl Config {
-    /// A run's output format with profile `p`: --format, else the profile's (png without either)
-    pub fn out_format(&self, p: &Profile) -> String {
-        self.format.clone().or_else(|| p.param("format")).unwrap_or_else(|| "png".into())
+/// What a run renders with, as its starter chose it: the profile and the --size and --format overrides (None: the
+/// profile's)
+#[derive(Clone, Debug)]
+pub struct RunLook {
+    pub profile: Profile,
+    pub size: Option<u32>,
+    pub format: Option<String>,
+}
+
+impl RunLook {
+    /// A profile without overrides: engines in tests
+    #[cfg(test)]
+    pub fn of(profile: Profile) -> Self {
+        Self { profile, size: None, format: None }
     }
-    /// A run's image size with profile `p`: --size, else the profile's
-    pub fn out_size(&self, p: &Profile) -> Option<u32> {
-        self.size.or_else(|| p.param("size").and_then(|s| s.parse().ok()))
+
+    /// The output format: the override, else the profile's (png without either)
+    pub fn out_format(&self) -> String {
+        self.format.clone().or_else(|| self.profile.param("format")).unwrap_or_else(|| "png".into())
+    }
+    /// The image size: the override, else the profile's
+    pub fn out_size(&self) -> Option<u32> {
+        self.size.or_else(|| self.profile.param("size").and_then(|s| s.parse().ok()))
+    }
+}
+
+impl Config {
+    /// What a run started here renders with: the chosen profile and this node's --size and --format
+    pub fn look(&self) -> std::result::Result<RunLook, String> {
+        self.profile.clone().map(|profile| RunLook { profile, size: self.size, format: self.format.clone() })
     }
 }
 
@@ -271,8 +293,8 @@ pub struct Run {
     logged_end: bool,
     /// the extension of the run's output format (fixed at its start)
     pub(crate) ext: &'static str,
-    /// the run's profile: the one chosen here, or the one its starter sent
-    pub(crate) profile: Profile,
+    /// what the run renders with: the profile, size and format its starter chose (this node or the one that sent it)
+    pub(crate) look: RunLook,
 }
 
 /// Phases per render, as render.py appends them to the icon: line ("timing load=… prep=… render=… glass=… post=…")
@@ -689,8 +711,8 @@ impl Engine {
 
     /// What a run started here would render with (the selection tile), taken once per choice: its hashes read files
     pub fn refresh_profile_info(&mut self) {
-        self.profile_info = match &self.cfg.profile {
-            Ok(p) => self.profile_origin(p),
+        self.profile_info = match self.cfg.look() {
+            Ok(look) => self.profile_origin(&look),
             Err(e) => json!({ "error": e }),
         };
     }
@@ -820,7 +842,7 @@ impl Engine {
         });
         // render.py, the profile and what the run renders with them (the add-on: the profile's copy if it has one)
         if let (Some(m), Some(run)) = (meta.as_object_mut(), self.run.as_ref())
-            && let serde_json::Value::Object(p) = self.profile_origin(&run.profile)
+            && let serde_json::Value::Object(p) = self.profile_origin(&run.look)
         {
             m.extend(p);
         }
@@ -828,9 +850,10 @@ impl Engine {
     }
 
     /// What a run renders with, as the run record keeps it: render.py's hash, the profile (name, where from, folder,
-    /// hash, template), size and format with where they come from (the profile or a flag), and the add-on (the
-    /// installed one, or the profile's copy)
-    pub fn profile_origin(&self, p: &Profile) -> serde_json::Value {
+    /// hash, template), size and format with where they come from (the profile or the starter's flag), and the add-on
+    /// (the installed one, or the profile's copy)
+    pub fn profile_origin(&self, look: &RunLook) -> serde_json::Value {
+        let p = &look.profile;
         let copy = p.addon_hash();
         json!({
             "render_py": file_hash(&self.cfg.render_script),
@@ -839,10 +862,10 @@ impl Engine {
             "profile_dir": p.dir,
             "profile_hash": p.hash(),
             "scene": p.scene(),
-            "size": self.cfg.out_size(p),
-            "size_from": if self.cfg.size.is_some() { "flag" } else { "profile" },
-            "format": self.cfg.out_format(p),
-            "format_from": if self.cfg.format.is_some() { "flag" } else { "profile" },
+            "size": look.out_size(),
+            "size_from": if look.size.is_some() { "flag" } else { "profile" },
+            "format": look.out_format(),
+            "format_from": if look.format.is_some() { "flag" } else { "profile" },
             "addon": copy.clone().or_else(|| self.me.addon.clone()),
             "addon_from": if copy.is_some() { "profile" } else { "installed" },
         })
@@ -986,13 +1009,14 @@ impl Engine {
     }
 
     /// Starts a run over `todo` as a new run (`name`, empty = from filter and scope) in the target set; `nodes`: the
-    /// connected nodes that take part, `starter`: the node that asked for it (cluster.rs), `profile`: the run's
+    /// connected nodes that take part, `starter`: the node that asked for it (cluster.rs), `look`: what the starter
+    /// chose to render with
     #[allow(clippy::too_many_arguments)]
-    pub fn start(&mut self, todo: &[usize], args_line: &str, filter: &str, scope: Scope, name: &str, nodes: Vec<String>, starter: &str, profile: Profile) -> Result<()> {
+    pub fn start(&mut self, todo: &[usize], args_line: &str, filter: &str, scope: Scope, name: &str, nodes: Vec<String>, starter: &str, look: RunLook) -> Result<()> {
         if let Some(s) = self.serve.as_mut() {
             s.blender_log(&format!("=== {}", chrono::Local::now().to_rfc3339()));
             // this node's own render chunks render with the run's profile
-            s.profile = profile.dir.clone();
+            s.profile = look.profile.dir.clone();
         }
         self.errors.clear();
 
@@ -1022,8 +1046,8 @@ impl Engine {
             phase_sum: [0.0; 5],
             phase_n: 0,
             logged_end: false,
-            ext: crate::profile::ext(&self.cfg.out_format(&profile)),
-            profile: profile.clone(),
+            ext: crate::profile::ext(&look.out_format()),
+            look,
         });
         // The run: folder with start time and name, run.json with the origin, at the end of the chain in the target set
         let name = if name.trim().is_empty() { self.default_run_name(filter, scope) } else { name.trim().to_string() };
@@ -1318,10 +1342,10 @@ impl Engine {
         self.emit("render_start", json!({ "block": id, "worker": worker, "items": n, "queue_wait": round3(wait), "holders": holders }));
         // the other nodes render with the head node's render.py, game-tile and the run's profile (ADR 0024); this one
         // with its own folders
-        let Some(profile) = self.run.as_ref().map(|r| r.profile.clone()) else { return };
+        let Some(look) = self.run.as_ref().map(|r| r.look.clone()) else { return };
         let sent = match conn {
             LOCAL => Ok((Vec::new(), Payload::None)),
-            _ => profile.payload(&self.cfg.render_script).map(|(files, paths)| (files, Payload::Files(paths))).map_err(|e| format!("{e:#}")),
+            _ => look.profile.payload(&self.cfg.render_script).map(|(files, paths)| (files, Payload::Files(paths))).map_err(|e| format!("{e:#}")),
         };
         let (files, payload) = match sent {
             Ok(x) => x,
@@ -1333,7 +1357,8 @@ impl Engine {
                 return;
             }
         };
-        self.dispatch(conn, Msg::Render { id, size: self.cfg.size, format: self.cfg.format.clone(), profile: profile.name, jobs, files }, payload);
+        // size and format: the starter's overrides
+        self.dispatch(conn, Msg::Render { id, size: look.size, format: look.format, profile: look.profile.name, jobs, files }, payload);
     }
 
     /// Result of an item (export failure or render result); a failure's first line is the message, further lines the
