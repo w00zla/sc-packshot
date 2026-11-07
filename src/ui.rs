@@ -1928,7 +1928,7 @@ fn draw_sets(f: &mut Frame, app: &mut App, area: Rect) {
     let top = app.set_sel.saturating_sub(h.saturating_sub(1).min(h / 2)).min(app.set_rows.len().saturating_sub(h));
     let me = app.engine.me.name.clone();
     let active = app.engine.set.name.clone();
-    let mut lines = vec![Line::from(format!("{:<44}{:<14}{:<18}{:>8}  {:<10}", "Set / run", "Node", "Targets / filter", "Images", "Add-on")).fg(DIM)];
+    let mut lines = vec![Line::from(format!("{:<36}{:<12}{:<16}{:>8} {:<8} {:<9} {:<7} {:<11}", "Set / run", "Node", "Targets / filter", "Images", "Add-on", "render.py", "Blender", "StarBreaker")).fg(DIM)];
     let rows: Vec<SetRow> = app.set_rows.iter().skip(top).take(h.saturating_sub(1)).cloned().collect();
     for (i, row) in rows.iter().enumerate() {
         let mut line = match row {
@@ -1942,7 +1942,7 @@ fn draw_sets(f: &mut Frame, app: &mut App, area: Rect) {
                 }
                 let used: usize = spans.iter().map(|s| s.content.chars().count()).sum();
                 let targets = s.as_ref().and_then(|s| s.targets.as_ref()).map(|t| format!("{} targets", num(t.count))).unwrap_or_else(|| "no targets".into());
-                spans.push(format!("{:w$}{:<14}{:<18}{:>8}", "", format!("{runs} runs"), targets, num(files), w = 44usize.saturating_sub(used)).fg(DIM));
+                spans.push(format!("{:w$}{:<12}{:<16}{:>8}", "", format!("{runs} runs"), targets, num(files), w = 36usize.saturating_sub(used)).fg(DIM));
                 Line::from(spans)
             }
             SetRow::Run { id, .. } => {
@@ -1952,15 +1952,18 @@ fn draw_sets(f: &mut Frame, app: &mut App, area: Rect) {
                 let foreign = !node.is_empty() && node != me;
                 let filter = r.as_ref().map(|r| r.origin["filter"].as_str().unwrap_or("").to_string()).unwrap_or_default();
                 let images = r.as_ref().map(|r| r.entities.values().filter(|e| e.ok).count()).unwrap_or(0);
-                let addon = r.as_ref().and_then(|r| r.origin["addon"].as_str().map(|s| s.chars().take(8).collect::<String>())).unwrap_or_default();
+                let origin = |k: &str, n: usize| r.as_ref().and_then(|r| r.origin[k].as_str().map(|s| s.chars().take(n).collect::<String>())).unwrap_or_else(|| "–".into());
+                let (addon, render_py, blender, starbreaker) = (origin("addon", 8), origin("render_py", 8), origin("blender_version", 7), origin("starbreaker", 8));
                 let running = r.as_ref().is_some_and(|r| r.finished.is_none());
                 let label = format!("    {}  {}", run_date(id), name);
                 Line::from(vec![
-                    Span::raw(format!("{label:<44.44}")),
-                    Span::raw(format!("{:<14.14}", format!("{node}{}", if foreign { " ⇣" } else { "" }))),
-                    Span::styled(format!("{:<18.18}", if filter.is_empty() { "all".into() } else { filter }), Style::new().fg(DIM)),
+                    Span::raw(format!("{label:<36.36}")),
+                    Span::raw(format!("{:<12.12}", format!("{node}{}", if foreign { " ⇣" } else { "" }))),
+                    Span::styled(format!("{:<16.16}", if filter.is_empty() { "all".into() } else { filter }), Style::new().fg(DIM)),
                     Span::raw(format!("{:>8}", num(images))),
-                    Span::styled(format!("  {addon:<10}"), Style::new().fg(DIM)),
+                    Span::styled(format!(" {addon:<8} {render_py:<9} "), Style::new().fg(DIM)),
+                    Span::raw(format!("{blender:<7} ")),
+                    Span::styled(format!("{starbreaker:<11}"), Style::new().fg(DIM)),
                     if running { Span::styled(" running", Style::new().fg(WARN)) } else { "".into() },
                 ])
             }
@@ -2774,6 +2777,26 @@ mod tests {
         app.view = View::Sets;
         let s = screen(&mut app);
         assert!(s.contains("Sets and runs") && s.contains("main"), "{s}");
+        // a run row shows the components it was made with (missing ones as –)
+        let run = crate::store::RunInfo {
+            id: "2026-11-04_10-00_full".into(),
+            name: "full".into(),
+            set: MAIN.into(),
+            node: "DRAGONEGG".into(),
+            started: "2026-11-04T10:00:00+00:00".into(),
+            finished: Some("2026-11-04T10:05:00+00:00".into()),
+            origin: serde_json::json!({"filter": "", "addon": "1a2b3c4d5e", "render_py": "6da3cb0c523f77d7", "blender_version": "5.2.3"}),
+            ..Default::default()
+        };
+        std::fs::create_dir_all(app.engine.store.run_dir(&run.id)).unwrap();
+        app.engine.store.save_run(&run).unwrap();
+        app.engine.set.runs.push(run.id.clone());
+        app.engine.store.save_set(&app.engine.set).unwrap();
+        app.refresh_sets();
+        let s = screen(&mut app);
+        assert!(s.contains("Add-on") && s.contains("render.py") && s.contains("Blender") && s.contains("StarBreaker"), "{s}");
+        let row = s.lines().find(|l| l.contains("full") && l.contains("6da3cb0c")).unwrap_or_else(|| panic!("no run row: {s}"));
+        assert!(row.contains("1a2b3c4d") && row.contains("5.2.3") && row.contains("–"), "{row}");
 
         // another node as head node, its state not there yet
         app.view = View::Run;

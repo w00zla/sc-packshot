@@ -358,6 +358,9 @@ fn finish(e: &mut Engine, minutes: f64) {
     // run.json: its start back by the same time, so the Sets view shows a real duration
     if let Some(id) = e.record.as_ref().map(|r| r.id.clone()) {
         let mut info = e.store.run(&id).unwrap().clone();
+        // the synthetic state has no render.py or Blender to read: fixed values for the runs table
+        info.origin["render_py"] = "6da3cb0c523f77d7".into();
+        info.origin["blender_version"] = "5.2.3".into();
         if let Ok(t) = chrono::DateTime::parse_from_rfc3339(&info.started) {
             info.started = (t - chrono::Duration::seconds((minutes * 60.0) as i64)).to_rfc3339();
             e.store.save_run(&info).unwrap();
