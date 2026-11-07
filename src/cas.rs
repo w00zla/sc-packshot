@@ -331,8 +331,8 @@ pub(crate) mod tests {
                 part_files += 1;
                 link_or_copy(&full.join(&rel), &own.join(&rel)).unwrap();
             }
-            let pose = tables.pose(&t.kind, &t.sub_type);
-            let rig = tables.rig(&t.kind, &t.sub_type).unwrap().clone();
+            let pose = tables.pose(&t.entity, &t.kind, &t.sub_type);
+            let rig = tables.rig(&t.entity, &t.kind, &t.sub_type).unwrap().clone();
             let job = |src: &Path, out: PathBuf| serde_json::json!({ "src": src.join(pkg).join("scene.blend"), "out": out, "pose": pose, "rig": rig, "size": 256 });
             full_jobs.push(job(&full, root.join("png/full").join(format!("{k}.png"))));
             part_jobs.push(job(&own, root.join("png/part").join(format!("{k}.png"))));

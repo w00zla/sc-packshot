@@ -1,6 +1,6 @@
 # 0019. Compute assessment on demand, per node
 
-- Status: accepted
+- Status: accepted; superseded in part by [0046](0046-assessment-never-stale.md) (a stale assessment stays in use, other keys) and [0047](0047-assessment-per-os.md) (one entry per OS)
 - Date: 2026-11-04
 - Recorded: 2026-11-05
 - Scope: packshot (`assess.rs`, `assessment.json`, TUI view 3)

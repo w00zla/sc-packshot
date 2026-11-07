@@ -1,10 +1,11 @@
 ﻿# Packs everything the Rust tool packshot needs on another machine, one folder per platform, built on
 # Windows (scripts/packshot-bundle.sh builds the same on Linux):
 #   <Out>/windows: packshot.exe, starbreaker/ (our fork, with COMMIT), addon/starbreaker_addon, cli/render.py,
-#                  blender.pin, targets/targets.json, setup.cmd, check.cmd, run.cmd, README.txt, packshot.example.json (CRLF)
+#                  profiles/, blender.pin, targets/targets.json, setup.cmd, check.cmd, run.cmd, README.txt,
+#                  packshot.example.json (CRLF)
 #   <Out>/linux:   packshot (static musl binary), starbreaker/ (the fork's Linux binary, with COMMIT),
-#                  addon/starbreaker_addon, cli/render.py, blender.pin, targets/targets.json, setup.sh, check.sh, run.sh,
-#                  README.txt, packshot.example.json
+#                  addon/starbreaker_addon, cli/render.py, profiles/, blender.pin, targets/targets.json, setup.sh,
+#                  check.sh, run.sh, README.txt, packshot.example.json
 # No Blender in the bundles: setup.cmd / setup.sh take the official archive named in blender.pin (next to them, else
 # from blender.org), check its SHA256 and put portable/ with the add-on into it.
 # Run from the repo root (pwsh or Windows PowerShell 5.1):
@@ -44,6 +45,17 @@ function Add-AddonAndPin([string]$dir, [string]$platform, [switch]$Crlf) {
   $nl = if ($Crlf) { "`r`n" } else { "`n" }
   $pin = "version=$(Get-Pin 'blender' 'version')${nl}sha256=$(Get-Pin 'blender' "sha256-$platform")$nl"
   [IO.File]::WriteAllText((Join-Path $dir 'blender.pin'), $pin, (New-Object Text.UTF8Encoding $false))
+}
+
+# The bundled profiles beside cli/ (render.py finds game-tile there), each replaced whole; own ones in profiles/ stay
+function Add-Profiles([string]$dir) {
+  New-Item -ItemType Directory -Force -Path (Join-Path $dir 'profiles') | Out-Null
+  foreach ($p in Get-ChildItem (Join-Path $root 'profiles') -Directory) {
+    $dst = Join-Path $dir "profiles/$($p.Name)"
+    if (Test-Path $dst) { Remove-Item -Recurse -Force $dst }
+    Copy-Item $p.FullName $dst -Recurse
+    Get-ChildItem $dst -Recurse -Directory -Filter __pycache__ | Remove-Item -Recurse -Force
+  }
 }
 
 # Copy a template with LF line endings (the .sh need LF, however the template was checked out), -Crlf for the
@@ -98,6 +110,7 @@ if ($doWin) {
 
   New-Item -ItemType Directory -Force -Path (Join-Path $win 'cli') | Out-Null
   Copy-Item blender/render.py (Join-Path $win 'cli') -Force
+  Add-Profiles $win
   if ($targets) {
     New-Item -ItemType Directory -Force -Path (Join-Path $win 'targets') | Out-Null
     Copy-Item $targets (Join-Path $win 'targets/targets.json') -Force
@@ -124,6 +137,7 @@ if ($doLin) {
 
   New-Item -ItemType Directory -Force -Path (Join-Path $lin 'cli') | Out-Null
   Copy-Item blender/render.py (Join-Path $lin 'cli') -Force
+  Add-Profiles $lin
   if ($targets) {
     New-Item -ItemType Directory -Force -Path (Join-Path $lin 'targets') | Out-Null
     Copy-Item $targets (Join-Path $lin 'targets/targets.json') -Force

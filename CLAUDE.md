@@ -41,6 +41,7 @@ cargo test --release     # tests with fake tools; real-tool tests are #[ignore]
 SC_DATA_P4K=<Data.p4k> cargo test --release -- --ignored   # real StarBreaker + Blender (Data.p4k with build_manifest.id next to it)
 PACKSHOT_SHOT_FONT=<mono.ttf>[;<fallback.ttf>] [PACKSHOT_SHOT_RENDERS=<a set folder>] cargo test --release tui_screenshots -- --ignored
 #   the README's TUI screenshots docs/assets/tui-*.png from a synthetic state (src/ui/shots.rs); then oxipng -o max --strip safe
+#   the font list is split like PATH: `;` on Windows (C:\Windows\Fonts\CascadiaMono.ttf;C:\Windows\Fonts\seguisym.ttf), `:` on Linux
 resvg --zoom 2 docs/assets/src/<name>.svg docs/assets/<name>.png   # the ARCHITECTURE.md diagrams from their SVG sources; then oxipng as above
 
 P [--render] [--export] [--filter <terms>] [--scope missing|failed|all] [--set <name>] [--name <run>] [--plain|--serve] [--workers n] [--exporters n]
@@ -49,13 +50,13 @@ P [--render] [--export] [--filter <terms>] [--scope missing|failed|all] [--set <
 #   (restarted after 200 jobs or 3 GB, export-batch after 40 chunks or 2 GB; a panic in an export job is answered as its failure, a crash fails only the job in flight), several in parallel, terminal dashboard with render preview
 #   every Blender gets --threads 2; on Linux also the RDSEED shim via LD_PRELOAD (shim/rdseed_shim.rs, built by build.rs with rustc + rust-lld, embedded, written to <work>/rdseed-shim-<hash>.so)
 #   no roles: --render (Blender) and --export (Data.p4k + StarBreaker) say what this node can do now, neither = it only starts runs, stores them, watches; counts change in the TUI (+/-, </>)
-#   --export needs $SC_DATA_P4K (or --p4k) with build_manifest.id next to the Data.p4k; --targets <file> sets the target set's list; --dry-run lists what would be rendered; --size <px> (256); --chunk <n> (50); --cache-limit <GB> (20, 0 = none)
+#   --export needs $SC_DATA_P4K (or --p4k) with build_manifest.id next to the Data.p4k; --targets <file> sets the target set's list; --dry-run lists what would be rendered; --profile <name|dir> (game-tile; own ones in <store>/profiles/); --chunk <n> (50); --cache-limit <GB> (20, 0 = none)
 #   --store/--work/--starbreaker/--blender/--render-script override the paths; --refresh-tables rereads pose and light tables from the DataCore; --help lists everything
 #   every run is runs/<date>_<time>_<name>/ (images, run.json, events.jsonl, run.log) on its head node, its images go into the target set sets/<set>/ there (hard links, default main; a new set branches off main)
 #   every set carries its target list (sets/<set>/targets.json: a new set takes its base's, `t` in view 2 or --targets <file> replaces it; starting a run (Enter) asks for one while the target set has none); the dialog lists the lists in <store>/targets/ and its subfolders (targets.json first); `t` also offers the target picker, its first row (Enter asks for a name and writes targets/<name>.json; Esc cancels; +/- in the type tree tick all/no types) (src/entities.rs: entity list via `starbreaker dcb query --ids`, cached per game build in <work>/dcb/entities-<p4k id>.json; ADR 0039)
 #   the TUI always opens: missing Blender/StarBreaker/Data.p4k show in the start tile of view 1 and only turn off rendering/exporting (ADR 0040); --plain/--serve/--dry-run/--assess still stop with the message
 #   one packshot process per store folder and per work folder (packshot.lock in each, --dry-run too, --report needs none)
-#   TUI views: 1 Run (n head node, s set, a abort, / filter, Enter start), 2 Sets (Enter target set, n new set, t target list, l adopt into main, x delete, i details), 3 Nodes (workers with the assessed items/s, run throughput,
+#   TUI views: 1 Run (n head node, s set, a abort, / filter, Enter start), 2 Sets (Enter target set, n new set (with its size and format), t target list, l adopt into main, x delete; a selected run shows its tile), 3 Nodes (workers with the assessed items/s, run throughput,
 #   runs to fetch h, disk, prerequisites, status per node; details with the items each node holds; the Next run tile; main manifest m, on this node m drops it; assess b, b again aborts); e switches log/errors; Tab or 1-3 switch views
 #   workers read E (export), R (render); PACKSHOT_GRAPHICS=sixel|kitty|iterm2|halfblocks forces one
 #   cluster settings in packshot.json in the store (token; optional listen, peers, discovery; copy packshot.example.json), without a token all local; nodes find each other by UDP broadcast on port 47950 (TCP the same)
@@ -66,15 +67,15 @@ P [--render] [--export] [--filter <terms>] [--scope missing|failed|all] [--set <
 P --assess                              # compute assessment on this node, then exit (TUI: b in view 3, also for another node)
 #   a 48-item test set (stratified by type from the target set's list, exported once, here or fetched from an exporting node, kept in work/assess/), n long-lived Blender = 1, 2, 3, 4, 6, 8, ...
 #   (each warmed by one unmeasured item) until < 5 % gain or RAM/VRAM, sampled every 0.5 s (CPU per core, GPU, VRAM, RAM), then e exports with them alongside (capped by RAM);
-#   result + validity keys into assessment.json next to packshot.json (stale: the formula again); while valid its counts are the defaults and the head node sizes each node's chunks by its assessed items/s
+#   result + keys (CPU, RAM, Blender, GPU, render.py, StarBreaker) into assessment.json next to packshot.json (one entry per OS, ADR 0047); its counts are the defaults and the head node sizes each node's chunks by its assessed items/s until a new one replaces it (ADR 0046: a key that differs only shows it as stale)
 
 P --report [log|run dir]                # evaluates a run's event log (runs/<run>/events.jsonl, default the latest run): items/s, phases p50/p95, chunk overhead and slot use of every node's Blenders,
                                         # export overhead, transfer between nodes, CPU/GPU, slowest items
 
 cargo build --release --target x86_64-unknown-linux-musl   # the static Linux binary, linked by rust-lld (.cargo/config.toml; target once via rustup target add x86_64-unknown-linux-musl)
 scripts/packshot-bundle.sh [--platform all|windows|linux] [--out <dir>] [--targets <file>]   # on Linux, both bundles: local/packshot-bundle/windows (packshot.exe cross-built with mingw: rustup target x86_64-pc-windows-gnu + mingw64-gcc;
-#   StarBreaker (only with a .commit stamp equal to the pin; a missing binary comes from the release), addon/ (the release's add-on), blender.pin, cli/render.py, targets/targets.json, setup.cmd, check.cmd, run.cmd; Data.p4k + build_manifest.id go next to it)
-#   and linux (static packshot, the Linux StarBreaker (glibc: it prints the version it needs), addon/, blender.pin, render.py, targets/targets.json, setup.sh, check.sh, run.sh)
+#   StarBreaker (only with a .commit stamp equal to the pin; a missing binary comes from the release), addon/ (the release's add-on), blender.pin, cli/render.py, profiles/, targets/targets.json, setup.cmd, check.cmd, run.cmd; Data.p4k + build_manifest.id go next to it)
+#   and linux (static packshot, the Linux StarBreaker (glibc: it prints the version it needs), addon/, blender.pin, render.py, profiles/, targets/targets.json, setup.sh, check.sh, run.sh)
 #   no Blender in the bundles (ADR 0036): their setup takes the archive blender.pin names (next to it, else from blender.org), checks the SHA256, builds portable/ with the add-on
 scripts/packshot-bundle.ps1 [-Platform all|windows|linux] [-Out <dir>] [-Targets <file>]   # on Windows, the same two bundles
 # CI: .github/workflows/test.yml (cargo test on Linux + Windows, clippy -D warnings, shellcheck) on PRs and main; release.yml on a tag v<Cargo version> on main: both bundles + SHA256SUMS as a release

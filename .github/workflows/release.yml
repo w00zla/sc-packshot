@@ -58,5 +58,10 @@ jobs:
         shell: bash
         run: |
           tag="${GITHUB_REF_NAME}"
-          gh release create "$tag" dist/* --title "packshot $tag" --verify-tag \
-            --notes "packshot $tag, built from ${GITHUB_SHA}. Unpack, run setup (it fetches Blender from blender.org), then run. Check the files against SHA256SUMS."
+          # the release's own notes when the repository has them (docs/releases/<tag>.md), else the short default
+          if [ -f "docs/releases/$tag.md" ]; then
+            notes=(--notes-file "docs/releases/$tag.md")
+          else
+            notes=(--notes "packshot $tag, built from ${GITHUB_SHA}. Unpack, run setup (it fetches Blender from blender.org), then run. Check the files against SHA256SUMS.")
+          fi
+          gh release create "$tag" dist/* --title "packshot $tag" --verify-tag "${notes[@]}"

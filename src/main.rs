@@ -6,8 +6,8 @@
 // consumers read main). Every node starts with what it can do now (--render, --export); with a token in
 // packshot.json the nodes find each other and every node can start a run, on itself or on another node as its main
 // node (cluster.rs, node.rs). Runs in the repo (paths under local/) and in the bundle (paths next to the exe),
-// without Node.js and without the DB. The worker counts come from the node's compute assessment when it has a valid
-// one (assess.rs), else from the cores.
+// without Node.js and without the DB. The worker counts come from the node's compute assessment when it has one
+// (assess.rs, also when stale), else from the cores.
 mod assess;
 mod blender;
 mod cas;
@@ -18,6 +18,7 @@ mod entities;
 mod events;
 mod net;
 mod node;
+mod profile;
 mod store;
 mod tables;
 mod ui;
@@ -47,29 +48,30 @@ What to render
   --filter <terms>       class name, display name or type contains a term (TUI: /)
   --scope <s>            missing (default) · failed · all
   --force                same as --scope all
-  --set <name>           target set (default main; a new name branches off main)
+  --set <name>           target set (default main; new: branches off main, with its size and format)
   --targets <file>       give the target set this target list
   --name <name>          run name (default: filter and scope)
+  --profile <p>          the look: a profile name (own ones in profiles/ of the packshot folder) or
+                         a profile folder (default game-tile)
 
 Modes
   --plain                no TUI: run here, one line per item
-  --serve                no TUI: only work for other nodes' runs
+  --serve                no TUI: only work for other nodes' runs (needs a token)
   --dry-run              list what would be rendered, then exit
   --report [log|dir]     evaluate a run's event log (default: the latest run), then exit
-  --assess               measure this node, save assessment.json, then exit (TUI: b in view 3)
+  --assess               measure this node (needs --render; TUI: b in view 3)
 
 Tuning
   --workers <n>          Blender processes (default: the assessment, else ¾ of the cores)
   --exporters <n>        export processes (default: the assessment, else ¼ of the cores, at least 2)
   --chunk <n>            at most n items per chunk (default 50)
   --cache-limit <GB>     cache of files fetched from other nodes (default 20, 0 = no limit)
-  --size <px>            icon edge length (default 256)
   --refresh-tables       read the pose and light tables from the DataCore again
 
 Paths
   --store <dir>          packshot folder
   --work <dir>           work folder (default: work/ in the packshot folder)
-  --p4k <path>           Data.p4k (default: $SC_DATA_P4K)
+  --p4k <path>           Data.p4k (default: $SC_DATA_P4K, else Data.p4k in the current folder)
   --starbreaker <bin>    StarBreaker
   --blender <bin>        Blender
   --render-script <py>   render.py";
@@ -137,16 +139,9 @@ fn starbreaker_label(starbreaker: &Path) -> String {
     stamp.and_then(|s| s.lines().next().map(|l| l.trim().to_string())).filter(|l| !l.is_empty()).unwrap_or_else(|| "no COMMIT stamp next to it".into())
 }
 
-/// SC_DATA_P4K from .env when the environment has none (like node --env-file-if-exists)
-fn env_p4k(root: &Path) -> Option<String> {
-    if let Ok(v) = env::var("SC_DATA_P4K") && !v.is_empty() {
-        return Some(v);
-    }
-    let text = fs::read_to_string(root.join(".env")).ok()?;
-    text.lines().find_map(|l| {
-        let v = l.trim().strip_prefix("SC_DATA_P4K=")?.trim();
-        Some(v.trim_matches(|c| c == '"' || c == '\'').to_string())
-    })
+/// SC_DATA_P4K from the environment
+fn env_p4k() -> Option<String> {
+    env::var("SC_DATA_P4K").ok().filter(|v| !v.is_empty())
 }
 
 /// An exclusive lock on <dir>/packshot.lock, held as long as the returned file is open; the OS releases it when the
@@ -211,7 +206,7 @@ fn real_main() -> Result<()> {
                     it.next();
                 }
             }
-            "filter" | "scope" | "set" | "name" | "workers" | "exporters" | "chunk" | "cache-limit" | "size" | "targets" | "p4k" | "starbreaker" | "blender" | "render-script" | "store" | "work" => {
+            "filter" | "scope" | "set" | "name" | "workers" | "exporters" | "chunk" | "cache-limit" | "profile" | "targets" | "p4k" | "starbreaker" | "blender" | "render-script" | "store" | "work" => {
                 let v = it.next().ok_or_else(|| anyhow!("--{key} needs a value"))?;
                 opt.insert(key.to_string(), v.clone());
             }
@@ -302,7 +297,7 @@ fn real_main() -> Result<()> {
         },
     )?;
     // Data.p4k with build_manifest.id next to it: for exports and the target picker's entity list
-    let p4k_found = path("p4k").or_else(|| env_p4k(&root).map(PathBuf::from)).or_else(|| first_existing(&[root.join("Data.p4k")]));
+    let p4k_found = path("p4k").or_else(|| env_p4k().map(PathBuf::from)).or_else(|| first_existing(&[root.join("Data.p4k")]));
     let off = if export { "this node does not export and the target picker is off" } else { "the target picker is off" };
     let p4k_res = match &p4k_found {
         None => Err(("not found".to_string(), format!("Give --p4k or set SC_DATA_P4K; {off}."))),
@@ -322,6 +317,13 @@ fn real_main() -> Result<()> {
     let render_script = path("render-script")
         .or_else(|| first_existing(&[root.join("blender/render.py"), root.join("cli/render.py")]))
         .ok_or_else(|| anyhow!("render.py not found (--render-script)"))?;
+    // the run's profile: without one this node renders for other nodes' runs but starts none
+    let profile = profile::resolve(opt.get("profile").map(String::as_str).unwrap_or(profile::BASE), &store_dir, &render_script, &root);
+    let profile_res = match &profile {
+        Ok(p) => Ok(format!("{} · {}", p.name, p.dir.display())),
+        Err(e) => Err((e.clone(), "Give --profile a profile name or folder; runs do not start here.".to_string())),
+    };
+    check("Profile", profile_res)?;
 
     let scope = match opt.get("scope") {
         Some(s) => Scope::parse(s).ok_or_else(|| anyhow!("--scope {s}: missing, failed or all"))?,
@@ -333,13 +335,12 @@ fn real_main() -> Result<()> {
     let disk_paths = if work.starts_with(&store_dir) { vec![store_dir.clone()] } else { vec![store_dir.clone(), work.clone()] };
     let caps = Caps { render, export, blender: blender.as_deref(), starbreaker: starbreaker.as_deref(), p4k: export.then_some(p4k.as_path()) };
     let mut me = cluster::own_hello(&net_cfg.name, caps, 0, 0, auto.2, cluster::disk_info(&disk_paths));
-    // the node's assessment: its counts are the defaults while it is valid (same Blender, GPU, render.py,
-    // add-on, StarBreaker)
+    // the node's assessment: its counts are the defaults, whatever changed since (ADR 0046); what differs from what it
+    // was measured with only shows it as stale
     let assessment = assess::load(&store_dir.join(assess::FILE));
     let stale = assessment.as_ref().map(|a| a.keys.diff(&assess::Keys::of(&me, &render_script))).unwrap_or_default();
-    let valid = assessment.as_ref().filter(|_| stale.is_empty());
-    let workers = valid.map(|a| a.workers).unwrap_or(auto.0);
-    let exporters = valid.and_then(|a| a.exporters).unwrap_or(auto.1);
+    let workers = assessment.as_ref().map(|a| a.workers).unwrap_or(auto.0);
+    let exporters = assessment.as_ref().and_then(|a| a.exporters).unwrap_or(auto.1);
     let args = Args {
         filter: opt.get("filter").cloned().unwrap_or_default(),
         scope,
@@ -397,15 +398,15 @@ fn real_main() -> Result<()> {
         bail!("--plain and --dry-run need a target list in set {} (--targets <file>)", set.name);
     }
     let tables = if export && !tables_later { Tables::load(starbreaker.as_deref().unwrap_or(Path::new("")), &p4k, &work, flags.contains("refresh-tables"), |s| println!("{s}"))? } else { Tables::default() };
-    let cfg = Config { p4k, starbreaker: starbreaker.unwrap_or_default(), blender: blender.unwrap_or_default(), render_script, work: work.clone(), size: num("size", 256)? as u32, chunk: num("chunk", 50)?.max(1), cache_limit: num("cache-limit", 20)? as u64 * (1 << 30) };
+    let cfg = Config { p4k, starbreaker: starbreaker.unwrap_or_default(), blender: blender.unwrap_or_default(), render_script, work: work.clone(), profile, chunk: num("chunk", 50)?.max(1), cache_limit: num("cache-limit", 20)? as u64 * (1 << 30) };
     // Network only with a token and not for a dry run; files of an earlier session in the inbox are stale
     if net_cfg.enabled() && !args.dry_run {
         let _ = fs::remove_dir_all(work.join("inbox"));
     }
-    // exports, fetched files and render folders of an earlier session are stale too (a run that ended early leaves
-    // them; its failures are in its run.log)
+    // exports, fetched files, received profiles and render folders of an earlier session are stale too (a run that
+    // ended early leaves them; its failures are in its run.log)
     if !args.dry_run {
-        for d in ["export", "cas", "fetch", "send"] {
+        for d in ["export", "cas", "fetch", "send", "profile-cache"] {
             let _ = fs::remove_dir_all(work.join(d));
         }
     }
@@ -419,6 +420,8 @@ fn real_main() -> Result<()> {
     let mut engine = Engine::new(cfg, targets, tables, store, set, hub, me)?;
     // the file the TUI offers for a set's target list
     engine.targets_file = store_dir.join("targets").join("targets.json");
+    engine.render_script_flag = opt.contains_key("render-script");
+    engine.refresh_profile_info();
     engine.picker_p4k = p4k_found.filter(|p| p.exists() && cluster::p4k_id(p).is_some());
     engine.start = checks;
     engine.max_renderers = args.workers;
@@ -489,7 +492,8 @@ fn startup_notes(engine: &mut Engine, caps_line: &str, store_dir: &Path, work: &
     notes.push(match (&engine.assessment, engine.assess_stale.first()) {
         (None, _) => (Info, "Assessment: none (counts from the cores)".into()),
         (Some(a), None) => (Info, format!("Assessment of {}: {}", a.info(true).date, assess::summary(a))),
-        (Some(a), Some(why)) => (Error, format!("Assessment of {} stale, counts from the cores: {why}", a.info(false).date)),
+        // still used (ADR 0046)
+        (Some(a), Some(_)) => (Info, format!("Assessment of {} stale, still used: {} (b assesses again)", a.info(false).date, engine.assess_stale.join(", "))),
     });
     notes.push(tool("Blender", (!engine.cfg.blender.as_os_str().is_empty()).then_some(me.blender.as_str()), &engine.cfg.blender));
     notes.push(tool("StarBreaker", me.starbreaker.as_deref(), &engine.cfg.starbreaker));

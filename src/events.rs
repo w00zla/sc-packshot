@@ -84,6 +84,39 @@ pub fn tree_hash(root: &Path) -> Option<String> {
     Some(format!("{h:016x}"))
 }
 
+/// Hash over files and folders, each under its label: a file by its content, a folder by every file in it (relative
+/// path and content, sorted by the path with /, without __pycache__): a profile with game-tile below it, render.py
+/// beside them. The same on every OS for the same files
+pub fn content_hash(parts: &[(&str, &Path)]) -> Option<String> {
+    let mut h = FNV0;
+    for (label, root) in parts {
+        let mut files: Vec<(String, std::path::PathBuf)> = Vec::new();
+        if root.is_dir() {
+            let mut stack = vec![root.to_path_buf()];
+            while let Some(dir) = stack.pop() {
+                for e in fs::read_dir(&dir).ok()?.flatten() {
+                    let p = e.path();
+                    if p.is_dir() {
+                        if p.file_name().is_some_and(|n| n != "__pycache__") {
+                            stack.push(p);
+                        }
+                    } else {
+                        files.push((p.strip_prefix(root).ok()?.to_string_lossy().replace('\\', "/"), p));
+                    }
+                }
+            }
+        } else {
+            files.push((String::new(), root.to_path_buf()));
+        }
+        files.sort();
+        for (rel, f) in &files {
+            h = fnv(format!("{label}/{rel}").as_bytes(), h);
+            h = fnv(&fs::read(f).ok()?, h);
+        }
+    }
+    Some(format!("{h:016x}"))
+}
+
 /// GPU load via `nvidia-smi -l 2` in the background (Windows and Linux); without an NVIDIA driver there is no value
 pub struct GpuProbe {
     child: Child,

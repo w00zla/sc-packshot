@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use crate::engine::Target;
 use crate::tables::run;
 
-const RECORD: &str = "EntityClassDefinition";
+pub(crate) const RECORD: &str = "EntityClassDefinition";
 const ATTACH: &str = "EntityClassDefinition.Components[SAttachableComponentParams].AttachDef";
 const GLOBAL_INI: &str = "Data/Localization/english/global.ini";
 
@@ -91,7 +91,7 @@ pub fn load(starbreaker: &Path, p4k: &Path, work: &Path, say: impl Fn(&str)) -> 
 }
 
 /// `<record type>.<name>\t<id>\t<value>` lines of `dcb query --ids` as (name, id, value)
-fn rows(text: &str) -> impl Iterator<Item = (&str, &str, &str)> {
+pub(crate) fn rows(text: &str) -> impl Iterator<Item = (&str, &str, &str)> {
     text.lines().filter_map(|l| {
         let mut p = l.splitn(3, '\t');
         let name = p.next()?.strip_prefix(RECORD)?.strip_prefix('.')?;

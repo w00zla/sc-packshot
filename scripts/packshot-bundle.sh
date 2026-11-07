@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Packs everything packshot (this repository) needs on another node, one folder per platform, built on Linux:
 #   <out>/windows: packshot.exe (cross-built with mingw), starbreaker/ (starbreaker.exe and COMMIT),
-#                  addon/starbreaker_addon, cli/render.py, blender.pin, targets/targets.json, setup.cmd, check.cmd, run.cmd, README.txt,
-#                  packshot.example.json (the Windows texts with CRLF)
+#                  addon/starbreaker_addon, cli/render.py, profiles/, blender.pin, targets/targets.json, setup.cmd,
+#                  check.cmd, run.cmd, README.txt, packshot.example.json (the Windows texts with CRLF)
 #   <out>/linux:   packshot (static musl binary), starbreaker/ (the Linux binary and COMMIT), addon/starbreaker_addon,
-#                  cli/render.py, blender.pin, targets/targets.json, setup.sh, check.sh, run.sh, README.txt,
+#                  cli/render.py, profiles/, blender.pin, targets/targets.json, setup.sh, check.sh, run.sh, README.txt,
 #                  packshot.example.json
 # No Blender in the bundles: setup.cmd / setup.sh take the official archive named in blender.pin (next to them, else
 # from blender.org), check its SHA256 and put portable/ with the add-on into it.
@@ -76,6 +76,13 @@ texts() {
   local dir=$1 os=$2
   mkdir -p "$dir/cli"
   cp blender/render.py "$dir/cli/"
+  # the bundled profiles beside cli/ (render.py finds game-tile there); own ones in profiles/ stay
+  local p
+  for p in profiles/*/; do
+    rm -rf "$dir/profiles/$(basename "$p")"
+    mkdir -p "$dir/profiles"
+    rsync -a --exclude __pycache__ "$p" "$dir/profiles/$(basename "$p")/"
+  done
   if [[ -n $targets ]]; then
     mkdir -p "$dir/targets"
     cp "$targets" "$dir/targets/targets.json"
@@ -134,7 +141,7 @@ if [[ $do_lin == 1 ]]; then
   fi
   # 3. the add-on and the Blender pin (setup.sh fetches Blender)
   addon_and_pin "$lin" linux-x64
-  # 4. render.py, target list, scripts and texts
+  # 4. render.py, profiles, target list, scripts and texts
   texts "$lin" linux
   cp "$tpl/linux/setup.sh" "$tpl/linux/check.sh" "$tpl/linux/run.sh" "$lin/"
   chmod +x "$lin/packshot" "$lin/starbreaker/starbreaker" "$lin/setup.sh" "$lin/check.sh" "$lin/run.sh"

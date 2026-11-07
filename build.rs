@@ -13,7 +13,8 @@ const SHIM: &str = "shim/rdseed_shim.rs";
 fn main() {
     println!("cargo:rerun-if-changed=src");
     println!("cargo:rerun-if-changed={SHIM}");
-    let mut files: Vec<_> = fs::read_dir("src").unwrap().flatten().map(|e| e.path()).filter(|p| p.extension().is_some_and(|x| x == "rs")).collect();
+    let mut files = Vec::new();
+    rs_files(Path::new("src"), &mut files);
     files.sort();
     files.push(PathBuf::from(SHIM));
     let mut h: u64 = 0xcbf2_9ce4_8422_2325;
@@ -24,13 +25,26 @@ fn main() {
         }
     };
     for f in &files {
-        feed(Path::new(f).file_name().unwrap().to_string_lossy().as_bytes());
+        // the path below the crate with /, so submodules (src/ui/…) count and the id is the same on every OS
+        feed(f.to_string_lossy().replace('\\', "/").as_bytes());
         let text = fs::read_to_string(f).unwrap().replace("\r\n", "\n");
         feed(text.as_bytes());
     }
     println!("cargo:rustc-env=PACKSHOT_BUILD={:08x}", h >> 32);
     if env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("linux") {
         shim();
+    }
+}
+
+/// Every .rs file below `dir`, subfolders included
+fn rs_files(dir: &Path, out: &mut Vec<PathBuf>) {
+    for e in fs::read_dir(dir).unwrap().flatten() {
+        let p = e.path();
+        if p.is_dir() {
+            rs_files(&p, out);
+        } else if p.extension().is_some_and(|x| x == "rs") {
+            out.push(p);
+        }
     }
 }
 

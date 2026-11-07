@@ -1,6 +1,6 @@
 # 0022. Modular profiles: targets, exporter, material, scene and output are replaceable
 
-- Status: accepted
+- Status: accepted; superseded in part by [0042](0042-profile-folder-and-hook-signatures.md) (the exporter is no profile module) and [0044](0044-profile-per-run.md) (the profile is chosen per run, not per set)
 - Date: 2026-11-05
 - Scope: architecture, render.py, add-on, CLI
 

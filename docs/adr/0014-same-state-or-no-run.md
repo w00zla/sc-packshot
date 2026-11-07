@@ -1,6 +1,6 @@
 # 0014. Same state on all nodes or no run
 
-- Status: superseded in part by [0038](0038-render-script-distributed-not-compared.md) (render.py, build id) and [0024](0024-head-node-distributes-profiles.md) (the "syncs nothing" part; decided, not built)
+- Status: superseded in part by [0038](0038-render-script-distributed-not-compared.md) (render.py, build id) and [0024](0024-head-node-distributes-profiles.md) (the "syncs nothing" part: profiles travel with every render chunk)
 - Date: 2026-11-03
 - Recorded: 2026-11-05
 - Scope: packshot (`cluster.rs`, state check in the TUI)

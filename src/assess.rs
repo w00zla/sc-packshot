@@ -12,7 +12,8 @@
 // the best, capped by memory. An exporting node then runs export-batch with e = 1 … EXPORT_MAX while the chosen n
 // Blender render alongside (export-batch --stdin as in a run when StarBreaker has it) and takes the e where the
 // smaller of export and render rate stops improving, capped by RAM with the most an export process took. The result
-// goes into its own file, assessment.json in the packshot folder, with the keys that make it stale.
+// goes into its own file, assessment.json in the packshot folder (one entry per OS), with what it was measured with; it stays in use until a
+// new one replaces it, shown as stale when that differs (ADR 0046).
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufRead, BufReader, Read, Write};
@@ -53,9 +54,9 @@ const KEEP_LOGS: usize = 5;
 /// Images counted per Blender in a render step (after its first, unmeasured one)
 const MEASURED_PER_BLENDER: usize = 8;
 
-/// What an assessment depends on: when any of it differs, the assessment is stale and the formula counts again.
-/// Not the packshot build: any source change gives a new one without changing the load (a "packshot" key in an
-/// older file is ignored)
+/// What an assessment was measured with: when any of it differs the assessment shows as stale, with what differs, and
+/// is still used (ADR 0046). Not the packshot build, the profile parts (game-tile, the add-on) or the host name: keys
+/// an older file still has ("packshot", "addon", "host") are ignored
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
 pub struct Keys {
     pub blender: String,
@@ -64,14 +65,13 @@ pub struct Keys {
     #[serde(default)]
     pub render_py: Option<String>,
     #[serde(default)]
-    pub addon: Option<String>,
-    #[serde(default)]
     pub starbreaker: Option<String>,
-    /// host name and CPU: an assessment.json copied to another machine is stale there (also without nvidia-smi)
-    #[serde(default)]
-    pub host: Option<String>,
+    /// an assessment file copied to another machine shows as stale there (also without nvidia-smi)
     #[serde(default)]
     pub cpu: Option<String>,
+    /// total RAM in whole GB (rounded: small reporting differences do not count); None in an older file: unknown
+    #[serde(default)]
+    pub ram_gb: Option<u64>,
 }
 
 impl Keys {
@@ -80,14 +80,13 @@ impl Keys {
             blender: me.blender.clone(),
             gpu: me.gpu.clone(),
             render_py: crate::events::file_hash(render_script),
-            addon: me.addon.clone(),
             starbreaker: me.starbreaker.clone(),
-            host: Some(me.name.clone()),
+            ram_gb: me.ram.map(|b| (b as f64 / (1u64 << 30) as f64).round() as u64),
             cpu: me.cpu.clone(),
         }
     }
 
-    /// What differs now ("Blender 5.2.4 (assessed 5.2.3)"); empty = valid
+    /// What differs now ("Blender 5.2.4 (assessed 5.2.3)"); empty: measured with what runs now
     pub fn diff(&self, now: &Keys) -> Vec<String> {
         let mut out = Vec::new();
         let mut cmp = |what: &str, was: Option<&str>, is: Option<&str>| {
@@ -98,10 +97,14 @@ impl Keys {
         cmp("Blender", Some(&self.blender), Some(&now.blender));
         cmp("GPU", self.gpu.as_deref(), now.gpu.as_deref());
         cmp("render.py", self.render_py.as_deref(), now.render_py.as_deref());
-        cmp("add-on", self.addon.as_deref(), now.addon.as_deref());
         cmp("StarBreaker", self.starbreaker.as_deref(), now.starbreaker.as_deref());
-        cmp("host", self.host.as_deref(), now.host.as_deref());
         cmp("CPU", self.cpu.as_deref(), now.cpu.as_deref());
+        // an older file without RAM: unknown, not different
+        if let (Some(was), Some(is)) = (self.ram_gb, now.ram_gb)
+            && was != is
+        {
+            out.push(format!("RAM {is} GB (assessed {was} GB)"));
+        }
         out
     }
 }
@@ -144,7 +147,7 @@ pub struct Step {
     pub secs: f64,
 }
 
-/// The result of an assessment: assessment.json in the packshot folder
+/// The result of an assessment: this OS's entry in assessment.json in the packshot folder
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
 pub struct Assessment {
     pub date: String,
@@ -190,18 +193,33 @@ impl Assessment {
     }
 }
 
-/// The node's assessment file in the packshot folder
+/// The node's assessment file in the packshot folder: one entry per operating system (ADR 0047), so a PC that boots
+/// Windows and Linux into the same packshot folder keeps both (one PC measured 48 items/s on Linux and 23 on Windows
+/// at 8-10 Blender)
 pub const FILE: &str = "assessment.json";
 
-/// The assessment in its file, if there is one
-pub fn load(path: &Path) -> Option<Assessment> {
-    serde_json::from_slice(&fs::read(path).ok()?).ok()
+/// This OS's entry in the file
+fn os() -> &'static str {
+    std::env::consts::OS
 }
 
-/// The assessment into its file (replaced as a whole), written atomically
+/// The file's entries by OS; nothing for a missing file or one of the older layout (a single assessment, measured on an
+/// unknown OS)
+fn entries(path: &Path) -> BTreeMap<String, Assessment> {
+    fs::read(path).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default()
+}
+
+/// This OS's assessment in the file, if there is one
+pub fn load(path: &Path) -> Option<Assessment> {
+    entries(path).remove(os())
+}
+
+/// This OS's assessment into the file (its entry replaced as a whole, the other OS's kept), written atomically
 pub fn save(path: &Path, a: &Assessment) -> Result<()> {
+    let mut all = entries(path);
+    all.insert(os().to_string(), a.clone());
     let tmp = path.with_extension("json.tmp");
-    fs::write(&tmp, serde_json::to_vec_pretty(a)?).with_context(|| tmp.display().to_string())?;
+    fs::write(&tmp, serde_json::to_vec_pretty(&all)?).with_context(|| tmp.display().to_string())?;
     fs::rename(&tmp, path).with_context(|| path.display().to_string())
 }
 
@@ -294,7 +312,10 @@ struct TestSetFile {
 pub struct SweepParams {
     pub blender: PathBuf,
     pub script: PathBuf,
-    pub size: u32,
+    /// game-tile beside it: the sweep always measures it, as PNG (the validity keys stay meaningful)
+    pub profile: PathBuf,
+    /// the image size, game-tile's 256 always (the validity keys stay meaningful)
+    pub size: Option<u32>,
     pub chunk: usize,
     /// test set: (entity, worn, scene.blend, rig, pose)
     pub items: Vec<(String, bool, PathBuf, PathBuf, [f64; 3])>,
@@ -489,7 +510,11 @@ impl Proc {
 /// A render job line for item `i` of the test set, its image into `dir`
 fn render_line(p: &SweepParams, i: usize, dir: &Path) -> String {
     let (_, _, src, rig, pose) = &p.items[i];
-    json!({ "src": src, "out": dir.join(format!("{i}.png")), "pose": pose, "rig": rig, "size": p.size }).to_string()
+    let mut job = json!({ "src": src, "out": dir.join(format!("{i}.png")), "pose": pose, "rig": rig, "format": "png" });
+    if let Some(s) = p.size {
+        job["size"] = json!(s);
+    }
+    job.to_string()
 }
 
 /// A ready process gets its work: export-batch --stdin its chunk at once, a Blender its next job (and LOOKAHEAD
@@ -554,7 +579,7 @@ impl Drop for Sweep {
 
 /// The item index from an output path "<dir>/<i>.png" in a render.py line
 fn item_of(rest: &str) -> Option<usize> {
-    let end = rest.to_lowercase().find(".png")?;
+    let (end, _) = crate::node::image_end(rest)?;
     let path = &rest[..end];
     let stem = path.rsplit(['/', '\\']).next()?;
     stem.parse().ok()
@@ -594,6 +619,9 @@ impl Sweep {
             todo = items.iter().map(|&i| render_line(&self.p, i, dir)).collect();
             let mut c = crate::blender::command(&self.p.blender);
             c.arg("--gpu-backend").arg("vulkan").arg("--python").arg(&self.p.script).arg("--").arg("--stdin");
+            if !self.p.profile.as_os_str().is_empty() {
+                c.arg("--profile").arg(&self.p.profile);
+            }
             c
         };
         let started = Instant::now();
@@ -889,6 +917,8 @@ impl Sweep {
                 alongside(self, id)?;
             }
         }
+        // the table's head after the intro line above, as in the render sweep
+        self.say(EXPORT_HEAD.to_string());
         let mut steps: Vec<Step> = Vec::new();
         let mut rss = 0u64;
         for e in 1..=EXPORT_MAX {
@@ -1091,7 +1121,6 @@ pub fn sweep(p: SweepParams, cancel: Arc<AtomicBool>, out: Sender<SweepEv>) -> R
     let (mut exporters, mut export, mut render, mut export_steps, mut export_cap) = (None, None, alone, Vec::new(), usize::MAX);
     if s.p.export.is_some() {
         s.settle()?;
-        s.say(EXPORT_HEAD.to_string());
         let (steps, rss) = s.export_sweep(workers)?;
         export_steps = steps;
         // the exporters must fit RAM next to the chosen Blenders, with the most one export process took
@@ -1465,7 +1494,8 @@ impl Engine {
         let p = SweepParams {
             blender: self.cfg.blender.clone(),
             script: self.cfg.render_script.clone(),
-            size: self.cfg.size,
+            profile: crate::profile::base_dir(&self.cfg.render_script).unwrap_or_default(),
+            size: Some(crate::store::DEFAULT_SIZE),
             chunk: self.cfg.chunk,
             items,
             export,
@@ -1666,23 +1696,24 @@ mod tests {
             blender: "5.2.3".into(),
             gpu: Some("RTX 5080 · VRAM 16 GB".into()),
             render_py: Some("r1".into()),
-            addon: Some("a1".into()),
             starbreaker: Some("655d5f68".into()),
-            host: Some("DRAGONEGG".into()),
             cpu: Some("AMD Ryzen 7 9800X3D 8-Core Processor".into()),
+            ram_gb: Some(64),
         }
     }
 
-    /// Stale when any key differs: Blender, GPU, render.py, add-on, StarBreaker, host, CPU (a
-    /// assessment.json copied to a machine without nvidia-smi is stale there); a peer's p4k fingerprint stays one
-    /// folder name
+    /// Stale when a key differs: CPU, RAM, Blender, GPU, render.py, StarBreaker (an assessment file copied to a
+    /// machine without nvidia-smi is stale there); an older file's extra keys (addon, host) load and count for nothing,
+    /// its missing RAM is unknown; a peer's p4k fingerprint stays one folder name
     #[test]
     fn staleness() {
         let k = keys();
         assert!(k.diff(&k).is_empty());
-        let copied = Keys { host: Some("DRAGONVR".into()), cpu: Some("Intel(R) Core(TM) i7-4790K CPU @ 4.00GHz".into()), gpu: None, ..k.clone() };
+        let copied = Keys { cpu: Some("Intel(R) Core(TM) i7-4790K CPU @ 4.00GHz".into()), gpu: None, ram_gb: Some(32), ..k.clone() };
         assert_eq!(k.diff(&copied).len(), 3, "{:?}", k.diff(&copied));
-        assert!(k.diff(&copied)[1].starts_with("host DRAGONVR (assessed DRAGONEGG)"));
+        assert_eq!(k.diff(&copied)[2], "RAM 32 GB (assessed 64 GB)");
+        let old: Keys = serde_json::from_str(r#"{"blender": "5.2.3", "gpu": "RTX 5080 · VRAM 16 GB", "render_py": "r1", "addon": "a0", "starbreaker": "655d5f68", "host": "OLDBOX", "cpu": "AMD Ryzen 7 9800X3D 8-Core Processor"}"#).unwrap();
+        assert!(old.diff(&k).is_empty(), "an older file: add-on and host ignored, RAM unknown: {:?}", old.diff(&k));
         let key = testset_key("../../..//x", &["a"]);
         assert!(crate::net::safe_name(&format!("testset-{key}")) && key.starts_with("x-"), "{key}");
         let other = Keys { blender: "5.2.4".into(), ..k.clone() };
@@ -1711,10 +1742,42 @@ mod tests {
         let a = Assessment { workers: 6, render: 6.3, keys: keys(), ..Default::default() };
         save(&path, &a).unwrap();
         assert_eq!(load(&path), Some(a.clone()));
-        let b = Assessment { workers: 4, ..a };
+        let b = Assessment { workers: 4, ..a.clone() };
         save(&path, &b).unwrap();
         assert_eq!(load(&path).unwrap().workers, 4);
         assert!(!dir.join("assessment.json.tmp").exists());
+        assert_eq!(fs::read_to_string(dir.join("packshot.json")).unwrap(), cfg, "packshot.json untouched");
+    }
+
+    /// One entry per OS: a save replaces only this OS's entry; an entry of another OS stays and is not read here; a file
+    /// of the older layout (one assessment, OS unknown) reads as none
+    #[test]
+    fn one_entry_per_os() {
+        let dir = std::env::temp_dir().join(format!("packshot-assess-os-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join(FILE);
+        let other = if os() == "windows" { "linux" } else { "windows" };
+        let theirs = Assessment { workers: 10, render: 48.2, keys: keys(), ..Default::default() };
+        fs::write(&path, serde_json::to_vec(&BTreeMap::from([(other.to_string(), theirs.clone())])).unwrap()).unwrap();
+        assert_eq!(load(&path), None, "the other OS's entry is not this one's");
+        let mine = Assessment { workers: 8, render: 23.7, keys: keys(), ..Default::default() };
+        save(&path, &mine).unwrap();
+        assert_eq!(load(&path), Some(mine));
+        assert_eq!(entries(&path).get(other), Some(&theirs), "the other OS's entry stays");
+        fs::write(&path, serde_json::to_vec(&theirs).unwrap()).unwrap();
+        assert_eq!(load(&path), None, "the older layout");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn own_file_untouched_cfg() {
+        let dir = std::env::temp_dir().join(format!("packshot-assess-cfg-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let cfg = r#"{"token": "s3cret"}"#;
+        fs::write(dir.join("packshot.json"), cfg).unwrap();
+        save(&dir.join(FILE), &Assessment { workers: 2, keys: keys(), ..Default::default() }).unwrap();
         assert_eq!(fs::read_to_string(dir.join("packshot.json")).unwrap(), cfg, "packshot.json untouched");
     }
 

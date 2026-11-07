@@ -106,6 +106,7 @@ pub struct AssessInfo {
     pub export: f64,
     pub workers: usize,
     pub exporters: usize,
+    /// measured with what runs now (else shown as stale; used either way, ADR 0046)
     pub valid: bool,
     pub date: String,
     /// the steps it was measured at: (Blender count, items/s) and (export count, items/s), so the head node can take
@@ -247,6 +248,17 @@ pub struct RunStatus {
     /// the latest failures: (entity, error)
     pub errors: Vec<(String, String)>,
     pub phase_avg: Option<[f64; 5]>,
+    /// what the run renders with (render.py, profile, size, format, add-on: the run record's fields)
+    #[serde(default)]
+    pub profile: serde_json::Value,
+}
+
+/// What a starter chose for the run it starts on another node: the profile's name (size and format are the target
+/// set's there, ADR 0045)
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+pub struct StartLook {
+    #[serde(default)]
+    pub profile: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -268,8 +280,19 @@ pub enum Msg {
     /// head node -> holder: these export chunks are done (every item rendered or failed), their folders can go
     Release { chunks: Vec<u64> },
     /// head node -> rendering node: render these items (by one Blender), fetching what is held elsewhere straight
-    /// from its holder (files: render.py)
-    Render { id: u64, size: u32, jobs: Vec<RenderJob>, files: Vec<FileEntry> },
+    /// from its holder (files: render.py, profiles/game-tile/..., profiles/<profile>/...); size and format only when
+    /// the run sets them (else the profile's)
+    Render {
+        id: u64,
+        #[serde(default)]
+        size: Option<u32>,
+        #[serde(default)]
+        format: Option<String>,
+        #[serde(default)]
+        profile: String,
+        jobs: Vec<RenderJob>,
+        files: Vec<FileEntry>,
+    },
     /// rendering node -> head node: the render chunk's files are here (from which holders, bytes fetched and taken
     /// from the cache, how long it took)
     Fetched { id: u64, holders: Vec<String>, bytes: u64, cached: u64, files: usize, secs: f64 },
@@ -301,8 +324,21 @@ pub enum Msg {
     /// starting node -> head node: the sets there and the state and target list of one set (for the selection)
     GetState { set: String },
     State { set: String, sets: Vec<crate::store::SetSummary>, images: Vec<String>, failed: Vec<String>, targets: Vec<Target>, stats: Option<crate::store::RunStats> },
-    /// starting node -> head node: start a run over these targets into the set (created from main if missing)
-    StartRun { targets: Vec<Target>, set: String, name: String, filter: String, scope: String, line: String },
+    /// starting node -> head node: start a run over these targets into the set (created from main if missing), with the
+    /// starter's profile (its folder's files; none: game-tile, the head node's own)
+    StartRun {
+        targets: Vec<Target>,
+        set: String,
+        name: String,
+        filter: String,
+        scope: String,
+        line: String,
+        #[serde(default)]
+        files: Vec<FileEntry>,
+        /// boxed: the message stays small
+        #[serde(default)]
+        look: Box<StartLook>,
+    },
     Started { run: String },
     /// any node -> head node: abort the run
     AbortRun,
@@ -518,7 +554,7 @@ fn read_frame(r: &mut impl Read, inbox: &Path, seq: &mut u64) -> Result<(Msg, Ve
     r.read_exact(&mut b8)?;
     let total = u64::from_le_bytes(b8);
     let files = match &msg {
-        Msg::Render { files, .. } | Msg::FetchData { files, .. } | Msg::RunFiles { files, .. } => Some(files.clone()),
+        Msg::Render { files, .. } | Msg::FetchData { files, .. } | Msg::RunFiles { files, .. } | Msg::StartRun { files, .. } => Some(files.clone()),
         _ => None,
     };
     let Some(files) = files else {
@@ -1055,7 +1091,7 @@ mod tests {
         fs::write(src.join("sub").join("b.bin"), vec![7u8; 100_000]).unwrap();
         let (files, paths) = collect_files(&src, "x/").unwrap();
         let mut buf = Vec::new();
-        write_frame(&mut buf, &Msg::Render { id: 3, size: 256, jobs: Vec::new(), files: files.clone() }, &Payload::Files(paths)).unwrap();
+        write_frame(&mut buf, &Msg::Render { id: 3, size: Some(256), format: None, profile: "game-tile".into(), jobs: Vec::new(), files: files.clone() }, &Payload::Files(paths)).unwrap();
         write_frame(&mut buf, &Msg::Item { block: 3, item: 1, ok: true, info: "i".into() }, &Payload::Bytes(vec![1, 2, 3])).unwrap();
         let mut r = io::Cursor::new(buf);
         let mut seq = 0;

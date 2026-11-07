@@ -1,18 +1,20 @@
 packshot bundle, Windows
 
 Contents: packshot.exe, starbreaker\ (StarBreaker CLI, our fork), addon\ (its Blender add-on), cli\render.py
-(Blender script), blender.pin (the Blender version and its SHA256), targets\ (targets.json, the target list, if one was
-bundled), setup.cmd, check.cmd, run.cmd, packshot.example.json (cluster settings). Blender is not in the bundle: setup.cmd gets
-it. The first run start (Enter) asks for main's target list: choose targets\targets.json in the dialog; every set keeps
-its own (t in view 2 replaces it after a game update).
+(Blender script), profiles\ (game-tile, the default look; own profiles go there too; --profile preselects one,
+the TUI asks when a run starts), blender.pin (the Blender version and its SHA256), targets\ (targets.json, the target list, if one was bundled),
+setup.cmd, check.cmd, run.cmd, packshot.example.json (cluster settings). Blender is not in the bundle: setup.cmd gets
+it. The first run start (Enter) asks for main's target list: choose targets\targets.json in the dialog if the bundle
+has one, else build one in the target picker (its first row); every set keeps its own (t in view 2 replaces it after a
+game update).
 
 1. setup.cmd                    the Blender zip blender.pin names: taken from this folder if it is here, else
                                 downloaded from blender.org; SHA256 checked, unpacked into .\blender, the add-on
                                 enabled (again after a new bundle)
    check.cmd                    add-on loaded? EEVEE render on Vulkan possible?
 2. For --export: put the game's Data.p4k and its build_manifest.id (both from ...\StarCitizen\LIVE\) next to
-   run.cmd, or pass --p4k "<game folder>\Data.p4k"; without build_manifest.id next to Data.p4k --export does not
-   start.
+   run.cmd, or pass --p4k "<game folder>\Data.p4k"; without build_manifest.id next to Data.p4k the TUI turns
+   exporting off (the modes without TUI stop).
 3. run.cmd --render --export   starts the TUI with what this node can do now (views: 1 Run, 2 Sets, 3 Nodes; Tab
                                switches): --render (Blender), --export (Data.p4k), both, or neither (then it only
                                starts runs, stores them and watches); + / - and < / > change the counts

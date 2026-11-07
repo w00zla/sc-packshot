@@ -19,6 +19,7 @@ use serde_json::json;
 use crate::events::{EventLog, GpuProbe, file_hash, round3};
 use crate::net::{Hello, Hub, ItemJob, Msg, Payload, RenderJob, RunStatus, RunSummary};
 use crate::node::LOCAL;
+use crate::profile::Profile;
 use crate::store::{EntityResult, Resolved, RunInfo, SetInfo, Store};
 use crate::tables::Tables;
 
@@ -48,10 +49,26 @@ pub struct Config {
     pub blender: PathBuf,
     pub render_script: PathBuf,
     pub work: PathBuf,
-    pub size: u32,
+    /// the runs' profile (--profile); Err: why there is none (no run starts here)
+    pub profile: std::result::Result<Profile, String>,
     pub chunk: usize,
     /// fetched-file cache limit of a rendering node in bytes (0 = none)
     pub cache_limit: u64,
+}
+
+/// What a run renders with: its starter's profile, its target set's size and format (ADR 0045)
+#[derive(Clone, Debug)]
+pub struct RunLook {
+    pub profile: Profile,
+    pub size: u32,
+    pub format: String,
+}
+
+impl RunLook {
+    /// `profile` at the size and format of `set`
+    pub fn of(profile: Profile, set: &SetInfo) -> Self {
+        Self { profile, size: set.size(), format: set.format().to_string() }
+    }
 }
 
 /// What gets rendered from the filter selection
@@ -253,6 +270,10 @@ pub struct Run {
     pub phase_n: usize,
     /// run_end is already in the event log
     logged_end: bool,
+    /// the extension of the run's output format (fixed at its start)
+    pub(crate) ext: &'static str,
+    /// what the run renders with: its starter's profile, its target set's size and format
+    pub(crate) look: RunLook,
 }
 
 /// Phases per render, as render.py appends them to the icon: line ("timing load=… prep=… render=… glass=… post=…")
@@ -379,6 +400,10 @@ pub struct Engine {
     pub picker_p4k: Option<PathBuf>,
     /// the tools and files checked at start, for the TUI's start tile (ADR 0040)
     pub start: Vec<StartCheck>,
+    /// what a run started here would render with (Engine::profile_origin of the chosen profile)
+    pub profile_info: serde_json::Value,
+    /// render.py came with --render-script (the run record says so)
+    pub render_script_flag: bool,
     /// the step the DataCore tables are at while they load, and why they did not load
     pub tables_step: String,
     pub tables_error: Option<String>,
@@ -388,8 +413,8 @@ pub struct Engine {
     /// node exports nothing until then
     pub tables_ready: bool,
     tables_load: Option<TablesLoad>,
-    /// this node's compute assessment from assessment.json (assess.rs), what makes it stale (empty: valid), the one
-    /// going on
+    /// this node's compute assessment from its assessment file (assess.rs), what differs from what it was measured with (it
+    /// is used anyway, ADR 0046), the one going on
     pub assessment: Option<crate::assess::Assessment>,
     pub assess_stale: Vec<String>,
     pub(crate) assess_job: Option<crate::assess::AssessJob>,
@@ -471,11 +496,11 @@ fn sanitize(name: &str) -> String {
     s.trim().chars().take(80).collect()
 }
 
-/// File name of an icon as in cli.ts: "display name (class name) <uuid>.png"
-fn icon_file(t: &Target, k: usize) -> String {
+/// File name of an icon as in cli.ts: "display name (class name) <uuid>.<ext>" (the run's format's extension)
+fn icon_file(t: &Target, k: usize, ext: &str) -> String {
     let name = sanitize(t.names.as_ref().and_then(|n| n.get(k)).map(String::as_str).unwrap_or(""));
     let prefix = if name.is_empty() { String::new() } else { format!("{name} ") };
-    format!("{prefix}({}) {}.png", t.entity, t.uuids[k])
+    format!("{prefix}({}) {}.{ext}", t.entity, t.uuids[k])
 }
 
 pub(crate) fn too_long(root: &Path, limit: usize) -> (usize, Option<PathBuf>) {
@@ -536,11 +561,12 @@ pub(crate) fn rate_at(steps: &[(usize, f64)], k: usize) -> Option<f64> {
     Some(a.1 + (b.1 - a.1) * (k - a.0) as f64 / (b.0 - a.0) as f64)
 }
 
-/// Items/s per process of a node from its valid assessment (render or export), at the count it runs now (its
+/// Items/s per process of a node from its assessment (render or export; stale or not), at the count it runs now (its
 /// hello's; changed with +/- or </> from the assessed one: the rate at that count from the steps, scaled like the
 /// assessed one, which for an exporting node was measured with its exports alongside); None without one
 pub(crate) fn proc_rate(h: &Hello, export: bool) -> Option<f64> {
-    let a = h.assess.as_ref().filter(|a| a.valid)?;
+    // a stale one too: it stays in use until a new one replaces it (ADR 0046)
+    let a = h.assess.as_ref()?;
     let (rate, n, steps, now) = if export { (a.export, a.exporters, &a.export_steps, h.exporters) } else { (a.render, a.workers, &a.steps, h.slots) };
     if rate <= 0.0 || n == 0 {
         return None;
@@ -591,13 +617,14 @@ impl Engine {
         let haystack = targets.iter().map(search_text).collect();
         let manifest = crate::cluster::load_manifest(&store.root);
         let mut serve = crate::node::Renderer::new(&me.name, &cfg.work, cfg.blender.clone(), cfg.render_script.clone(), 0);
+        serve.profile = cfg.profile.as_ref().map(|p| p.dir.clone()).unwrap_or_default();
         serve.set_cache_limit(cfg.cache_limit);
         if me.export {
             serve.tools = Some(crate::node::ExportTools { starbreaker: cfg.starbreaker.clone(), p4k: cfg.p4k.clone() });
         }
         let stats = store.last_stats();
         let own_len = targets.len();
-        Ok(Self {
+        let mut e = Self {
             cfg,
             targets,
             own_len,
@@ -652,7 +679,26 @@ impl Engine {
             assess_items: crate::assess::TEST_ITEMS,
             assess_max: 32,
             fixed_counts: (false, false),
-        })
+            profile_info: serde_json::Value::Null,
+            render_script_flag: false,
+        };
+        e.refresh_profile_info();
+        Ok(e)
+    }
+
+    /// The profile chosen for runs started here: from --profile, or the start dialog's choice
+    pub fn set_profile(&mut self, p: Profile) {
+        self.cfg.profile = Ok(p);
+        self.refresh_profile_info();
+    }
+
+    /// What a run started here would render with (the selection tile), taken once per choice: its hashes read files
+    pub fn refresh_profile_info(&mut self) {
+        // at this node's target set's size and format; the selection tile shows the chosen target set's
+        self.profile_info = match self.cfg.profile.clone() {
+            Ok(p) => self.profile_origin(&RunLook::of(p, &self.set)),
+            Err(e) => json!({ "error": e }),
+        };
     }
 
     /// Load the DataCore tables in the background (the TUI shows the steps); until they are there this node exports
@@ -736,7 +782,8 @@ impl Engine {
         }
     }
 
-    /// Origin of the run for run_start: machine, processes, versions of render.py, addon, StarBreaker and p4k
+    /// Origin of the run for run_start: machine, processes, versions of render.py, addon, StarBreaker and p4k, the
+    /// profile
     #[allow(clippy::too_many_arguments)]
     fn run_meta(&self, run_id: &str, args_line: &str, filter: &str, scope: Scope, total: usize, blocks: usize, size: usize) -> serde_json::Value {
         let version = self.me.blender.clone();
@@ -749,7 +796,7 @@ impl Engine {
             self.connected_nodes().into_iter().map(|(_, h)| h).find(|h| h.export && nodes.contains(&h.name))
         };
         let p4k = self.me.export.then(|| fs::metadata(&self.cfg.p4k).ok()).flatten();
-        json!({
+        let mut meta = json!({
             "run": run_id,
             "set": self.set.name,
             "host": self.me.name,
@@ -768,7 +815,6 @@ impl Engine {
             "blender": self.cfg.blender,
             "blender_version": version,
             "gpu_backend": "vulkan",
-            "render_py": file_hash(&self.cfg.render_script),
             "addon": self.me.addon,
             "starbreaker": self.me.starbreaker,
             "p4k": self.me.export.then(|| self.cfg.p4k.clone()),
@@ -777,7 +823,35 @@ impl Engine {
             "p4k_id": exporter.as_ref().and_then(|h| h.p4k_id.clone()),
             "p4k_version": exporter.as_ref().and_then(|h| h.p4k_version.clone()),
             "p4k_mtime": p4k.and_then(|m| m.modified().ok()).and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| d.as_secs()),
-            "size": self.cfg.size,
+        });
+        // render.py, the profile and what the run renders with them (the add-on: the profile's copy if it has one)
+        if let (Some(m), Some(run)) = (meta.as_object_mut(), self.run.as_ref())
+            && let serde_json::Value::Object(p) = self.profile_origin(&run.look)
+        {
+            m.extend(p);
+        }
+        meta
+    }
+
+    /// What a run renders with, as the run record keeps it: render.py's hash, the profile (name, where from, folder,
+    /// hash, template), size and format (the target set's), and the add-on (the installed one, or the profile's copy)
+    pub fn profile_origin(&self, look: &RunLook) -> serde_json::Value {
+        let p = &look.profile;
+        let copy = p.addon_hash();
+        json!({
+            "render_py": file_hash(&self.cfg.render_script),
+            // given with --render-script instead of the one beside the tool
+            "render_py_from": if self.render_script_flag { "flag" } else { "default" },
+            "profile": p.name,
+            "profile_from": p.from,
+            "profile_dir": p.dir,
+            "profile_hash": p.hash(),
+            "scene": p.scene(),
+            "size": look.size,
+            "format": look.format,
+            "addon": copy.clone().or_else(|| self.me.addon.clone()),
+            "addon_from": if copy.is_some() { "profile" } else { "installed" },
+            "starbreaker": self.me.starbreaker,
         })
     }
 
@@ -819,9 +893,10 @@ impl Engine {
         self.gpu = None;
     }
 
-    /// Where Blender renders to; the image then moves into the run
+    /// Where an image from a Blender lands (with the run's extension); it then moves into the run
     pub(crate) fn render_png(&self, t: usize) -> PathBuf {
-        self.cfg.work.join("render").join(format!("{}.png", self.targets[t].entity))
+        let ext = self.run.as_ref().map(|r| r.ext).unwrap_or("png");
+        self.cfg.work.join("render").join(format!("{}.{ext}", self.targets[t].entity))
     }
 
     /// The entity's image in the target set (first UUID)
@@ -863,13 +938,22 @@ impl Engine {
         }
     }
 
+    /// The target set's size and format, what the next run renders at: on another head node from its set list (a
+    /// set it does not have yet branches off main there and takes main's)
+    pub fn target_output(&self) -> (u32, String) {
+        let Some(r) = self.remote_sel() else { return (self.set.size(), self.set.format().to_string()) };
+        let of = |name: &str| r.set_list.iter().find(|s| s.name == name);
+        let s = of(&r.set).or_else(|| of(crate::store::MAIN));
+        (s.and_then(|s| s.size).unwrap_or(crate::store::DEFAULT_SIZE), s.and_then(|s| s.format.clone()).unwrap_or_else(|| crate::store::DEFAULT_FORMAT.into()))
+    }
+
     pub fn run_dir(&self) -> Option<PathBuf> {
         self.record.as_ref().map(|r| self.store.run_dir(&r.id))
     }
 
     pub fn pose_rig(&self, t: usize) -> Result<([f64; 3], PathBuf)> {
         let tg = &self.targets[t];
-        Ok((self.tables.pose(&tg.kind, &tg.sub_type), self.tables.rig(&tg.kind, &tg.sub_type)?.clone()))
+        Ok((self.tables.pose(&tg.entity, &tg.kind, &tg.sub_type), self.tables.rig(&tg.entity, &tg.kind, &tg.sub_type)?.clone()))
     }
 
     /// Filter: terms separated by spaces or commas, a match in class name, display name or
@@ -918,11 +1002,15 @@ impl Engine {
     }
 
     /// Starts a run over `todo` as a new run (`name`, empty = from filter and scope) in the target set; `nodes`: the
-    /// connected nodes that take part, `starter`: the node that asked for it (cluster.rs)
+    /// connected nodes that take part, `starter`: the node that asked for it (cluster.rs), `profile`: the one the starter
+    /// chose; size and format are the target set's (ADR 0045)
     #[allow(clippy::too_many_arguments)]
-    pub fn start(&mut self, todo: &[usize], args_line: &str, filter: &str, scope: Scope, name: &str, nodes: Vec<String>, starter: &str) -> Result<()> {
+    pub fn start(&mut self, todo: &[usize], args_line: &str, filter: &str, scope: Scope, name: &str, nodes: Vec<String>, starter: &str, profile: Profile) -> Result<()> {
+        let look = RunLook::of(profile, &self.set);
         if let Some(s) = self.serve.as_mut() {
             s.blender_log(&format!("=== {}", chrono::Local::now().to_rfc3339()));
+            // this node's own render chunks render with the run's profile
+            s.profile = look.profile.dir.clone();
         }
         self.errors.clear();
 
@@ -952,6 +1040,8 @@ impl Engine {
             phase_sum: [0.0; 5],
             phase_n: 0,
             logged_end: false,
+            ext: crate::profile::ext(&look.format),
+            look,
         });
         // The run: folder with start time and name, run.json with the origin, at the end of the chain in the target set
         let name = if name.trim().is_empty() { self.default_run_name(filter, scope) } else { name.trim().to_string() };
@@ -1170,10 +1260,10 @@ impl Engine {
         let mut out = Vec::new();
         let mut bad = Vec::new();
         for mut j in jobs {
-            match self.tables.rig(&j.kind, &j.sub_type) {
+            match self.tables.rig(&j.entity, &j.kind, &j.sub_type) {
                 Ok(rig) => {
                     j.rig = rig.to_string_lossy().to_string();
-                    j.pose = self.tables.pose(&j.kind, &j.sub_type);
+                    j.pose = self.tables.pose(&j.entity, &j.kind, &j.sub_type);
                     out.push(j);
                 }
                 Err(e) => bad.push((j.item, format!("rig: {e}"))),
@@ -1244,22 +1334,25 @@ impl Engine {
         let worker = self.workers.last().map(Worker::label).unwrap_or_default();
         let wait = if waits.is_empty() { 0.0 } else { waits.iter().sum::<f64>() / waits.len() as f64 };
         self.emit("render_start", json!({ "block": id, "worker": worker, "items": n, "queue_wait": round3(wait), "holders": holders }));
-        // the other nodes render with the head node's render.py
-        let (files, payload) = if conn == LOCAL {
-            (Vec::new(), Payload::None)
-        } else {
-            match fs::metadata(&self.cfg.render_script) {
-                Ok(m) => (vec![crate::net::FileEntry { path: "render.py".into(), size: m.len() }], Payload::Files(vec![self.cfg.render_script.clone()])),
-                Err(e) => {
-                    self.workers.pop();
-                    for t in items {
-                        self.record(t, false, Some(format!("render.py: {e}")), 0.0, "render", "");
-                    }
-                    return;
+        // the other nodes render with the head node's render.py, game-tile and the run's profile (ADR 0024); this one
+        // with its own folders
+        let Some(look) = self.run.as_ref().map(|r| r.look.clone()) else { return };
+        let sent = match conn {
+            LOCAL => Ok((Vec::new(), Payload::None)),
+            _ => look.profile.payload(&self.cfg.render_script).map(|(files, paths)| (files, Payload::Files(paths))).map_err(|e| format!("{e:#}")),
+        };
+        let (files, payload) = match sent {
+            Ok(x) => x,
+            Err(e) => {
+                self.workers.pop();
+                for t in items {
+                    self.record(t, false, Some(format!("render.py and profile: {e}")), 0.0, "render", "");
                 }
+                return;
             }
         };
-        self.dispatch(conn, Msg::Render { id, size: self.cfg.size, jobs, files }, payload);
+        // size and format: the target set's
+        self.dispatch(conn, Msg::Render { id, size: Some(look.size), format: Some(look.format), profile: look.profile.name, jobs, files }, payload);
     }
 
     /// Result of an item (export failure or render result); a failure's first line is the message, further lines the
@@ -1308,8 +1401,9 @@ impl Engine {
 
     /// The finished image into the run (one file per UUID) and as hardlinks into the target set; the entity's old ones go
     fn place_icons(&mut self, t: usize) -> Result<()> {
+        let ext = self.run.as_ref().map(|r| r.ext).unwrap_or("png");
         let tg = &self.targets[t];
-        let files: Vec<String> = (0..tg.uuids.len()).map(|k| icon_file(tg, k)).collect();
+        let files: Vec<String> = (0..tg.uuids.len()).map(|k| icon_file(tg, k, ext)).collect();
         let entity = tg.entity.clone();
         let run_id = self.record.as_ref().map(|r| r.id.clone()).context("no run")?;
         self.store.put_image(&run_id, &self.render_png(t), &files)?;
@@ -1873,14 +1967,14 @@ mod rate_tests {
     }
 
     /// Chunks by the nodes' assessed rates: a slow node's chunks shrink, a fast one's grow up to --chunk; without
-    /// rates (or with a stale one) every node gets the plain size
+    /// rates every node gets the plain size; a stale assessment still counts (ADR 0046)
     #[test]
     fn chunk_size_by_rate() {
         // per process: DRAGONEGG 6.3/6 = 1.05, servbox 8.1/9 = 0.9, DRAGONVR 1.8/3 = 0.6 items/s
         let (egg, serv, vr) = (node(6.3, 6, true), node(8.1, 9, true), node(1.8, 3, true));
         assert!((proc_rate(&egg, false).unwrap() - 1.05).abs() < 1e-9);
         assert_eq!(proc_rate(&egg, true), Some(2.0));
-        assert_eq!(proc_rate(&node(6.3, 6, false), false), None, "stale: no rate");
+        assert!((proc_rate(&node(6.3, 6, false), false).unwrap() - 1.05).abs() < 1e-9, "stale: still used (ADR 0046)");
         assert_eq!(proc_rate(&Hello::default(), false), None);
         let nodes = vec![(0, 6, proc_rate(&egg, false)), (1, 9, proc_rate(&serv, false)), (2, 3, proc_rate(&vr, false))];
         // mean per process (6.3 + 8.1 + 1.8) / 18 = 0.9

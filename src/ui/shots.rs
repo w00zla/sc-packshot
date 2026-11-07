@@ -273,7 +273,7 @@ fn shape_of(t: usize) -> usize {
 fn hello(name: &str, os: &str, render: bool, export: bool, slots: usize, exporters: usize, cores: usize, cpu: &str, gpu: &str, ram_gb: u64, free_gb: u64, total_gb: u64) -> Hello {
     Hello {
         name: name.into(),
-        version: "0.1.0+3f9c2ab1".into(),
+        version: format!("{}+3f9c2ab1", env!("CARGO_PKG_VERSION")),
         os: os.into(),
         render,
         export,
@@ -356,16 +356,31 @@ fn finish(e: &mut Engine, minutes: f64) {
     }
     e.tick();
     // run.json: its start back by the same time, so the Sets view shows a real duration
-    if let Some(id) = e.record.as_ref().map(|r| r.id.clone()) {
-        let mut info = e.store.run(&id).unwrap().clone();
-        // the synthetic state has no render.py or Blender to read: fixed values for the runs table
-        info.origin["render_py"] = "6da3cb0c523f77d7".into();
-        info.origin["blender_version"] = "5.2.3".into();
-        if let Ok(t) = chrono::DateTime::parse_from_rfc3339(&info.started) {
-            info.started = (t - chrono::Duration::seconds((minutes * 60.0) as i64)).to_rfc3339();
-            e.store.save_run(&info).unwrap();
-        }
+    if let Some(info) = fixed_origin(e)
+        && let Ok(t) = chrono::DateTime::parse_from_rfc3339(&info.started)
+    {
+        let mut info = info;
+        info.started = (t - chrono::Duration::seconds((minutes * 60.0) as i64)).to_rfc3339();
+        e.store.save_run(&info).unwrap();
     }
+}
+
+/// The synthetic state has no render.py, profile or Blender to read: fixed values in the current run's record (on
+/// disk for the runs table, in memory for the run tile), finished or not; the record as saved
+fn fixed_origin(e: &mut Engine) -> Option<crate::store::RunInfo> {
+    let id = e.record.as_ref().map(|r| r.id.clone())?;
+    let mut info = e.store.run(&id).unwrap().clone();
+    info.origin["render_py"] = "6da3cb0c523f77d7".into();
+    info.origin["blender_version"] = "5.2.3".into();
+    info.origin["profile_hash"] = "3f9c0e7a51d2b864".into();
+    info.origin["size"] = 256.into();
+    // the Data.p4k's date in the run tile (2026-11-04)
+    info.origin["p4k_mtime"] = 1_793_779_200u64.into();
+    if let Some(r) = e.record.as_mut() {
+        r.origin = info.origin.clone();
+    }
+    e.store.save_run(&info).unwrap();
+    Some(info)
 }
 
 struct Scene {
@@ -399,12 +414,16 @@ fn scene(cell: (u16, u16)) -> Scene {
     let x = root.join("x");
     let rig = root.join("inventorylightgroup_studio_a.json");
     std::fs::write(&rig, "{}").unwrap();
-    let cfg = Config { p4k: x.clone(), starbreaker: x.clone(), blender: x.clone(), render_script: x, work: root.join("work"), size: 256, chunk: 50, cache_limit: 0 };
+    let cfg = Config { p4k: x.clone(), starbreaker: x.clone(), blender: x.clone(), render_script: x.clone(), work: root.join("work"), profile: Ok(crate::profile::Profile::stub(&x)), chunk: 50, cache_limit: 0 };
     let mut e = Engine::new(cfg, all.clone(), Tables::with_rig(rig), store, main, Some(hub), me).unwrap();
     e.max_renderers = 6;
     e.max_exporters = 2;
     e.cores = 8;
     e.targets_file = tfile;
+    // no render.py or profile files to hash here: fixed values for the profile lines
+    e.profile_info["render_py"] = "6da3cb0c523f77d7".into();
+    e.profile_info["profile_hash"] = "3f9c0e7a51d2b864".into();
+    e.profile_info["size"] = 256.into();
     e.assessment = Some(crate::assess::Assessment { workers: 6, render: 6.3, exporters: Some(2), export: Some(7.1), date: "2026-11-06T20:41:00+01:00".into(), ..Default::default() });
 
     // the procedural renders, a few per shape
@@ -416,7 +435,7 @@ fn scene(cell: (u16, u16)) -> Scene {
 
     // 1. an earlier run over the helmets and backpacks, finished
     let first: Vec<usize> = (0..all.len()).filter(|t| matches!(t % KINDS.len(), 0..=2)).take(60).collect();
-    e.start(&first, "packshot --filter helmet,backpack", "helmet,backpack", Scope::Missing, "helmets", nodes.clone(), "atlas").unwrap();
+    e.start(&first, "packshot --filter helmet,backpack", "helmet,backpack", Scope::Missing, "helmets", nodes.clone(), "atlas", crate::profile::Profile::stub(&root)).unwrap();
     let mut chunk = 1u64;
     for part in first.chunks(12) {
         render_chunk(&mut e, chunk, None, LOCAL, part, &images, &[]);
@@ -425,10 +444,11 @@ fn scene(cell: (u16, u16)) -> Scene {
     finish(&mut e, 6.5);
 
     // 2. an experiment set off main with its own run
-    e.store.create_set("glow-test", MAIN).unwrap();
+    // an experiment at another size and format (ADR 0045): its set row says so
+    e.store.create_set_with("glow-test", MAIN, 512, "jpeg").unwrap();
     e.switch_set("glow-test").unwrap();
     let glow: Vec<usize> = (0..all.len()).filter(|t| t % KINDS.len() == 7).take(16).collect();
-    e.start(&glow, "packshot --filter core --scope all --set glow-test", "core", Scope::All, "glow", Vec::new(), "atlas").unwrap();
+    e.start(&glow, "packshot --filter core --scope all --set glow-test", "core", Scope::All, "glow", Vec::new(), "atlas", crate::profile::Profile::stub(&root)).unwrap();
     for part in glow.chunks(8) {
         render_chunk(&mut e, chunk, None, LOCAL, part, &images, &[]);
         chunk += 1;
@@ -439,7 +459,8 @@ fn scene(cell: (u16, u16)) -> Scene {
     // 3. the full run going on: everything missing in main, on all three nodes
     let sel = e.select("", Scope::Missing);
     let todo = sel.todo.clone();
-    e.start(&todo, "packshot --name full", "", Scope::Missing, "full", nodes, "atlas").unwrap();
+    e.start(&todo, "packshot --name full", "", Scope::Missing, "full", nodes, "atlas", crate::profile::Profile::stub(&root)).unwrap();
+    fixed_origin(&mut e);
     let done_n = 1284;
     let fails = [todo[211], todo[730], todo[1102]];
     let hosts: [(Option<&str>, u64); 3] = [(None, LOCAL), (Some("borealis"), c_bor), (Some("cinder"), c_cin)];
