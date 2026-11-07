@@ -7,17 +7,18 @@
 #   <out>/linux:   packshot (static musl binary), starbreaker/ (the Linux build and COMMIT), the official Blender
 #                  tarball (SHA256 checked, left packed: setup.sh unpacks it on the node), portable/ (config and
 #                  add-on), cli/render.py, targets.json, setup.sh, check.sh, run.sh, README.txt, packshot.example.json
-# portable/ comes from the Linux Blender for both, the add-on from the fork as real files (the Windows Blender's
+# portable/ comes from the Linux Blender for both, the add-on as real files (the Windows Blender's
 # junction cannot be read on Linux).
 #
 #   scripts/packshot-bundle.sh [--platform all|windows|linux] [--out <dir>] [--targets <targets.json>]
 #
 # Blender and StarBreaker as deps.toml pins them: the Blender archive from local/cache/ (scripts/lib/deps.sh), the
-# StarBreaker binaries only when their <binary>.commit stamp is the pinned commit (scripts/starbreaker-build.sh).
+# StarBreaker binaries only when their <binary>.commit stamp is the pinned commit (a missing one comes from the pinned
+# release: scripts/lib/deps.sh install_starbreaker).
 # targets.json (default local/packshot/targets.json) goes into both bundles when it exists, else they carry none.
 # Needs: rustup targets x86_64-unknown-linux-musl and x86_64-pc-windows-gnu, mingw64-gcc (the Windows linker),
 # local/blender/blender-<ver>-linux-x64 (its portable/, from scripts/setup.sh), the StarBreaker builds in
-# local/starbreaker-ps/, curl, sha256sum and rsync.
+# local/starbreaker-ps/ (or the release), curl, sha256sum, unzip and rsync.
 set -euo pipefail
 
 out=local/packshot-bundle
@@ -43,28 +44,21 @@ cd "$(dirname "$0")/.."
 . scripts/lib/deps.sh
 tpl=bundle
 blender_version=$(pin blender version)
-pinned=$(pinned_commit)
 mkdir -p "$out"
 
-# A StarBreaker binary with its stamp, refused unless built from the pinned commit
+# A StarBreaker binary with its stamp at the pinned commit: a missing one comes from the pinned release, a build of
+# another commit is refused
 starbreaker_for() {
-  local bin=$1 stamp
-  if [[ ! -f local/starbreaker-ps/$bin || ! -f local/starbreaker-ps/$bin.commit ]]; then
-    echo "ERROR: local/starbreaker-ps/$bin or its .commit stamp is missing (scripts/starbreaker-build.sh)" >&2
-    exit 1
-  fi
-  stamp=$(cut -d" " -f1 "local/starbreaker-ps/$bin.commit")
-  if [[ $stamp != "$pinned" ]]; then
-    echo "ERROR: local/starbreaker-ps/$bin is $stamp, deps.toml pins $pinned (scripts/starbreaker-build.sh)" >&2
-    exit 1
-  fi
+  local platform=linux
+  if [[ $1 == *.exe ]]; then platform=windows; fi
+  install_starbreaker "$platform" || exit 1
 }
 
 # The add-on as real files: the Linux Blender's portable/ links into the fork
 blender_lin=local/blender/blender-$blender_version-linux-x64
 addon=$blender_lin/portable/scripts/addons/starbreaker_addon
 if ! compgen -G "$addon/*.py" >/dev/null; then
-  echo "ERROR: no add-on in $addon (the symlink into ../starbreaker-ps/blender_addon)" >&2
+  echo "ERROR: no add-on in $addon (scripts/setup.sh links it in)" >&2
   exit 1
 fi
 

@@ -11,7 +11,8 @@
 #   scripts/packshot-bundle.ps1 [-Out local/packshot-bundle] [-Platform all|windows|linux]
 #                               [-Targets local/packshot/targets.json]
 # Blender and StarBreaker as deps.toml pins them: the Blender archives from local/cache/ (scripts/lib/deps.ps1), the
-# StarBreaker binaries only when their <binary>.commit stamp is the pinned commit (scripts/starbreaker-build.ps1),
+# StarBreaker binaries only when their <binary>.commit stamp is the pinned commit (a missing one comes from the pinned
+# release, a build of another commit is refused: scripts/lib/deps.ps1 Install-StarBreaker),
 # portable/ from the pinned local Blender (scripts/setup.ps1). The target list goes into both bundles when it exists,
 # else they carry none.
 param(
@@ -29,18 +30,6 @@ $crate = $root
 New-Item -ItemType Directory -Force -Path $Out | Out-Null
 $doWin = $Platform -in 'all', 'windows'
 $doLin = $Platform -in 'all', 'linux'
-
-# A StarBreaker binary and its stamp, refused unless built from the pinned commit
-function Assert-StarBreaker([string]$bin) {
-  $file = Join-Path $root "local/starbreaker-ps/$bin"
-  if (-not (Test-Path $file) -or -not (Test-Path "$file.commit")) {
-    throw "local/starbreaker-ps/$bin or its .commit stamp is missing (scripts/starbreaker-build.ps1)"
-  }
-  $stamp = ((Get-Content "$file.commit" -Raw).Trim() -split ' ')[0]
-  if ($stamp -ne (Get-PinnedCommit)) {
-    throw "local/starbreaker-ps/$bin is $stamp, deps.toml pins $(Get-PinnedCommit) (scripts/starbreaker-build.ps1)"
-  }
-}
 
 # Mirror a folder: robocopy exit codes < 8 are success (1 = copied, 0 = unchanged)
 function Mirror([string]$src, [string]$dst) {
@@ -62,8 +51,8 @@ $blenderSrc = Get-Item (Join-Path $root "local/blender/blender-$(Get-Pin 'blende
 if (-not (Test-Path (Join-Path $blenderSrc.FullName 'portable/config/userpref.blend'))) {
   throw "$($blenderSrc.FullName) has no set-up portable/ (scripts/setup.ps1)"
 }
-if ($doWin) { Assert-StarBreaker 'starbreaker.exe' }
-if ($doLin) { Assert-StarBreaker 'starbreaker' }
+if ($doWin) { Install-StarBreaker 'windows' }
+if ($doLin) { Install-StarBreaker 'linux' }
 
 # 1. Build
 Push-Location $crate

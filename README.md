@@ -20,7 +20,7 @@ own look.
 | `blender/render.py` | runs inside Blender: pose, fit, light rig, material tweaks, Eevee render, tone curve, PNG |
 | `shim/` | RDSEED shim for Blender on Linux (built by `build.rs`, embedded in the binary) |
 | `bundle/` | templates of the per-OS bundles (setup, check, run, README, cluster config) |
-| `deps.toml` | the pins: Blender version and archive SHA256s, the StarBreaker fork's commit |
+| `deps.toml` | the pins: Blender version and archive SHA256s, the StarBreaker fork's release with its SHA256s and commit |
 | `scripts/` | `setup.{ps1,sh}` (a dev checkout), `starbreaker-build.{ps1,sh}` (the fork), `packshot-bundle.{ps1,sh}` (the bundles) |
 | `docs/` | [`pipeline.md`](docs/pipeline.md) (how everything works, with measurements), `adr/` (decisions) |
 
@@ -58,8 +58,9 @@ Export and materials come from [starbreaker-ps](https://github.com/w00zla/starbr
 | `entity export-batch --stdin` | a long-lived exporter: loads `Data.p4k` and the DataCore once, then exports one entity per stdin line into a decomposed package; a job that fails or panics is answered as a failure and the process goes on |
 | Blender add-on | builds Blender's material node trees from the package's sidecars: layer blends, tint palettes, decals, glass, glow |
 
-Both come from the commit `deps.toml` pins; the build stamps each binary with it and the bundles refuse any other.
-Later the pin becomes a tagged release of the fork ([ADR 0026](docs/adr/0026-starbreaker-by-release-pin.md)).
+Both come from the fork's release `deps.toml` pins ([ADR 0026](docs/adr/0026-starbreaker-by-release-pin.md)): the
+setup and the bundle scripts download its files, check their SHA256 and stamp each binary with the release's commit,
+the one the nodes compare. Building the fork from source is only needed to change it (`--from-source`).
 
 ## Blender
 
@@ -106,8 +107,8 @@ Otherwise no run starts and the TUI shows what differs. `render.py` travels with
 
 - Windows 10/11 or Linux, a GPU with Vulkan (rendering).
 - For exporting: the game's `Data.p4k` with its `build_manifest.id` next to it.
-- To build: Rust 1.89+ and git; for the Linux StarBreaker on Windows also zig and cargo-zigbuild. Blender and the
-  StarBreaker fork come with the bundles, or from `scripts/setup.*` in a checkout.
+- To build: Rust 1.89+ and git. Blender and StarBreaker come with the bundles, or from `scripts/setup.*` in a
+  checkout; building the fork itself (`--from-source`) needs zig and cargo-zigbuild for its Linux binary.
 
 ## Use
 
@@ -139,7 +140,8 @@ One script sets up a checkout exactly as `deps.toml` pins it, and the bundles ar
 ([ADR 0033](docs/adr/0033-one-pin-file-for-dev-and-bundles.md)):
 
 ```sh
-scripts/setup.ps1                                      # Windows (.sh on Linux): fork next to the repo, Blender, add-on, StarBreaker
+scripts/setup.ps1                                      # Windows (.sh on Linux): Blender, add-on and StarBreaker from the pinned release
+scripts/setup.ps1 -FromSource                          # the same with the fork next to the repo: add-on linked into it, StarBreaker built
 cargo run --release -- --render --export               # store in local/packshot/, Blender in local/blender/
 cargo test --release                                   # real-tool tests are #[ignore] and need SC_DATA_P4K
 scripts/starbreaker-build.ps1 -Platform all            # both StarBreaker binaries at the pin (-Commit HEAD to try a fork change)
