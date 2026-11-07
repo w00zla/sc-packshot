@@ -2098,7 +2098,8 @@ fn draw_sets(f: &mut Frame, app: &mut App, area: Rect) {
     let top = app.set_sel.saturating_sub(h.saturating_sub(1).min(h / 2)).min(app.set_rows.len().saturating_sub(h));
     let me = app.engine.me.name.clone();
     let active = app.engine.set.name.clone();
-    let mut lines = vec![Line::from(format!("{:<36}{:<12}{:<16}{:>8}  {:<15}", "Set / run", "Node", "Targets / filter", "Images", "Profile")).fg(DIM)];
+    // the set's size and format right after its image count, in a slot of its own so the counts stay aligned
+    let mut lines = vec![Line::from(format!("{:<36}{:<12}{:<16}{:>8} {:<12}  {:<15}", "Set / run", "Node", "Targets / filter", "Images", "", "Profile")).fg(DIM)];
     let rows: Vec<SetRow> = app.set_rows.iter().skip(top).take(h.saturating_sub(1)).cloned().collect();
     for (i, row) in rows.iter().enumerate() {
         let mut line = match row {
@@ -2114,8 +2115,8 @@ fn draw_sets(f: &mut Frame, app: &mut App, area: Rect) {
                 let targets = s.as_ref().and_then(|s| s.targets.as_ref()).map(|t| format!("{} targets", num(t.count))).unwrap_or_else(|| "no targets".into());
                 spans.push(format!("{:w$}{:<12}{:<16}{:>8}", "", format!("{runs} runs"), targets, num(files), w = 36usize.saturating_sub(used)).fg(DIM));
                 // every run of the set renders at its size and format (ADR 0045)
-                let output = s.as_ref().map(|s| format!("  ({} {})", s.size(), s.format())).unwrap_or_default();
-                spans.push(Span::styled(output, Style::new().fg(DIM)));
+                let output = s.as_ref().map(|s| format!("({} {})", s.size(), s.format())).unwrap_or_default();
+                spans.push(Span::styled(format!(" {output:<12}"), Style::new().fg(DIM)));
                 Line::from(spans)
             }
             SetRow::Run { id, .. } => {
@@ -2135,7 +2136,7 @@ fn draw_sets(f: &mut Frame, app: &mut App, area: Rect) {
                     Span::raw(format!("{:<12.12}", format!("{node}{}", if foreign { " ⇣" } else { "" }))),
                     Span::styled(format!("{:<16.16}", if filter.is_empty() { "all".into() } else { filter }), Style::new().fg(DIM)),
                     Span::raw(format!("{:>8}", num(images))),
-                    Span::raw(format!("  {profile:<15}")),
+                    Span::raw(format!(" {:<12}  {profile:<15}", "")),
                     if running { Span::styled(" running", Style::new().fg(WARN)) } else { "".into() },
                 ])
             }
