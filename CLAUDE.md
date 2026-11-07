@@ -5,8 +5,9 @@ ratatui TUI. Public repository, MIT. Split out of sc-quartermaster (the consumin
 Layout: the Rust crate at the root (`src/`, `build.rs`, `shim/`), `blender/render.py` (the Blender script), `bundle/`
 (bundle templates), `scripts/`, `docs/`.
 
-Technical documentation (export, render look, scheduler, runs and sets, cluster, assessment, bundles, measurements):
-[docs/pipeline.md](docs/pipeline.md).
+Architecture for readers: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). The full technical notes (export, render look, scheduler, runs
+and sets, cluster, assessment, bundles, measurements, known failures, open points) are `.claude/pipeline.md`: local, not in
+git (it left the repository on 2026-11-07; git history has it up to then). Read it before working on an area.
 
 ## Rules
 
@@ -38,6 +39,9 @@ scripts/setup.ps1 [-FromSource] [-SkipStarBreaker]   # (setup.sh --from-source o
 cargo build --release    # the tool
 cargo test --release     # tests with fake tools; real-tool tests are #[ignore]
 SC_DATA_P4K=<Data.p4k> cargo test --release -- --ignored   # real StarBreaker + Blender (Data.p4k with build_manifest.id next to it)
+PACKSHOT_SHOT_FONT=<mono.ttf>[;<fallback.ttf>] [PACKSHOT_SHOT_RENDERS=<a set folder>] cargo test --release tui_screenshots -- --ignored
+#   the README's TUI screenshots docs/assets/tui-*.png from a synthetic state (src/ui/shots.rs); then oxipng -o max --strip safe
+resvg --zoom 2 docs/assets/src/<name>.svg docs/assets/<name>.png   # the ARCHITECTURE.md diagrams from their SVG sources; then oxipng as above
 
 P [--render] [--export] [--filter <terms>] [--scope missing|failed|all] [--set <name>] [--name <run>] [--plain|--serve] [--workers n] [--exporters n]
 #   renders the targets: long-lived processes per node: one `starbreaker entity export-batch --stdin` per export slot (the fork, local/starbreaker-ps;
@@ -84,4 +88,4 @@ builds and publishes), put release, commit and the SHA256s from its SHA256SUMS i
   release's add-on, with `-FromSource` into the fork repo (live at once).
 - Add-on tests: `local/blender/<ver>/5.2/python/bin/python.exe -m unittest discover -s tests -q` in `../starbreaker-ps/blender_addon` (no system Python).
 - Exporter tests with real game data: `SC_DATA_P4K=<Data.p4k> cargo test -p starbreaker-3d` in `../starbreaker-ps`.
-- Render references: the game's own inventory tiles and wiki shots (see `docs/pipeline.md`).
+- Render references: the game's own inventory tiles and wiki shots (see `.claude/pipeline.md`).

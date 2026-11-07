@@ -12,6 +12,13 @@ own look.
 > profiles that make materials and the photo scene replaceable ([ADR 0022](docs/adr/0022-modular-profiles.md)).
 > Decisions and the plan: [`docs/adr/`](docs/adr/README.md).
 
+<p align="center"><img src="docs/assets/tui-run.png" alt="The Run view: a run on three nodes with its workers, throughput, pool and the latest render" width="900"></p>
+
+<table><tr>
+<td><img src="docs/assets/tui-sets.png" alt="The Sets view: sets with their runs, a finished run's images" width="440"></td>
+<td><img src="docs/assets/tui-nodes.png" alt="The Nodes view: the nodes with their workers and assessment, one node's details, the next run" width="440"></td>
+</tr></table>
+
 ## Layout
 
 | Path | What |
@@ -22,17 +29,14 @@ own look.
 | `bundle/` | templates of the per-OS bundles (setup, check, run, README, cluster config) |
 | `deps.toml` | the pins: Blender version and archive SHA256s, the StarBreaker fork's release with its SHA256s and commit |
 | `scripts/` | `setup.{ps1,sh}` (a dev checkout), `starbreaker-build.{ps1,sh}` (the fork), `packshot-bundle.{ps1,sh}` (the bundles) |
-| `docs/` | [`pipeline.md`](docs/pipeline.md) (how everything works, with measurements), `adr/` (decisions) |
+| `docs/` | [`ARCHITECTURE.md`](docs/ARCHITECTURE.md) (how packshot is built), `adr/` (decisions), `assets/` (images) |
 
 ## How it works
 
-```mermaid
-flowchart LR
-    P[(Data.p4k)] --> E[StarBreaker<br/>export-batch --stdin]
-    E -->|scene.blend, meshes,<br/>textures, sidecars| B[Blender<br/>add-on + render.py --stdin]
-    B --> R[run folder<br/>PNG per entity]
-    R --> S[sets/main]
-```
+![Data flow: Data.p4k through StarBreaker and Blender into a run and its set, driven by packshot](docs/assets/arch-overview.png)
+
+The details (material sidecars, modules, an item's way through a run, scheduler, cluster, processes, state check,
+assessment): [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 packshot renders nothing itself. It cuts the selected targets into chunks and hands them to long-lived processes:
 

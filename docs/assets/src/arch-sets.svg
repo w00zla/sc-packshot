@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 560 300" width="560" height="300">
+  <!-- Source of docs/assets/arch-sets.png: set main with its chain of runs and an experiment set branched off it. -->
+  <style>
+    text { font-family: "Segoe UI", "DejaVu Sans", sans-serif; fill: #ffffff; }
+    .mono { font-family: Consolas, "DejaVu Sans Mono", monospace; font-size: 11.5px; fill: #4ee0ff; }
+    .sub { font-size: 12px; fill: #add3eb; }
+    .label { font-size: 11px; fill: #add3eb; }
+    .faint { font-size: 11px; fill: #7f9db1; }
+    .box { fill: #143a52; }
+    .box3 { fill: #194967; }
+    .file { fill: #0a1d29; stroke: #1e4a66; stroke-width: 1; }
+    .flow { stroke: #54adf7; stroke-width: 2; fill: none; }
+  </style>
+  <defs>
+    <marker id="ahk" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#54adf7"/></marker>
+  </defs>
+  <rect width="560" height="300" rx="10" fill="#0f2c3e"/>
+  <text class="label" x="20" y="36">main</text>
+  <rect class="box" x="80" y="20" width="120" height="34" rx="4"/><text class="mono" x="140" y="42" text-anchor="middle">run 1 · all</text>
+  <rect class="box" x="230" y="20" width="120" height="34" rx="4"/><text class="mono" x="290" y="42" text-anchor="middle">run 2 · failed</text>
+  <rect class="box" x="380" y="20" width="120" height="34" rx="4"/><text class="mono" x="440" y="42" text-anchor="middle">run 4 · adopted</text>
+  <path class="flow" d="M200 37 H224" marker-end="url(#ahk)"/><path class="flow" d="M350 37 H374" marker-end="url(#ahk)"/>
+  <text class="label" x="20" y="114">glow-test</text>
+  <rect class="box3" x="230" y="96" width="270" height="34" rx="4"/><text class="mono" x="365" y="118" text-anchor="middle">run 3 · --filter helmet --scope all</text>
+  <path d="M290 54 V92" stroke="#7f9db1" stroke-width="1.4" fill="none" stroke-dasharray="4 4"/>
+  <text class="faint" x="298" y="78">branches off</text>
+  <path d="M500 113 C535 113 535 66 502 50" stroke="#4ee0ff" stroke-width="1.4" fill="none" stroke-dasharray="5 4"/>
+  <text class="label" x="470" y="84">adopt</text>
+  <text class="sub" x="20" y="174">What main shows for three entities</text>
+  <rect class="file" x="20" y="186" width="160" height="34" rx="4"/><text class="mono" x="100" y="208" text-anchor="middle">rifle → run 2</text>
+  <rect class="file" x="200" y="186" width="160" height="34" rx="4"/><text class="mono" x="280" y="208" text-anchor="middle">helmet → run 3</text>
+  <rect class="file" x="380" y="186" width="160" height="34" rx="4"/><text class="mono" x="460" y="208" text-anchor="middle">crate → run 1</text>
+  <text class="faint" x="20" y="248">Per entity the newest run of the chain with an image counts.</text>
+  <text class="faint" x="20" y="268">A run from the middle can be deleted; older ones show through.</text>
+  <text class="faint" x="20" y="288">No storage by content hash: renders are not bit-identical.</text>
+</svg>
