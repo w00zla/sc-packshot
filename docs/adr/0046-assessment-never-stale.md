@@ -16,6 +16,9 @@ changes barely move the throughput, and a sweep takes minutes and the whole mach
   items/s, whatever changed since.
 - The keys are still recorded; when one differs the assessment is shown as stale, with what differs, but still used. A new
   assessment (`--assess` or `b`) replaces the old one.
+- Profile parts are no keys: neither `game-tile` (the look the assessment renders) nor the add-on (the profile's
+  material module, [0025](0025-material-module.md)). The keys are host name, CPU, Blender version, GPU, `render.py` and
+  StarBreaker.
 
 ## Alternatives
 - Fewer keys (only Blender, GPU, StarBreaker): still throws away a measurement the user did not ask to drop.
