@@ -1643,8 +1643,11 @@ mod tests {
         HeldItem { item, package: package.into(), pose: [0.0; 3], rig: "rigs/r.json".into(), files }
     }
 
+    /// (item, failed info) and (items, reason, export) of an Unfetched
+    type Sent = (Vec<(usize, String)>, Vec<(Vec<usize>, String, bool)>);
+
     /// What this node sent its own engine: (item, failed info) and (items, reason, export) of Unfetched
-    fn sent(r: &mut Renderer) -> (Vec<(usize, String)>, Vec<(Vec<usize>, String, bool)>) {
+    fn sent(r: &mut Renderer) -> Sent {
         let (mut failed, mut back) = (Vec::new(), Vec::new());
         for (m, _) in r.local.drain(..) {
             match m {

@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 365" width="1000" height="365">
+  <!-- Source of docs/assets/arch-overview.png (resvg, then oxipng). Data flow: Data.p4k through StarBreaker and Blender into a run and its set, driven by packshot. -->
+  <style>
+    text { font-family: "Segoe UI", "DejaVu Sans", sans-serif; fill: #ffffff; }
+    .title { font-size: 14px; font-weight: 600; }
+    .sub { font-size: 11.5px; fill: #add3eb; }
+    .mono { font-family: Consolas, "DejaVu Sans Mono", monospace; font-size: 11.5px; fill: #4ee0ff; }
+    .label { font-size: 11px; fill: #add3eb; }
+    .faint { font-size: 11px; fill: #7f9db1; }
+    .box { fill: #143a52; }
+    .core { fill: #194967; stroke: #54adf7; stroke-width: 1.5; }
+    .ext { fill: #143a52; stroke: #1ca2b2; stroke-width: 1.2; stroke-dasharray: 5 4; }
+    .file { fill: #0a1d29; stroke: #1e4a66; stroke-width: 1; }
+    .edge { stroke: #7f9db1; stroke-width: 1.4; fill: none; }
+    .flow { stroke: #54adf7; stroke-width: 2; fill: none; }
+    .ctrl { stroke: #4ee0ff; stroke-width: 1.4; fill: none; stroke-dasharray: 5 4; }
+  </style>
+  <defs>
+    <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#54adf7"/></marker>
+    <marker id="ahl" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#4ee0ff"/></marker>
+    <marker id="ahm" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#7f9db1"/></marker>
+  </defs>
+  <rect width="1000" height="365" rx="10" fill="#0f2c3e"/>
+  <rect class="core" x="270" y="16" width="460" height="78" rx="8"/>
+  <text class="title" x="500" y="44" text-anchor="middle">packshot</text>
+  <text class="sub" x="500" y="64" text-anchor="middle">selection · scheduler · cluster · runs and sets · TUI</text>
+  <text class="faint" x="500" y="82" text-anchor="middle">reads pose and light tables from the DataCore itself</text>
+  <rect class="file" x="24" y="34" width="170" height="44" rx="4"/>
+  <text class="mono" x="109" y="54" text-anchor="middle">targets.json</text>
+  <text class="faint" x="109" y="70" text-anchor="middle">target list per set</text>
+  <path class="edge" d="M194 56 H262" marker-end="url(#ahm)"/>
+  <rect class="file" x="24" y="196" width="130" height="82" rx="4"/>
+  <ellipse cx="89" cy="196" rx="65" ry="9" fill="#0a1d29" stroke="#1e4a66"/>
+  <text class="mono" x="89" y="236" text-anchor="middle">Data.p4k</text>
+  <text class="faint" x="89" y="254" text-anchor="middle">game data, local</text>
+  <rect class="ext" x="194" y="196" width="170" height="82" rx="6"/>
+  <text class="title" x="279" y="226" text-anchor="middle">StarBreaker</text>
+  <text class="mono" x="279" y="246" text-anchor="middle">export-batch --stdin</text>
+  <text class="faint" x="279" y="264" text-anchor="middle">the starbreaker-ps fork</text>
+  <rect class="file" x="404" y="196" width="170" height="82" rx="4"/>
+  <text class="title" x="489" y="226" text-anchor="middle">Export folder</text>
+  <text class="mono" x="489" y="246" text-anchor="middle">Packages/… · Data/…</text>
+  <text class="faint" x="489" y="264" text-anchor="middle">scene.blend, meshes, sidecars</text>
+  <rect class="ext" x="614" y="196" width="170" height="82" rx="6"/>
+  <text class="title" x="699" y="226" text-anchor="middle">Blender</text>
+  <text class="mono" x="699" y="246" text-anchor="middle">render.py --stdin</text>
+  <text class="faint" x="699" y="264" text-anchor="middle">the add-on builds materials</text>
+  <rect class="box" x="824" y="196" width="156" height="82" rx="6"/>
+  <text class="title" x="902" y="226" text-anchor="middle">Run → set</text>
+  <text class="mono" x="902" y="246" text-anchor="middle">runs/ · sets/main/</text>
+  <text class="faint" x="902" y="264" text-anchor="middle">one PNG per entity</text>
+  <path class="flow" d="M154 237 H186" marker-end="url(#ah)"/>
+  <path class="flow" d="M364 237 H396" marker-end="url(#ah)"/>
+  <path class="flow" d="M574 237 H606" marker-end="url(#ah)"/>
+  <path class="flow" d="M784 237 H816" marker-end="url(#ah)"/>
+  <path class="ctrl" d="M330 94 V188" marker-end="url(#ahl)"/>
+  <text class="label" x="338" y="150">export chunks</text>
+  <path class="ctrl" d="M650 94 V188" marker-end="url(#ahl)"/>
+  <text class="label" x="658" y="150">render chunks</text>
+  <path class="ctrl" d="M720 94 L880 188" marker-end="url(#ahl)"/>
+  <text class="label" x="808" y="128">stores</text>
+  <path class="edge" d="M110 187 L282 98" marker-end="url(#ahm)"/>
+  <text class="faint" x="132" y="134">DataCore tables</text>
+  <path class="edge" d="M902 278 V302" marker-end="url(#ahm)"/>
+  <rect class="file" x="824" y="306" width="156" height="44" rx="4"/>
+  <text class="sub" x="902" y="324" text-anchor="middle">consumers</text>
+  <text class="mono" x="902" y="340" text-anchor="middle">read sets/main</text>
+</svg>

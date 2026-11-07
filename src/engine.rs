@@ -404,7 +404,7 @@ struct TablesLoad {
     pub started: Instant,
 }
 
-/// State of a foreign set (another node's live) for the scope "missing"
+/// State of a foreign set (another node's main) for the scope "missing"
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Manifest {
     pub from: String,
@@ -824,13 +824,13 @@ impl Engine {
         self.head.as_ref().and(self.remote.as_ref())
     }
 
-    /// For "missing": in the target set of the head node; here also in the fetched live manifest of another node
+    /// For "missing": in the target set of the head node; here also in the fetched main manifest of another node
     pub fn present(&self, t: usize) -> bool {
         if let Some(r) = self.remote_sel() {
             return r.images.contains(&self.targets[t].entity);
         }
         self.has_render(t)
-            || (self.set.name == crate::store::LIVE && self.manifest.as_ref().is_some_and(|m| m.entities.get(&self.targets[t].entity) == Some(&true)))
+            || (self.set.name == crate::store::MAIN && self.manifest.as_ref().is_some_and(|m| m.entities.get(&self.targets[t].entity) == Some(&true)))
     }
 
     pub fn failed_last(&self, t: usize) -> bool {
@@ -1062,9 +1062,9 @@ impl Engine {
         Ok(())
     }
 
-    /// Re-read the target set after store operations (adopt, delete); falls back to live if it is gone
+    /// Re-read the target set after store operations (adopt, delete); falls back to main if it is gone
     pub fn reload_set(&mut self) -> Result<()> {
-        let name = if self.store.sets()?.contains(&self.set.name) { self.set.name.clone() } else { crate::store::LIVE.to_string() };
+        let name = if self.store.sets()?.contains(&self.set.name) { self.set.name.clone() } else { crate::store::MAIN.to_string() };
         self.switch_set(&name)
     }
 

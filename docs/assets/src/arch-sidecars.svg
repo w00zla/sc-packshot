@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 300" width="1000" height="300">
+  <!-- Source of docs/assets/arch-sidecars.png: scene.json points at mesh, sidecar and palette; mesh slots map to sidecar submaterials, those to PNG textures. -->
+  <style>
+    text { font-family: "Segoe UI", "DejaVu Sans", sans-serif; fill: #ffffff; }
+    .title { font-size: 14px; font-weight: 600; }
+    .mono { font-family: Consolas, "DejaVu Sans Mono", monospace; font-size: 11.5px; fill: #4ee0ff; }
+    .label { font-size: 11px; fill: #add3eb; }
+    .faint { font-size: 11px; fill: #7f9db1; }
+    .box { fill: #143a52; }
+    .core { fill: #194967; stroke: #54adf7; stroke-width: 1.5; }
+    .file { fill: #0a1d29; stroke: #1e4a66; stroke-width: 1; }
+    .edge { stroke: #7f9db1; stroke-width: 1.4; fill: none; }
+    .flow { stroke: #54adf7; stroke-width: 2; fill: none; }
+  </style>
+  <defs>
+    <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#54adf7"/></marker>
+    <marker id="ahm" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#7f9db1"/></marker>
+  </defs>
+  <rect width="1000" height="300" rx="10" fill="#0f2c3e"/>
+  <rect class="file" x="20" y="20" width="220" height="118" rx="4"/>
+  <text class="mono" x="36" y="44">scene.json</text>
+  <text class="faint" x="36" y="64">per instance:</text>
+  <text class="label" x="36" y="84">mesh_asset</text>
+  <text class="label" x="36" y="104">material_sidecar</text>
+  <text class="label" x="36" y="124">palette_id</text>
+  <rect class="file" x="20" y="200" width="220" height="70" rx="4"/>
+  <text class="mono" x="36" y="226">palettes.json</text>
+  <text class="faint" x="36" y="246">colours per palette_id,</text>
+  <text class="faint" x="36" y="262">once per package</text>
+  <path class="edge" d="M130 138 V192" marker-end="url(#ahm)"/>
+  <rect class="box" x="300" y="20" width="200" height="118" rx="6"/>
+  <text class="title" x="316" y="44">Mesh (.blend)</text>
+  <text class="faint" x="316" y="64">slot n ↔ submaterial n</text>
+  <text class="mono" x="316" y="88">slot 1</text>
+  <text class="mono" x="316" y="110">slot 2</text>
+  <path class="edge" d="M240 82 H292" marker-end="url(#ahm)"/>
+  <rect class="core" x="560" y="20" width="230" height="250" rx="8"/>
+  <text class="title" x="576" y="44">Sidecar (.materials.json)</text>
+  <text class="faint" x="576" y="64">one per .mtl, shared</text>
+  <rect class="box" x="576" y="76" width="198" height="84" rx="4"/>
+  <text class="mono" x="588" y="96">submaterial 1 · main</text>
+  <text class="label" x="588" y="116">shader family: Illum</text>
+  <text class="label" x="588" y="134">flags · parameters</text>
+  <text class="label" x="588" y="152">texture slots with roles</text>
+  <rect class="box" x="576" y="170" width="198" height="84" rx="4"/>
+  <text class="mono" x="588" y="190">submaterial 2 · …</text>
+  <text class="label" x="588" y="210">layers · palette routing</text>
+  <text class="label" x="588" y="228">decals · screens</text>
+  <text class="label" x="588" y="246">raw .mtl attributes</text>
+  <path class="edge" d="M240 104 C300 250 440 250 552 245" marker-end="url(#ahm)"/>
+  <path class="flow" d="M500 84 H568" marker-end="url(#ah)"/>
+  <path class="flow" d="M500 106 C540 106 530 200 568 200" marker-end="url(#ah)"/>
+  <rect class="file" x="840" y="60" width="140" height="70" rx="4"/>
+  <text class="mono" x="856" y="86">*_diff.png</text>
+  <text class="mono" x="856" y="106">*_ddna.png</text>
+  <text class="faint" x="856" y="122">Data/…/textures/</text>
+  <path class="edge" d="M774 118 H832" marker-end="url(#ahm)"/>
+  <rect class="file" x="840" y="170" width="140" height="70" rx="4"/>
+  <text class="mono" x="856" y="196">*_roughness</text>
+  <text class="faint" x="856" y="214">derived from the</text>
+  <text class="faint" x="856" y="230">DDNA alpha</text>
+  <path class="edge" d="M774 212 H832" marker-end="url(#ahm)"/>
+</svg>

@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 260" width="1000" height="260">
+  <!-- Source of docs/assets/arch-lifecycle.png: an item's states in a run, with the requeue and failure paths. -->
+  <style>
+    text { font-family: "Segoe UI", "DejaVu Sans", sans-serif; fill: #ffffff; }
+    .title { font-size: 14px; font-weight: 600; }
+    .label { font-size: 11px; fill: #add3eb; }
+    .faint { font-size: 11px; fill: #7f9db1; }
+    .box { fill: #143a52; }
+    .flow { stroke: #54adf7; stroke-width: 2; fill: none; }
+    .warn { stroke: #f2b34c; stroke-width: 1.4; fill: none; stroke-dasharray: 4 4; }
+    .fail { stroke: #ff5c6c; stroke-width: 1.4; fill: none; stroke-dasharray: 4 4; }
+  </style>
+  <defs>
+    <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#54adf7"/></marker>
+    <marker id="ahe" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#ff5c6c"/></marker>
+    <marker id="ahw" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#f2b34c"/></marker>
+  </defs>
+  <rect width="1000" height="260" rx="10" fill="#0f2c3e"/>
+  <rect class="box" x="20" y="66" width="150" height="64" rx="6"/><text class="title" x="95" y="94" text-anchor="middle">Open</text><text class="faint" x="95" y="114" text-anchor="middle">in the selection</text>
+  <rect class="box" x="214" y="66" width="160" height="64" rx="6"/><text class="title" x="294" y="94" text-anchor="middle">Export chunk</text><text class="faint" x="294" y="114" text-anchor="middle">export-batch at work</text>
+  <rect class="box" x="418" y="66" width="160" height="64" rx="6"/><text class="title" x="498" y="94" text-anchor="middle">Pool</text><text class="faint" x="498" y="114" text-anchor="middle">held on node X</text>
+  <rect class="box" x="622" y="66" width="160" height="64" rx="6"/><text class="title" x="702" y="94" text-anchor="middle">Render chunk</text><text class="faint" x="702" y="114" text-anchor="middle">fetch · Blender</text>
+  <rect class="box" x="826" y="66" width="154" height="64" rx="6"/><text class="title" x="903" y="94" text-anchor="middle">Done</text><text class="faint" x="903" y="114" text-anchor="middle">PNG in run and set</text>
+  <path class="flow" d="M170 98 H206" marker-end="url(#ah)"/>
+  <path class="flow" d="M374 98 H410" marker-end="url(#ah)"/>
+  <path class="flow" d="M578 98 H614" marker-end="url(#ah)"/>
+  <path class="flow" d="M782 98 H818" marker-end="url(#ah)"/>
+  <path class="warn" d="M294 66 C294 24 95 24 95 60" marker-end="url(#ahw)"/>
+  <text class="label" x="194" y="28" text-anchor="middle">timeout · node gone → back (at most 2×)</text>
+  <path class="warn" d="M702 66 C702 24 498 24 498 60" marker-end="url(#ahw)"/>
+  <text class="label" x="600" y="28" text-anchor="middle">holder unreachable → back into the pool</text>
+  <path class="warn" d="M702 130 C702 176 294 176 294 138" marker-end="url(#ahw)"/>
+  <text class="label" x="498" y="156" text-anchor="middle">holder lost the chunk → export again</text>
+  <rect x="826" y="194" width="154" height="46" rx="6" fill="#143a52"/>
+  <text class="title" x="903" y="222" text-anchor="middle" style="fill:#ff5c6c">Failed</text>
+  <path class="fail" d="M374 130 C430 244 760 244 818 222" marker-end="url(#ahe)"/>
+  <path class="fail" d="M782 118 C800 156 812 176 860 192" marker-end="url(#ahe)"/>
+  <text class="label" x="620" y="252" text-anchor="middle">failures with their reason in run.json and run.log</text>
+</svg>

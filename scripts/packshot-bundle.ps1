@@ -1,19 +1,19 @@
 ﻿# Packs everything the Rust tool packshot needs on another machine, one folder per platform, built on
 # Windows (scripts/packshot-bundle.sh builds the same on Linux):
-#   <Out>/windows: packshot.exe, StarBreaker (our fork), the official Blender zip (SHA256 checked, left packed:
-#                  setup.cmd unpacks it on the node), portable/ (config + add-on), render.py, targets.json, setup.cmd,
-#                  run.cmd, README.txt, packshot.example.json (the Windows texts with CRLF)
-#   <Out>/linux:   packshot (static musl binary), StarBreaker (the Linux build from local/starbreaker-ps/, made on
-#                  Linux), the official Blender tarball (SHA256 checked), portable/ (config + add-on), render.py,
-#                  targets.json, setup.sh and check.sh (unpack and check on the Linux node), run.sh, README.txt,
-#                  packshot.example.json
+#   <Out>/windows: packshot.exe, starbreaker/ (our fork, with COMMIT), addon/starbreaker_addon, cli/render.py,
+#                  blender.pin, targets.json, setup.cmd, check.cmd, run.cmd, README.txt, packshot.example.json (CRLF)
+#   <Out>/linux:   packshot (static musl binary), starbreaker/ (the fork's Linux binary, with COMMIT),
+#                  addon/starbreaker_addon, cli/render.py, blender.pin, targets.json, setup.sh, check.sh, run.sh,
+#                  README.txt, packshot.example.json
+# No Blender in the bundles: setup.cmd / setup.sh take the official archive named in blender.pin (next to them, else
+# from blender.org), check its SHA256 and put portable/ with the add-on into it.
 # Run from the repo root (pwsh or Windows PowerShell 5.1):
 #   scripts/packshot-bundle.ps1 [-Out local/packshot-bundle] [-Platform all|windows|linux]
 #                               [-Targets local/packshot/targets.json]
-# Blender and StarBreaker as deps.toml pins them: the Blender archives from local/cache/ (scripts/lib/deps.ps1), the
-# StarBreaker binaries only when their <binary>.commit stamp is the pinned commit (scripts/starbreaker-build.ps1),
-# portable/ from the pinned local Blender (scripts/setup.ps1). The target list goes into both bundles when it exists,
-# else they carry none.
+# Blender and StarBreaker as deps.toml pins them: the StarBreaker binaries only when their <binary>.commit stamp is the
+# pinned commit (a missing one comes from the pinned release, a build of another commit is refused:
+# scripts/lib/deps.ps1 Install-StarBreaker), the add-on from the pinned release. The target list goes into both
+# bundles when it exists, else they carry none.
 param(
   [string]$Out = 'local/packshot-bundle',
   [ValidateSet('all', 'windows', 'linux')][string]$Platform = 'all',
@@ -24,28 +24,26 @@ $root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 Set-Location $root
 . (Join-Path $root 'scripts/lib/deps.ps1')
 $Out = [System.IO.Path]::GetFullPath((Join-Path $root $Out))
-$tpl = Join-Path $root 'bundle'
+$tpl = Join-Path $root 'templates/bundle'
 $crate = $root
 New-Item -ItemType Directory -Force -Path $Out | Out-Null
 $doWin = $Platform -in 'all', 'windows'
 $doLin = $Platform -in 'all', 'linux'
 
-# A StarBreaker binary and its stamp, refused unless built from the pinned commit
-function Assert-StarBreaker([string]$bin) {
-  $file = Join-Path $root "local/starbreaker-ps/$bin"
-  if (-not (Test-Path $file) -or -not (Test-Path "$file.commit")) {
-    throw "local/starbreaker-ps/$bin or its .commit stamp is missing (scripts/starbreaker-build.ps1)"
+# The pinned release's add-on as real files and the Blender pin for one platform (windows-x64 | linux-x64); what older
+# bundles carried instead (the Blender archive, portable/) goes
+function Add-AddonAndPin([string]$dir, [string]$platform, [switch]$Crlf) {
+  $addon = Get-ReleaseAddon
+  foreach ($old in 'addon', 'portable') {
+    if (Test-Path (Join-Path $dir $old)) { Remove-Item -Recurse -Force (Join-Path $dir $old) }
   }
-  $stamp = ((Get-Content "$file.commit" -Raw).Trim() -split ' ')[0]
-  if ($stamp -ne (Get-PinnedCommit)) {
-    throw "local/starbreaker-ps/$bin is $stamp, deps.toml pins $(Get-PinnedCommit) (scripts/starbreaker-build.ps1)"
-  }
-}
-
-# Mirror a folder: robocopy exit codes < 8 are success (1 = copied, 0 = unchanged)
-function Mirror([string]$src, [string]$dst) {
-  robocopy $src $dst /MIR /XD __pycache__ /NFL /NDL /NJH /NJS /NP | Out-Null
-  if ($LASTEXITCODE -ge 8) { throw "robocopy $src failed ($LASTEXITCODE)" }
+  Get-ChildItem $dir -File -Filter 'blender-*' | Remove-Item -Force
+  New-Item -ItemType Directory -Force -Path (Join-Path $dir 'addon') | Out-Null
+  Copy-Item $addon (Join-Path $dir 'addon/starbreaker_addon') -Recurse
+  Get-ChildItem (Join-Path $dir 'addon') -Recurse -Directory -Filter __pycache__ | Remove-Item -Recurse -Force
+  $nl = if ($Crlf) { "`r`n" } else { "`n" }
+  $pin = "version=$(Get-Pin 'blender' 'version')${nl}sha256=$(Get-Pin 'blender' "sha256-$platform")$nl"
+  [IO.File]::WriteAllText((Join-Path $dir 'blender.pin'), $pin, (New-Object Text.UTF8Encoding $false))
 }
 
 # Copy a template with LF line endings (the .sh need LF, however the template was checked out), -Crlf for the
@@ -57,13 +55,8 @@ function Copy-Template([string]$src, [string]$dst, [switch]$Crlf) {
   [IO.File]::WriteAllText($dst, $text, $enc)
 }
 
-# The pinned local Windows Blender: its portable/ (config and add-on) goes into both bundles
-$blenderSrc = Get-Item (Join-Path $root "local/blender/blender-$(Get-Pin 'blender' 'version')-windows-x64")
-if (-not (Test-Path (Join-Path $blenderSrc.FullName 'portable/config/userpref.blend'))) {
-  throw "$($blenderSrc.FullName) has no set-up portable/ (scripts/setup.ps1)"
-}
-if ($doWin) { Assert-StarBreaker 'starbreaker.exe' }
-if ($doLin) { Assert-StarBreaker 'starbreaker' }
+if ($doWin) { Install-StarBreaker 'windows' }
+if ($doLin) { Install-StarBreaker 'linux' }
 
 # 1. Build
 Push-Location $crate
@@ -101,23 +94,13 @@ if ($doWin) {
   Copy-Item local/starbreaker-ps/starbreaker.exe (Join-Path $win 'starbreaker') -Force
   Copy-Item local/starbreaker-ps/starbreaker.exe.commit (Join-Path $win 'starbreaker/COMMIT') -Force
 
-  # Blender zip, packed (setup.cmd unpacks it); the unpacked blender/ of older bundles goes
-  $zip = Get-BlenderArchive 'windows-x64'
-  if (Test-Path (Join-Path $win 'blender')) { Remove-Item -Recurse -Force (Join-Path $win 'blender') }
-  Get-ChildItem $win -Filter 'blender-*-windows-x64.zip' | Remove-Item -Force
-  Copy-Item $zip $win -Force
-
-  # portable/: config and add-on of the local Blender (the add-on is a junction: robocopy follows it with real files)
-  Mirror (Join-Path $blenderSrc.FullName 'portable') (Join-Path $win 'portable')
-  if (-not (Get-ChildItem (Join-Path $win 'portable/scripts/addons/starbreaker_addon') -Filter *.py -ErrorAction SilentlyContinue)) {
-    throw 'portable/scripts/addons/starbreaker_addon holds no .py files'
-  }
+  Add-AddonAndPin $win 'windows-x64' -Crlf
 
   New-Item -ItemType Directory -Force -Path (Join-Path $win 'cli') | Out-Null
   Copy-Item blender/render.py (Join-Path $win 'cli') -Force
   if ($targets) { Copy-Item $targets (Join-Path $win 'targets.json') -Force }
 
-  foreach ($f in 'setup.cmd', 'run.cmd', 'README.txt') { Copy-Template (Join-Path $tpl "windows/$f") (Join-Path $win $f) -Crlf }
+  foreach ($f in 'setup.cmd', 'check.cmd', 'run.cmd', 'README.txt') { Copy-Template (Join-Path $tpl "windows/$f") (Join-Path $win $f) -Crlf }
   Copy-Template (Join-Path $tpl 'packshot.example.json') (Join-Path $win 'packshot.example.json') -Crlf
   Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $win 'LIESMICH.txt')
 }
@@ -134,17 +117,7 @@ if ($doLin) {
   Copy-Item local/starbreaker-ps/starbreaker (Join-Path $lin 'starbreaker') -Force
   Copy-Item local/starbreaker-ps/starbreaker.commit (Join-Path $lin 'starbreaker/COMMIT') -Force
 
-  # Blender tarball, put into the bundle packed (unpacking on Windows would lose symlinks and exec bits: setup.sh
-  # does that on the Linux node)
-  $tar = Get-BlenderArchive 'linux-x64'
-  Get-ChildItem $lin -Filter 'blender-*-linux-x64.tar.xz' | Remove-Item -Force
-  Copy-Item $tar $lin -Force
-
-  # portable/: config and add-on of the local Blender (the add-on is a junction: robocopy follows it with real files)
-  Mirror (Join-Path $blenderSrc.FullName 'portable') (Join-Path $lin 'portable')
-  if (-not (Get-ChildItem (Join-Path $lin 'portable/scripts/addons/starbreaker_addon') -Filter *.py -ErrorAction SilentlyContinue)) {
-    throw 'portable/scripts/addons/starbreaker_addon holds no .py files'
-  }
+  Add-AddonAndPin $lin 'linux-x64'
 
   New-Item -ItemType Directory -Force -Path (Join-Path $lin 'cli') | Out-Null
   Copy-Item blender/render.py (Join-Path $lin 'cli') -Force
@@ -160,4 +133,4 @@ foreach ($p in @(if ($doWin) { 'windows' }) + @(if ($doLin) { 'linux' })) {
   $mb = [math]::Round(($files | Measure-Object Length -Sum).Sum / 1MB)
   Write-Host "Bundle $p`: $(Join-Path $Out $p) ($mb MB, $($files.Count) files)"
 }
-exit 0  # robocopy's exit code 1 (copied) must not count as a failure
+exit 0

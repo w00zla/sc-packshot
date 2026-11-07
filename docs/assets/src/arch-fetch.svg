@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 480" width="1000" height="480">
+  <!-- Source of docs/assets/arch-fetch.png: a render chunk with items another node holds. -->
+  <style>
+    text { font-family: "Segoe UI", "DejaVu Sans", sans-serif; fill: #ffffff; }
+    .title { font-size: 14px; font-weight: 600; }
+    .mono { font-family: Consolas, "DejaVu Sans Mono", monospace; font-size: 11.5px; fill: #4ee0ff; }
+    .label { font-size: 11.5px; fill: #add3eb; }
+    .box { fill: #143a52; }
+    .core { fill: #194967; stroke: #54adf7; stroke-width: 1.5; }
+    .ext { fill: #143a52; stroke: #1ca2b2; stroke-width: 1.2; stroke-dasharray: 5 4; }
+    .life { stroke: #1e4a66; stroke-width: 1; stroke-dasharray: 3 5; }
+    .msg { stroke: #add3eb; stroke-width: 1.4; fill: none; }
+  </style>
+  <defs>
+    <marker id="ahs" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#add3eb"/></marker>
+  </defs>
+  <rect width="1000" height="480" rx="10" fill="#0f2c3e"/>
+  <rect class="core" x="60" y="18" width="160" height="40" rx="6"/><text class="title" x="140" y="43" text-anchor="middle">Head node A</text>
+  <rect class="box" x="320" y="18" width="160" height="40" rx="6"/><text class="title" x="400" y="43" text-anchor="middle">Renderer C</text>
+  <rect class="box" x="580" y="18" width="160" height="40" rx="6"/><text class="title" x="660" y="43" text-anchor="middle">Holder B</text>
+  <rect class="ext" x="800" y="18" width="160" height="40" rx="6"/><text class="title" x="880" y="43" text-anchor="middle">Blender on C</text>
+  <line class="life" x1="140" y1="58" x2="140" y2="462"/><line class="life" x1="400" y1="58" x2="400" y2="462"/>
+  <line class="life" x1="660" y1="58" x2="660" y2="462"/><line class="life" x1="880" y1="58" x2="880" y2="462"/>
+  <path class="msg" d="M140 90 H394" marker-end="url(#ahs)"/><text class="label" x="160" y="84">1 · render chunk: items and their holders</text>
+  <path class="msg" d="M400 130 H654" marker-end="url(#ahs)"/><text class="label" x="420" y="124">2 · GetItems</text>
+  <path class="msg" d="M660 170 H406" marker-end="url(#ahs)"/><text class="label" x="420" y="164">3 · ItemsInfo: closure, sizes, xxh3 hashes</text>
+  <path class="msg" d="M400 210 H654" marker-end="url(#ahs)"/><text class="label" x="420" y="204">4 · Fetch: only hashes missing in the cache</text>
+  <path class="msg" d="M660 250 H406" marker-end="url(#ahs)"/><text class="label" x="420" y="244">5 · FetchData: the files</text>
+  <rect x="330" y="266" width="140" height="44" rx="4" fill="#0a1d29" stroke="#1e4a66"/>
+  <text class="label" x="400" y="285" text-anchor="middle">6 · linked from</text>
+  <text class="mono" x="400" y="302" text-anchor="middle">cas/ → fetch/</text>
+  <path class="msg" d="M400 330 H874" marker-end="url(#ahs)"/><text class="label" x="420" y="324">7 · one job per item over stdin</text>
+  <path class="msg" d="M880 370 H406" marker-end="url(#ahs)"/><text class="label" x="420" y="364">8 · icon: &lt;png&gt; with phase timings</text>
+  <path class="msg" d="M400 410 H146" marker-end="url(#ahs)"/><text class="label" x="160" y="404">9 · result with the PNG</text>
+  <path class="msg" d="M140 450 H654" marker-end="url(#ahs)"/><text class="label" x="160" y="444">10 · release once the export chunk is done</text>
+</svg>

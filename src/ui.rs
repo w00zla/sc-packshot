@@ -3,7 +3,7 @@
 // them) with throughput, the image preview (Sixel/Kitty/iTerm2, else half blocks; for another node's run the images
 // rendered here). 2 Sets: the sets with their runs, the selected run's result and images on the right, details on i.
 // 3 Nodes: this node and the others with capabilities, disks and details, the state check, fetching runs and the
-// live manifest, the compute assessment (b, this node or another one). Log and errors at the bottom, keys in the last
+// main manifest, the compute assessment (b, this node or another one). Log and errors at the bottom, keys in the last
 // line.
 use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
@@ -23,7 +23,7 @@ use ratatui_image::{Resize, StatefulImage};
 use crate::Args;
 use crate::engine::{Engine, Kind, Level, PHASES, Scope, Selection};
 use crate::net::{Hello, RunStatus, WorkerStatus};
-use crate::store::LIVE;
+use crate::store::MAIN;
 
 const ACCENT: Color = Color::Cyan;
 const OK: Color = Color::Green;
@@ -336,7 +336,7 @@ impl App {
         if self.engine.running() { None } else { self.engine.remote_sel() }
     }
 
-    /// Rows of the Sets view (this node's, or the chosen head node's): live first, then the experiments; each with
+    /// Rows of the Sets view (this node's, or the chosen head node's): main first, then the experiments; each with
     /// its own runs, newest first
     fn refresh_sets(&mut self) {
         let mut sets: Vec<(String, Vec<String>)> = match self.remote_sets() {
@@ -346,7 +346,7 @@ impl App {
                 names.into_iter().map(|n| { let runs = self.engine.store.load_set(&n).map(|s| s.runs).unwrap_or_default(); (n, runs) }).collect()
             }
         };
-        sets.sort_by_key(|(n, _)| (n != LIVE, n.clone()));
+        sets.sort_by_key(|(n, _)| (n != MAIN, n.clone()));
         let mut rows = Vec::new();
         for (n, runs) in sets {
             rows.push(SetRow::Set(n.clone()));
@@ -565,7 +565,7 @@ impl App {
                 }
                 Confirm::Adopt(name) if yes => {
                     match self.engine.store.adopt(&name) {
-                        Ok(n) => self.engine.note(Level::Ok, format!("{n} runs of {name} appended to live")),
+                        Ok(n) => self.engine.note(Level::Ok, format!("{n} runs of {name} appended to main")),
                         Err(e) => self.engine.note(Level::Error, format!("Not adopted: {e:#}")),
                     }
                     let r = self.engine.reload_set();
@@ -611,8 +611,8 @@ impl App {
                     KeyCode::Esc => {}
                     KeyCode::Enter => {
                         let n = field.text.trim().to_string();
-                        match self.engine.store.create_set(&n, LIVE) {
-                            Ok(_) => self.engine.note(Level::Ok, format!("Set {n} created from live")),
+                        match self.engine.store.create_set(&n, MAIN) {
+                            Ok(_) => self.engine.note(Level::Ok, format!("Set {n} created from main")),
                             Err(e) => self.engine.note(Level::Error, format!("Set not created: {e:#}")),
                         }
                         self.refresh_sets();
@@ -795,7 +795,7 @@ impl App {
                     Some(SetRow::Set(n)) | Some(SetRow::Run { set: n, .. }) => n,
                     None => return,
                 };
-                if set != LIVE {
+                if set != MAIN {
                     self.confirm = Some(Confirm::Adopt(set));
                 }
             }
@@ -807,7 +807,7 @@ impl App {
                     };
                     self.confirm = Some(Confirm::DeleteRun { id, text });
                 }
-                Some(SetRow::Set(n)) if n != LIVE => self.confirm = Some(Confirm::DeleteSet(n)),
+                Some(SetRow::Set(n)) if n != MAIN => self.confirm = Some(Confirm::DeleteSet(n)),
                 _ => {}
             },
             _ => {}
@@ -906,8 +906,10 @@ fn boxed(title: impl Into<String>) -> Block<'static> {
     Block::bordered().border_style(Style::new().fg(DIM)).title(Span::styled(format!(" {} ", title.into()), Style::new().fg(ACCENT).add_modifier(Modifier::BOLD)))
 }
 
-/// Height of the bottom row in views 1 and 3 (throughput and pool; the node details): the same, so the views line up
-const BOTTOM_ROW: u16 = 14;
+/// Height of the throughput and pool row at the bottom of view 1
+const METRICS_ROW: u16 = 10;
+/// Height of the node details row at the bottom of view 3: the details take 11 lines
+const DETAILS_ROW: u16 = 14;
 
 fn draw(f: &mut Frame, app: &mut App) {
     let [tabs, rest, log, keys] = Layout::vertical([Constraint::Length(1), Constraint::Fill(2), Constraint::Fill(1), Constraint::Length(1)]).areas(f.area());
@@ -953,7 +955,7 @@ fn draw_dialog(f: &mut Frame, app: &App) {
             Confirm::Abort => ("Abort the run", "Abort the run for all nodes? What is missing stays for the next run.".to_string(), "Enter: abort  ·  any other key: back", true),
             Confirm::DeleteRun { text, .. } => ("Delete run", text.clone(), "Enter: delete  ·  any other key: back", true),
             Confirm::DeleteSet(n) => ("Delete set", format!("Delete set {n} and its runs that no other set uses?"), "Enter: delete  ·  any other key: back", true),
-            Confirm::Adopt(n) => ("Adopt into live", format!("Append the runs of {n} to live? Nothing is rendered."), "Enter: adopt  ·  any other key: back", false),
+            Confirm::Adopt(n) => ("Adopt into main", format!("Append the runs of {n} to main? Nothing is rendered."), "Enter: adopt  ·  any other key: back", false),
             Confirm::ReplaceTargets { text, .. } => ("Replace target list", text.clone(), "Enter: replace  ·  any other key: back", true),
             Confirm::Assess { name, .. } => ("Assess compute", format!("Assess {name}? It takes a few minutes; {name} takes no work meanwhile."), "Enter: assess  ·  any other key: back", false),
             Confirm::AbortAssess { name, .. } => ("Abort the assessment", format!("Abort the assessment going on {}? Nothing of it is saved.", if name == &e.me.name { "here".to_string() } else { format!("on {name}") }), "Enter: abort  ·  any other key: back", true),
@@ -972,7 +974,7 @@ fn draw_dialog(f: &mut Frame, app: &App) {
                 ("Start a run".to_string(), "Enter: start  ·  ←/→ Home End: edit  ·  Esc: back", false)
             }
             Some(Input::NewSet(field)) => {
-                lines.push(Line::from("Branches off live: its runs and its target list. Letters, digits, - and _.").fg(DIM));
+                lines.push(Line::from("Branches off main: its runs and its target list. Letters, digits, - and _.").fg(DIM));
                 lines.push(Line::from(""));
                 let mut l = vec![Span::styled("Name  ", Style::new().fg(DIM))];
                 l.extend(field.spans(inner_w.saturating_sub(6), true));
@@ -1131,7 +1133,7 @@ fn draw_head(f: &mut Frame, app: &App, area: Rect) {
     if s.overwrite > 0 {
         l2.push(Span::styled(format!(", {} of them replaced", num(s.overwrite)), Style::new().fg(WARN)));
     }
-    if let (Some(m), true, None) = (e.manifest.as_ref(), e.set.name == LIVE, e.remote_sel()) {
+    if let (Some(m), true, None) = (e.manifest.as_ref(), e.set.name == MAIN, e.remote_sel()) {
         l2.push(format!("  ·  manifest of {} ({})", m.from, m.at.get(..16).unwrap_or(&m.at).replace('T', " ")).fg(DIM));
     }
     let last_remote = e.remote_run.as_ref().filter(|r| r.status.finished);
@@ -1311,9 +1313,9 @@ fn phase_line(avg: Option<[f64; 5]>) -> Line<'static> {
 
 /// The workers table with its summary, above throughput and pool
 fn workers_panel(f: &mut Frame, app: &App, area: Rect, rows: &[WorkerStatus], gone: &[String], summary: Vec<Line<'static>>, rate_title: String) {
-    // fixed heights, so nothing jumps while workers come and go: throughput and pool as high as the details row of
-    // view 3 (both at the bottom), the workers take the rest
-    let [top, bottom] = Layout::vertical([Constraint::Fill(1), Constraint::Length(BOTTOM_ROW)]).areas(area);
+    // fixed heights, so nothing jumps while workers come and go: throughput and pool at the bottom, the workers take
+    // the rest
+    let [top, bottom] = Layout::vertical([Constraint::Fill(1), Constraint::Length(METRICS_ROW)]).areas(area);
     let block = boxed("Workers");
     let inner = block.inner(top);
     f.render_widget(block, top);
@@ -1708,7 +1710,7 @@ fn draw_nodes(f: &mut Frame, app: &mut App, area: Rect) {
     // the details tile needs 11 lines (node, hardware, disk, workers, holds, assessed, fetch, manifest, app, p4k,
     // Blender),
     // the state tile gets room for a few more nodes
-    let [top, bottom] = Layout::vertical([Constraint::Fill(1), Constraint::Length(BOTTOM_ROW)]).areas(area);
+    let [top, bottom] = Layout::vertical([Constraint::Fill(1), Constraint::Length(DETAILS_ROW)]).areas(area);
     let e = &app.engine;
     // this node with its current counts
     let mut me = e.me.clone();
@@ -2023,7 +2025,7 @@ fn draw_keys(f: &mut Frame, app: &App, area: Rect) {
             (View::Run, false, false) => &[("n", "head node"), ("s", "set"), ("/", "filter"), ("x", "clear"), ("u", "scope"), ("↑↓", "list"), ("Enter", "start"), ("+/-", "render"), ("</>", "export"), ("e", "log"), ("Tab", "view"), ("q", "quit")],
             (View::Sets, true, _) => &[("↑↓", "set/run"), ("i", "details"), ("Tab", "view"), ("q", "abort+quit")],
             (View::Sets, false, _) if app.remote_sets().is_some() => &[("↑↓", "set/run"), ("Enter", "target set there"), ("i", "details"), ("Tab", "view"), ("q", "quit")],
-            (View::Sets, false, _) => &[("↑↓", "set/run"), ("Enter", "target set"), ("n", "new set"), ("t", "target list"), ("l", "to live"), ("x", "delete"), ("i", "details"), ("Tab", "view"), ("q", "quit")],
+            (View::Sets, false, _) => &[("↑↓", "set/run"), ("Enter", "target set"), ("n", "new set"), ("t", "target list"), ("l", "to main"), ("x", "delete"), ("i", "details"), ("Tab", "view"), ("q", "quit")],
             (View::Nodes, _, _) if app.node_sel == 0 => &[("↑↓", "node"), ("m", "drop manifest"), ("b", "assess/abort"), ("Tab", "view"), ("q", if running { "abort+quit" } else { "quit" })],
             (View::Nodes, _, _) => &[("↑↓", "node"), ("h", "fetch runs"), ("m", "fetch manifest"), ("r", "refresh"), ("b", "assess/abort"), ("Tab", "view"), ("q", if running { "abort+quit" } else { "quit" })],
         }
@@ -2035,6 +2037,9 @@ fn draw_keys(f: &mut Frame, app: &App, area: Rect) {
     }
     f.render_widget(Paragraph::new(Line::from(spans)), area);
 }
+
+#[cfg(test)]
+mod shots;
 
 #[cfg(test)]
 mod tests {
@@ -2080,7 +2085,7 @@ mod tests {
         let root = std::env::temp_dir().join(format!("packshot-ui-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         let store = Store::open(&root.join("store")).unwrap();
-        let set = store.load_set(LIVE).unwrap();
+        let set = store.load_set(MAIN).unwrap();
         let me = Hello {
             name: "DRAGONEGG".into(),
             version: "t".into(),
@@ -2114,16 +2119,16 @@ mod tests {
         app.refresh_sets();
 
         let s = screen(&mut app);
-        assert!(!s.contains("Target list for live"), "no dialog at the start: {s}");
+        assert!(!s.contains("Target list for main"), "no dialog at the start: {s}");
         // without a target list: a hint in the run view, Enter opens the dialog
         let saved = app.engine.targets.clone();
         app.engine.use_targets(Vec::new());
         app.refresh();
         let s = screen(&mut app);
-        assert!(s.contains("has no target list yet: Enter chooses one") && !s.contains("Target list for live"), "{s}");
+        assert!(s.contains("has no target list yet: Enter chooses one") && !s.contains("Target list for main"), "{s}");
         app.key(KeyCode::Enter, KeyModifiers::NONE).unwrap();
         let s = screen(&mut app);
-        assert!(s.contains("Target list for live") && s.contains("live has no target list yet") && s.contains("Other file"), "{s}");
+        assert!(s.contains("Target list for main") && s.contains("main has no target list yet") && s.contains("Other file"), "{s}");
         app.input = None;
         app.engine.use_targets(saved);
         app.refresh();
@@ -2132,7 +2137,7 @@ mod tests {
         std::fs::write(root.join("older.json"), serde_json::to_vec(&app.engine.targets).unwrap()).unwrap();
         std::fs::write(root.join("packshot.json"), "{}").unwrap();
         app.engine.targets_file = root.join("targets.json");
-        app.open_targets(LIVE);
+        app.open_targets(MAIN);
         let s = screen(&mut app);
         assert!(s.contains("▸ targets.json") && s.contains("  older.json") && !s.contains("packshot.json"), "{s}");
         if std::env::var("PACKSHOT_SHOW").is_ok() {
@@ -2143,7 +2148,7 @@ mod tests {
         assert!(s.contains("Head node  here") && s.contains("gun_a") && s.contains("2 export · 6 render · 8 cores"), "{s}");
         app.view = View::Nodes;
         let s = screen(&mut app);
-        assert!(s.contains("Next run") && s.contains("on DRAGONEGG · set live · 1 to render") && s.contains("2 workers") && s.contains("6 workers"), "{s}");
+        assert!(s.contains("Next run") && s.contains("on DRAGONEGG · set main · 1 to render") && s.contains("2 workers") && s.contains("6 workers"), "{s}");
         assert!(s.contains("Assessed (b) none") && s.contains("  export 2 · render 6 ") && s.contains("Prerequisites"), "{s}");
         // a stale assessment: the marker and the rates in the workers column (no date), all of it in the details
         app.engine.assessment = Some(crate::assess::Assessment { workers: 6, render: 6.3, exporters: Some(2), export: Some(7.1), date: "2026-11-04T14:02:00+01:00".into(), ..Default::default() });
@@ -2159,12 +2164,12 @@ mod tests {
         }
         app.view = View::Sets;
         let s = screen(&mut app);
-        assert!(s.contains("Sets and runs") && s.contains("live"), "{s}");
+        assert!(s.contains("Sets and runs") && s.contains("main"), "{s}");
 
         // another node as head node, its state not there yet
         app.view = View::Run;
         app.engine.head = Some("servbox".into());
-        let set_list = vec![crate::store::SetSummary { name: "exp".into(), base: Some("live".into()), base_runs: 3, runs: vec!["2026-11-04_10-00_x".into()], files: 120, targets: None }];
+        let set_list = vec![crate::store::SetSummary { name: "exp".into(), base: Some("main".into()), base_runs: 3, runs: vec!["2026-11-04_10-00_x".into()], files: 120, targets: None }];
         app.engine.remote = Some(RemoteSel { node: "servbox".into(), set: "exp".into(), sets: vec!["exp".into()], set_list, stats: None, images: Default::default(), failed: Default::default(), loaded: false });
         let s = screen(&mut app);
         assert!(s.contains("Head node  servbox") && s.contains("waiting for the state of servbox"), "{s}");

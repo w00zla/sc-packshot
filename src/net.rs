@@ -301,7 +301,7 @@ pub enum Msg {
     /// starting node -> head node: the sets there and the state and target list of one set (for the selection)
     GetState { set: String },
     State { set: String, sets: Vec<crate::store::SetSummary>, images: Vec<String>, failed: Vec<String>, targets: Vec<Target>, stats: Option<crate::store::RunStats> },
-    /// starting node -> head node: start a run over these targets into the set (created from live if missing)
+    /// starting node -> head node: start a run over these targets into the set (created from main if missing)
     StartRun { targets: Vec<Target>, set: String, name: String, filter: String, scope: String, line: String },
     Started { run: String },
     /// any node -> head node: abort the run
@@ -663,6 +663,21 @@ fn bind_listener(addr: &str, port: u16) -> io::Result<TcpListener> {
     }
     let _ = port;
     TcpListener::bind(addr)
+}
+
+#[cfg(test)]
+impl Hub {
+    /// A connected node with nothing behind it (the README screenshots): a loopback connection nobody reads, so
+    /// sending to it goes nowhere
+    pub(crate) fn add_fake_peer(&mut self, hello: Hello, addr: &str, ip: &str, outbound: bool) -> u64 {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("loopback");
+        let stream = TcpStream::connect(listener.local_addr().expect("loopback address")).expect("loopback connect");
+        let (tx, _) = channel();
+        let conn = self.next_conn;
+        self.next_conn += 1;
+        self.peers.push(PeerConn { conn, hello, outbound, addr: addr.into(), ip: ip.into(), tx, stream });
+        conn
+    }
 }
 
 impl Hub {
