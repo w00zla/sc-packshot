@@ -179,9 +179,9 @@ A target list says which entities a run renders; every set keeps its own copy. T
 packshot folder (subfolders are fine); `t` in the Sets view lists every list there, `targets/targets.json` first, and
 offers the target picker.
 
-The **target picker** ("From the DataCore …") builds one from the game's entities: a search field (class names with
-`*`, display names, types; terms are or'ed), a tree of item types and subtypes with counts to tick, and the result
-next to them. Ticked types (none ticked: all) narrowed by the search make the list; several exact class names pasted
+The **target picker** ("From Data.p4k / DataCore …") builds one from the game's entities: a search field (class
+names with `*`, display names, types; terms are or'ed), a tree of item types and subtypes with counts to tick, and the
+result next to them. Ticked types (none ticked: all) narrowed by the search make the list; several exact class names pasted
 into the search make exactly that list, e.g. a fixed sample to compare builds. In the type tree `+` ticks every type
 shown and `-` clears all ticks; `Tab` switches between search and tree, `Space` ticks a type or subtype, `→` `←`
 unfold and fold a type's subtypes. `Enter` asks for a name and writes the list as `targets/<name>.json` (letters, digits,

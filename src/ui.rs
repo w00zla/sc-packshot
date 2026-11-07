@@ -1440,7 +1440,7 @@ fn draw_dialog(f: &mut Frame, app: &App) {
                     EntityList::Failed(_) => "not readable (see log)".into(),
                     EntityList::None => "search, types".into(),
                 };
-                let label = format!("{} From the DataCore …", if pick { "▸" } else { " " });
+                let label = format!("{} From Data.p4k / DataCore …", if pick { "▸" } else { " " });
                 let w = inner_w.saturating_sub(state.chars().count() + 1);
                 let mut l = Line::from(format!("{label:<w$} {state}"));
                 if pick {
@@ -2874,7 +2874,7 @@ mod tests {
         std::fs::write(tdir.join("targets.json"), serde_json::to_vec(&vec![Target { uuids: vec!["9".into()], names: None, entity: "x".into(), kind: "Cooler".into(), sub_type: "UNDEFINED".into(), worn: false }]).unwrap()).unwrap();
         app.open_targets(MAIN);
         let s = screen(&mut app);
-        let a = s.find("▸ From the DataCore …").expect(&s);
+        let a = s.find("▸ From Data.p4k / DataCore …").expect(&s);
         let (b, c) = (s[a..].find("──────").map(|i| a + i), s[a..].find("  targets.json").map(|i| a + i));
         assert!(b.is_some() && b < c, "{s}");
         key(&mut app, KeyCode::Enter);
@@ -2884,7 +2884,7 @@ mod tests {
         assert!(app.engine.store.load_set(MAIN).unwrap().targets.is_none(), "cancel took a list");
         std::fs::remove_file(tdir.join("targets.json")).unwrap();
         app.open_targets(MAIN);
-        assert!(screen(&mut app).contains("▸ From the DataCore …"), "{}", screen(&mut app));
+        assert!(screen(&mut app).contains("▸ From Data.p4k / DataCore …"), "{}", screen(&mut app));
         key(&mut app, KeyCode::Enter);
         assert!(matches!(app.input, Some(Input::Pick(_))), "the only choice without files is the picker");
         let s = screen(&mut app);
@@ -3036,7 +3036,7 @@ mod tests {
         app.engine.targets_file = root.join("targets").join("targets.json");
         app.open_targets(MAIN);
         let s = screen(&mut app);
-        assert!(s.contains("▸ From the DataCore …") && s.contains("  targets.json") && s.contains("  older.json") && !s.contains("packshot.json"), "{s}");
+        assert!(s.contains("▸ From Data.p4k / DataCore …") && s.contains("  targets.json") && s.contains("  older.json") && !s.contains("packshot.json"), "{s}");
         if std::env::var("PACKSHOT_SHOW").is_ok() {
             println!("{s}");
         }
