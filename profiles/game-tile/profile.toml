@@ -1,0 +1,19 @@
+# game-tile: the look of the game's inventory tiles; the default profile (ADRs 0022, 0042).
+# A profile is this folder: profile.toml (parameters, optional `scene`) and hooks.py. Its parameters are defaults: a
+# packshot or render.py flag overrides them (--size over size). A hook another profile leaves out runs this one's.
+
+# a .blend template next to this file whose world, cameras and lights stage() may take (game-tile uses none)
+# scene = "scene.blend"
+
+[params]
+size = 256          # px, square
+samples = 16        # Eevee render samples
+format = "png"      # png | jpeg | exr (linear, with bloom, no tone curve)
+quality = 90        # jpeg
+background = [0.0, 0.0, 0.0]  # jpeg: sRGB colour under the item
+fit = 0.7           # pose mode: the largest box edge in m the item is scaled to
+margin = 1.06       # space around the item in the image
+light_scale = 30.0  # watts per game intensity unit
+mirror = false      # camera on +Z instead of -Z (mirrors the image)
+az = 20.0           # without a pose: camera azimuth and elevation in degrees, three suns
+el = 15.0
