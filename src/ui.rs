@@ -5,8 +5,9 @@
 // 3 Nodes: this node and the others with capabilities, disks and details, the state check, fetching runs and the
 // main manifest, the compute assessment (b, this node or another one). Log and errors at the bottom, keys in the last
 // line.
-use std::collections::{HashMap, VecDeque};
+use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::path::PathBuf;
+use std::sync::mpsc::{Receiver, channel};
 use std::time::{Duration, Instant, SystemTime};
 
 use anyhow::Result;
@@ -21,7 +22,8 @@ use ratatui_image::protocol::StatefulProtocol;
 use ratatui_image::{Resize, StatefulImage};
 
 use crate::Args;
-use crate::engine::{Engine, Kind, Level, PHASES, Scope, Selection};
+use crate::engine::{Engine, Kind, Level, PHASES, Scope, Selection, Target};
+use crate::entities::{self, Entity, Ticks};
 use crate::net::{Hello, RunStatus, WorkerStatus};
 use crate::store::MAIN;
 
@@ -114,9 +116,11 @@ impl Field {
     }
 }
 
-/// A file offered as a target list: the JSON files of the packshot folder that hold one
+/// A file offered as a target list: the JSON files in targets/ (and its subfolders) that hold one
 struct TargetsChoice {
     path: PathBuf,
+    /// the path below targets/, with `/`
+    rel: String,
     count: usize,
     at: String,
 }
@@ -126,11 +130,78 @@ enum Input {
     Filter,
     RunName(Field),
     NewSet(Field),
-    /// a set's target list: one of the files of the packshot folder, or another path (`sel` == choices.len())
+    /// a set's target list: the picker (`sel` == 0), one of the files in targets/ (`sel` == 1..=choices.len()) or another
+    /// path (`sel` == choices.len() + 1)
     Targets { set: String, choices: Vec<TargetsChoice>, sel: usize, field: Field },
+    /// the target picker: a target list from the DataCore
+    Pick(Box<Pick>),
+    /// the picker's result asks for a file name; Esc goes back to the picker as it was
+    PickName { pick: Box<Pick>, targets: Vec<Target>, field: Field },
 }
 
-/// A question in a dialog: Enter (or y) confirms, any other key goes back
+/// The JSON files below a folder, subfolders included (a few levels deep)
+fn find_json(dir: &std::path::Path, depth: usize, out: &mut Vec<PathBuf>) {
+    let Ok(rd) = std::fs::read_dir(dir) else { return };
+    for e in rd.flatten() {
+        let p = e.path();
+        match e.file_type() {
+            Ok(t) if t.is_dir() && depth < 8 => find_json(&p, depth + 1, out),
+            Ok(t) if t.is_file() && p.extension().is_some_and(|x| x == "json") => out.push(p),
+            _ => {}
+        }
+    }
+}
+
+/// The target picker (ADR 0039): ticked types (none = all) narrowed by the search; pasted class names are exactly
+/// that list
+struct Pick {
+    set: String,
+    /// the game version of the Data.p4k the list comes from
+    version: String,
+    search: Field,
+    /// keys go to the type tree, else to the search field
+    tree: bool,
+    ticks: Ticks,
+    row: usize,
+    /// the type whose subtypes the tree shows
+    open: Option<String>,
+}
+
+/// The entity list for the picker, read in the background the first time the picker opens
+enum EntityList {
+    None,
+    Loading { rx: Receiver<EntityMsg>, started: Instant, step: String },
+    Ready(Vec<Entity>),
+    Failed(String),
+}
+
+enum EntityMsg {
+    Step(String),
+    Done(Result<Vec<Entity>, String>),
+}
+
+/// The rows of the picker's type tree: (type, subtype for a subtype row, count); the open type with its subtypes.
+/// Ticked types stay (with 0) when the search matches none of them, so they can be unticked
+fn pick_rows(list: &[Entity], p: &Pick) -> Vec<(String, Option<String>, usize)> {
+    let mut counts: BTreeMap<String, (usize, BTreeMap<String, usize>)> = entities::type_counts(list, &p.search.text);
+    for kind in &p.ticks.types {
+        counts.entry(kind.clone()).or_default();
+    }
+    for (kind, sub) in &p.ticks.subs {
+        counts.entry(kind.clone()).or_default().1.entry(sub.clone()).or_default();
+    }
+    let open = p.open.as_deref();
+    let mut rows = Vec::new();
+    for (kind, (n, subs)) in &counts {
+        rows.push((kind.clone(), None, *n));
+        if open == Some(kind.as_str()) {
+            rows.extend(subs.iter().map(|(s, c)| (kind.clone(), Some(s.clone()), *c)));
+        }
+    }
+    rows
+}
+
+/// A question in a dialog: Enter (or y) confirms, Esc goes back, any other key does nothing
 enum Confirm {
     Overwrite,
     Quit,
@@ -144,6 +215,15 @@ enum Confirm {
     Assess { conn: Option<u64>, name: String },
     /// stop the assessment going on there
     AbortAssess { conn: Option<u64>, name: String },
+}
+
+/// A blocking action that waits for the busy dialog to be drawn first
+enum Deferred {
+    NewSet(String),
+    DeleteRun(String),
+    DeleteSet(String),
+    Adopt(String),
+    Targets { set: String, path: String },
 }
 
 /// A row of the Sets view
@@ -163,6 +243,9 @@ struct App {
     sel: Selection,
     selected: usize,
     confirm: Option<Confirm>,
+    /// the text of the busy dialog while a blocking action is pending; the main loop draws it, then runs `deferred`
+    busy: Option<String>,
+    deferred: Option<Deferred>,
     /// run name for the next start (from --name, else asked at the start)
     name: String,
     preview: Option<((PathBuf, Option<SystemTime>), StatefulProtocol)>,
@@ -183,6 +266,8 @@ struct App {
     /// the state of the remote head node seen last (selection recomputed when it changes)
     state_seq: u64,
     line: String,
+    /// the target picker's entity list
+    entities: EntityList,
     quit: bool,
 }
 
@@ -216,6 +301,10 @@ pub fn run(engine: Engine, args: Args) -> Result<()> {
     }
     let mut app = App::new(engine, picker, args);
     app.refresh_sets();
+    // the picker's entity list is a start step (a few seconds the first time per game build, then cached)
+    if app.engine.picker_p4k.is_some() && app.engine.start.iter().any(|c| c.name == "StarBreaker" && c.ok) {
+        app.load_entities();
+    }
     let result = main_loop(&mut terminal, &mut app);
     app.engine.abort();
     app.engine.stop_assess();
@@ -245,7 +334,13 @@ fn main_loop(terminal: &mut DefaultTerminal, app: &mut App) -> Result<()> {
             app.refresh_sets();
         }
         app.sample();
+        app.poll_entities();
         terminal.draw(|f| draw(f, app))?;
+        // a blocking action waits for its busy dialog to be on screen
+        if app.deferred.is_some() {
+            app.run_deferred();
+            continue;
+        }
         if event::poll(Duration::from_millis(100))? && let Event::Key(k) = event::read()? && k.kind == KeyEventKind::Press {
             app.key(k.code, k.modifiers)?;
         }
@@ -266,6 +361,8 @@ impl App {
             sel,
             selected: 0,
             confirm: None,
+            busy: None,
+            deferred: None,
             name: args.name,
             preview: None,
             history_pos: None,
@@ -281,27 +378,172 @@ impl App {
             was_running: false,
             state_seq: 0,
             line: args.line,
+            entities: EntityList::None,
             quit: false,
         }
     }
 
-    /// The dialog for a set's target list, with the target lists in the packshot folder to choose from
+    /// The folder whose target lists the dialog offers (targets/ in the packshot folder); the picker writes its lists there
+    fn targets_dir(&self) -> PathBuf {
+        self.engine.targets_file.parent().map(PathBuf::from).filter(|d| !d.as_os_str().is_empty()).unwrap_or_else(|| self.engine.store.root.join("targets"))
+    }
+
+    /// The dialog for a set's target list, with the target lists in targets/ and its subfolders to choose from
     fn open_targets(&mut self, set: &str) {
-        let dir = self.engine.targets_file.parent().map(PathBuf::from).filter(|d| !d.as_os_str().is_empty()).unwrap_or_else(|| self.engine.store.root.clone());
-        let mut choices: Vec<TargetsChoice> = std::fs::read_dir(&dir)
-            .map(|d| d.flatten().map(|e| e.path()).collect::<Vec<_>>())
-            .unwrap_or_default()
+        let dir = self.targets_dir();
+        let mut files = Vec::new();
+        find_json(&dir, 0, &mut files);
+        let mut choices: Vec<TargetsChoice> = files
             .into_iter()
-            .filter(|p| p.extension().is_some_and(|x| x == "json") && p.file_name().is_some_and(|n| n != "packshot.json"))
+            .filter(|p| p.file_name().is_some_and(|n| n != "packshot.json"))
             .filter_map(|p| {
                 let list: Vec<crate::engine::Target> = serde_json::from_slice(&std::fs::read(&p).ok()?).ok()?;
                 let at = std::fs::metadata(&p).ok()?.modified().ok().map(|t| chrono::DateTime::<chrono::Local>::from(t).format("%Y-%m-%d %H:%M").to_string()).unwrap_or_default();
-                (!list.is_empty()).then_some(TargetsChoice { path: p, count: list.len(), at })
+                let rel = p.strip_prefix(&dir).unwrap_or(&p).components().map(|c| c.as_os_str().to_string_lossy().to_string()).collect::<Vec<_>>().join("/");
+                (!list.is_empty()).then_some(TargetsChoice { path: p, rel, count: list.len(), at })
             })
             .collect();
-        // targets.json in the packshot folder first
-        choices.sort_by_key(|c| (c.path.file_name().is_none_or(|n| n != "targets.json"), c.path.clone()));
+        // targets.json first, then by path
+        choices.sort_by_key(|c| (c.rel != "targets.json", c.rel.clone()));
+        // the picker is the first row and preselected
         self.input = Some(Input::Targets { set: set.to_string(), choices, sel: 0, field: Field::default() });
+    }
+
+    /// The target picker for a set; the entity list starts loading the first time
+    fn open_pick(&mut self, set: String) {
+        self.load_entities();
+        let version = self.engine.picker_p4k.as_deref().and_then(crate::cluster::p4k_version).unwrap_or_default();
+        self.input = Some(Input::Pick(Box::new(Pick { set, version, search: Field::default(), tree: false, ticks: Ticks::default(), row: 0, open: None })));
+    }
+
+    /// Read the entity list in the background (cached per game build after the first time)
+    fn load_entities(&mut self) {
+        if matches!(self.entities, EntityList::Loading { .. } | EntityList::Ready(_)) {
+            return;
+        }
+        let sb = self.engine.cfg.starbreaker.clone();
+        let Some(p4k) = self.engine.picker_p4k.clone() else {
+            self.entities = EntityList::Failed("no Data.p4k with build_manifest.id next to it (--p4k or $SC_DATA_P4K)".into());
+            return;
+        };
+        if sb.as_os_str().is_empty() {
+            self.entities = EntityList::Failed("StarBreaker not found (--starbreaker)".into());
+            return;
+        }
+        let work = self.engine.cfg.work.clone();
+        let (tx, rx) = channel();
+        std::thread::spawn(move || {
+            let step = tx.clone();
+            let res = entities::load(&sb, &p4k, &work, move |s| {
+                let _ = step.send(EntityMsg::Step(s.to_string()));
+            });
+            let _ = tx.send(EntityMsg::Done(res.map_err(|e| format!("{e:#}"))));
+        });
+        self.entities = EntityList::Loading { rx, started: Instant::now(), step: "Reading the entity list …".into() };
+    }
+
+    fn poll_entities(&mut self) {
+        let EntityList::Loading { rx, step, .. } = &mut self.entities else { return };
+        let mut done = None;
+        while let Ok(m) = rx.try_recv() {
+            match m {
+                EntityMsg::Step(s) => *step = s,
+                EntityMsg::Done(r) => done = Some(r),
+            }
+        }
+        match done {
+            Some(Ok(list)) => self.entities = EntityList::Ready(list),
+            Some(Err(e)) => {
+                self.engine.note(Level::Error, format!("Entity list not read: {e}"));
+                self.entities = EntityList::Failed(e);
+            }
+            None => {}
+        }
+    }
+
+    /// The picker's list as targets/<name>.json, then taken as the set's list. A bad name, an existing file or a write
+    /// error is noted and false comes back (the name dialog stays)
+    fn write_picked(&mut self, set: &str, name: &str, targets: &[Target]) -> bool {
+        let dir = self.targets_dir();
+        let stem = name.trim().strip_suffix(".json").unwrap_or(name.trim());
+        if stem.is_empty() || stem.chars().all(|c| c == '.') || !stem.chars().all(|c| c.is_alphanumeric() || matches!(c, '-' | '_' | '.')) {
+            self.engine.note(Level::Error, "Name: letters, digits, - _ and . only");
+            return false;
+        }
+        let path = dir.join(format!("{stem}.json"));
+        if path.exists() {
+            self.engine.note(Level::Error, format!("{stem}.json exists already: choose another name"));
+            return false;
+        }
+        let res = std::fs::create_dir_all(&dir).map_err(anyhow::Error::from).and_then(|_| serde_json::to_vec_pretty(targets).map_err(anyhow::Error::from)).and_then(|b| std::fs::write(&path, b).map_err(anyhow::Error::from));
+        match res {
+            Ok(()) => {
+                self.take_targets(set.to_string(), path.display().to_string());
+                true
+            }
+            Err(e) => {
+                self.engine.note(Level::Error, format!("Target list not written: {e:#}"));
+                false
+            }
+        }
+    }
+
+    /// Show the busy text now; the main loop runs the action after drawing it
+    fn defer(&mut self, text: String, d: Deferred) {
+        self.busy = Some(text);
+        self.deferred = Some(d);
+    }
+
+    fn run_deferred(&mut self) {
+        let Some(d) = self.deferred.take() else { return };
+        match d {
+            Deferred::NewSet(n) => {
+                match self.engine.store.create_set(&n, MAIN) {
+                    Ok(_) => self.engine.note(Level::Ok, format!("Set {n} created from main")),
+                    Err(e) => self.engine.note(Level::Error, format!("Set not created: {e:#}")),
+                }
+                self.refresh_sets();
+            }
+            Deferred::DeleteRun(id) => {
+                let r = self.engine.store.delete_run(&id).map(|_| ());
+                self.report("Run not deleted", r);
+                let r = self.engine.reload_set();
+                self.report("Set not reloaded", r);
+                self.refresh();
+                self.refresh_sets();
+            }
+            Deferred::DeleteSet(name) => {
+                let r = self.engine.store.delete_set(&name).map(|_| ());
+                self.report("Set not deleted", r);
+                let r = self.engine.reload_set();
+                self.report("Set not reloaded", r);
+                self.refresh();
+                self.refresh_sets();
+            }
+            Deferred::Adopt(name) => {
+                match self.engine.store.adopt(&name) {
+                    Ok(n) => self.engine.note(Level::Ok, format!("{n} runs of {name} appended to main")),
+                    Err(e) => self.engine.note(Level::Error, format!("Not adopted: {e:#}")),
+                }
+                let r = self.engine.reload_set();
+                self.report("Set not reloaded", r);
+                self.refresh();
+                self.refresh_sets();
+            }
+            Deferred::Targets { set, path } => self.apply_targets(&set, &path),
+        }
+        self.busy = None;
+    }
+
+    /// Take a file as the set's list; a list there already: ask before replacing it
+    fn take_targets(&mut self, set: String, path: String) {
+        match self.engine.store.load_set(&set).ok().and_then(|s| s.targets) {
+            Some(t) => {
+                let text = format!("Replace the {} targets of {set} with {path}?", num(t.count));
+                self.confirm = Some(Confirm::ReplaceTargets { set, path, text });
+            }
+            None => self.defer("Taking the target list …".into(), Deferred::Targets { set, path }),
+        }
     }
 
     /// Take the file as the set's target list; the selection follows when it is the target set here
@@ -525,27 +767,18 @@ impl App {
     fn key(&mut self, code: KeyCode, mods: KeyModifiers) -> Result<()> {
         if let Some(c) = self.confirm.take() {
             let yes = matches!(code, KeyCode::Enter | KeyCode::Char('y'));
+            // only Esc goes back; any other key leaves the question standing
+            if !yes && code != KeyCode::Esc && !(matches!(c, Confirm::Quit) && code == KeyCode::Char('q')) {
+                self.confirm = Some(c);
+                return Ok(());
+            }
             match c {
                 Confirm::Overwrite if yes => self.start_flow(2)?,
                 Confirm::Quit if yes || code == KeyCode::Char('q') => self.quit = true,
                 Confirm::Abort if yes => self.engine.abort_any(),
-                Confirm::DeleteRun { id, .. } if yes => {
-                    let r = self.engine.store.delete_run(&id).map(|_| ());
-                    self.report("Run not deleted", r);
-                    let r = self.engine.reload_set();
-                    self.report("Set not reloaded", r);
-                    self.refresh();
-                    self.refresh_sets();
-                }
-                Confirm::DeleteSet(name) if yes => {
-                    let r = self.engine.store.delete_set(&name).map(|_| ());
-                    self.report("Set not deleted", r);
-                    let r = self.engine.reload_set();
-                    self.report("Set not reloaded", r);
-                    self.refresh();
-                    self.refresh_sets();
-                }
-                Confirm::ReplaceTargets { set, path, .. } if yes => self.apply_targets(&set, &path),
+                Confirm::DeleteRun { id, .. } if yes => self.defer(format!("Deleting run {id} …"), Deferred::DeleteRun(id)),
+                Confirm::DeleteSet(name) if yes => self.defer(format!("Deleting set {name} …"), Deferred::DeleteSet(name)),
+                Confirm::ReplaceTargets { set, path, .. } if yes => self.defer("Taking the target list …".into(), Deferred::Targets { set, path }),
                 Confirm::Assess { conn, name } if yes => {
                     let r = match conn {
                         None => self.engine.start_assess(None),
@@ -563,16 +796,7 @@ impl App {
                     };
                     self.report(&format!("Assessment of {name} not aborted"), r);
                 }
-                Confirm::Adopt(name) if yes => {
-                    match self.engine.store.adopt(&name) {
-                        Ok(n) => self.engine.note(Level::Ok, format!("{n} runs of {name} appended to main")),
-                        Err(e) => self.engine.note(Level::Error, format!("Not adopted: {e:#}")),
-                    }
-                    let r = self.engine.reload_set();
-                    self.report("Set not reloaded", r);
-                    self.refresh();
-                    self.refresh_sets();
-                }
+                Confirm::Adopt(name) if yes => self.defer(format!("Adopting {name} into main …"), Deferred::Adopt(name)),
                 _ => {}
             }
             return Ok(());
@@ -611,11 +835,7 @@ impl App {
                     KeyCode::Esc => {}
                     KeyCode::Enter => {
                         let n = field.text.trim().to_string();
-                        match self.engine.store.create_set(&n, MAIN) {
-                            Ok(_) => self.engine.note(Level::Ok, format!("Set {n} created from main")),
-                            Err(e) => self.engine.note(Level::Error, format!("Set not created: {e:#}")),
-                        }
-                        self.refresh_sets();
+                        self.defer(format!("Creating set {n} …"), Deferred::NewSet(n));
                     }
                     _ => {
                         field.key(code, mods);
@@ -629,11 +849,15 @@ impl App {
                         self.input = Some(input);
                     }
                     KeyCode::Down => {
-                        *sel = (*sel + 1).min(choices.len());
+                        *sel = (*sel + 1).min(choices.len() + 1);
                         self.input = Some(input);
                     }
+                    KeyCode::Enter if *sel == 0 => {
+                        let set = set.clone();
+                        self.open_pick(set);
+                    }
                     KeyCode::Enter => {
-                        let path = match choices.get(*sel) {
+                        let path = match sel.checked_sub(1).and_then(|i| choices.get(i)) {
                             Some(c) => c.path.display().to_string(),
                             None => field.text.trim().to_string(),
                         };
@@ -642,26 +866,97 @@ impl App {
                             return Ok(());
                         }
                         let set = set.clone();
-                        // a list there already: ask before replacing it
-                        match self.engine.store.load_set(&set).ok().and_then(|s| s.targets) {
-                            Some(t) => {
-                                let text = format!("Replace the {} targets of {set} with {path}?", num(t.count));
-                                self.confirm = Some(Confirm::ReplaceTargets { set, path, text });
-                            }
-                            None => self.apply_targets(&set, &path),
-                        }
+                        self.take_targets(set, path);
                     }
                     _ => {
                         // typing goes into the field for another file
                         if matches!(code, KeyCode::Char(_)) && !mods.contains(KeyModifiers::CONTROL) {
-                            *sel = choices.len();
+                            *sel = choices.len() + 1;
                         }
-                        if *sel == choices.len() {
+                        if *sel == choices.len() + 1 {
                             field.key(code, mods);
                         }
                         self.input = Some(input);
                     }
                 },
+                Input::PickName { pick, targets, field } => match code {
+                    // back to the picker as it was
+                    KeyCode::Esc => {
+                        let Input::PickName { pick, .. } = input else { unreachable!() };
+                        self.input = Some(Input::Pick(pick));
+                    }
+                    KeyCode::Enter => {
+                        let (set, name) = (pick.set.clone(), field.text.clone());
+                        let targets = targets.clone();
+                        if !self.write_picked(&set, &name, &targets) {
+                            self.input = Some(input);
+                        }
+                    }
+                    _ => {
+                        field.key(code, mods);
+                        self.input = Some(input);
+                    }
+                },
+                Input::Pick(p) => {
+                    let rows = match &self.entities {
+                        EntityList::Ready(l) => pick_rows(l, p),
+                        _ => Vec::new(),
+                    };
+                    p.row = p.row.min(rows.len().saturating_sub(1));
+                    let typing = matches!(code, KeyCode::Char(c) if c != ' ' || !p.tree) && !mods.contains(KeyModifiers::CONTROL);
+                    match code {
+                        // cancels the whole dialog
+                        KeyCode::Esc => return Ok(()),
+                        KeyCode::Tab => p.tree = !p.tree,
+                        KeyCode::Up => p.row = p.row.saturating_sub(1),
+                        KeyCode::Down => p.row = (p.row + 1).min(rows.len().saturating_sub(1)),
+                        KeyCode::Right if p.tree => {
+                            if let Some((kind, None, _)) = rows.get(p.row) {
+                                p.open = Some(kind.clone());
+                            }
+                        }
+                        KeyCode::Left if p.tree => {
+                            if let Some((kind, _, _)) = rows.get(p.row) {
+                                p.row = rows.iter().position(|r| &r.0 == kind && r.1.is_none()).unwrap_or(p.row);
+                            }
+                            p.open = None;
+                        }
+                        KeyCode::Char(' ') if p.tree => match rows.get(p.row) {
+                            Some((kind, None, _)) => {
+                                if !p.ticks.types.remove(kind) {
+                                    p.ticks.types.insert(kind.clone());
+                                }
+                            }
+                            Some((kind, Some(sub), _)) => {
+                                let key = (kind.clone(), sub.clone());
+                                if !p.ticks.subs.remove(&key) {
+                                    p.ticks.subs.insert(key);
+                                }
+                            }
+                            None => {}
+                        },
+                        // all types the tree shows / none
+                        KeyCode::Char('+') if p.tree => p.ticks.types.extend(rows.iter().filter(|r| r.1.is_none()).map(|r| r.0.clone())),
+                        KeyCode::Char('-') if p.tree => p.ticks = Ticks::default(),
+                        KeyCode::Enter => {
+                            if let EntityList::Ready(l) = &self.entities {
+                                let targets: Vec<Target> = entities::select(l, &p.ticks, &p.search.text).iter().map(|e| e.target()).collect();
+                                if !targets.is_empty() {
+                                    let Input::Pick(pick) = input else { unreachable!() };
+                                    self.input = Some(Input::PickName { pick, targets, field: Field::default() });
+                                    return Ok(());
+                                }
+                            }
+                        }
+                        // typing goes into the search, from the tree too
+                        _ if typing || !p.tree => {
+                            p.tree = false;
+                            p.search.key(code, mods);
+                        }
+                        _ => {}
+                    }
+                    self.input = Some(input);
+                }
             }
             return Ok(());
         }
@@ -929,7 +1224,15 @@ fn draw(f: &mut Frame, app: &mut App) {
                 draw_own_preview(f, app, right);
             } else {
                 draw_head(f, app, head);
-                draw_list(f, app, left);
+                // the start tile above the list until every start step is done (ADR 0040)
+                match start_lines(app) {
+                    Some(lines) => {
+                        let [tile, list] = Layout::vertical([Constraint::Length(lines.len() as u16 + 2), Constraint::Min(5)]).areas(left);
+                        f.render_widget(Paragraph::new(lines).block(boxed("Start")), tile);
+                        draw_list(f, app, list);
+                    }
+                    None => draw_list(f, app, left),
+                }
                 draw_preview(f, app, right);
             }
         }
@@ -943,22 +1246,33 @@ fn draw(f: &mut Frame, app: &mut App) {
 
 /// A dialog over everything: the questions (confirm) and the inputs other than the filter
 fn draw_dialog(f: &mut Frame, app: &App) {
+    if app.confirm.is_none() && app.busy.is_none() {
+        match app.input.as_ref() {
+            Some(Input::Pick(p)) => return draw_pick(f, app, p),
+            // the name dialog over the picker
+            Some(Input::PickName { pick, .. }) => draw_pick(f, app, pick),
+            _ => {}
+        }
+    }
     let area = f.area();
     let width = 84u16.min(area.width.saturating_sub(4)).max(20);
     let inner_w = width.saturating_sub(4) as usize;
     let e = &app.engine;
     let mut lines: Vec<Line> = Vec::new();
-    let (title, keys, warn) = if let Some(c) = app.confirm.as_ref() {
+    let (title, keys, warn) = if let Some(b) = app.busy.as_ref() {
+        lines.push(Line::from(b.clone()));
+        ("Working".to_string(), "", false)
+    } else if let Some(c) = app.confirm.as_ref() {
         let (title, text, keys, warn) = match c {
-            Confirm::Overwrite => ("Start a run", format!("{} images in set {} will be replaced.", num(app.sel.overwrite), e.target_set()), "Enter: start  ·  any other key: back", true),
-            Confirm::Quit => ("Quit", "A run is going here: quitting aborts it. What is missing stays for the next run.".to_string(), "Enter or q: abort and quit  ·  any other key: back", true),
-            Confirm::Abort => ("Abort the run", "Abort the run for all nodes? What is missing stays for the next run.".to_string(), "Enter: abort  ·  any other key: back", true),
-            Confirm::DeleteRun { text, .. } => ("Delete run", text.clone(), "Enter: delete  ·  any other key: back", true),
-            Confirm::DeleteSet(n) => ("Delete set", format!("Delete set {n} and its runs that no other set uses?"), "Enter: delete  ·  any other key: back", true),
-            Confirm::Adopt(n) => ("Adopt into main", format!("Append the runs of {n} to main? Nothing is rendered."), "Enter: adopt  ·  any other key: back", false),
-            Confirm::ReplaceTargets { text, .. } => ("Replace target list", text.clone(), "Enter: replace  ·  any other key: back", true),
-            Confirm::Assess { name, .. } => ("Assess compute", format!("Assess {name}? It takes a few minutes; {name} takes no work meanwhile."), "Enter: assess  ·  any other key: back", false),
-            Confirm::AbortAssess { name, .. } => ("Abort the assessment", format!("Abort the assessment going on {}? Nothing of it is saved.", if name == &e.me.name { "here".to_string() } else { format!("on {name}") }), "Enter: abort  ·  any other key: back", true),
+            Confirm::Overwrite => ("Start a run", format!("{} images in set {} will be replaced.", num(app.sel.overwrite), e.target_set()), "Enter: start  ·  Esc: back", true),
+            Confirm::Quit => ("Quit", "A run is going here: quitting aborts it. What is missing stays for the next run.".to_string(), "Enter or q: abort and quit  ·  Esc: back", true),
+            Confirm::Abort => ("Abort the run", "Abort the run for all nodes? What is missing stays for the next run.".to_string(), "Enter: abort  ·  Esc: back", true),
+            Confirm::DeleteRun { text, .. } => ("Delete run", text.clone(), "Enter: delete  ·  Esc: back", true),
+            Confirm::DeleteSet(n) => ("Delete set", format!("Delete set {n} and its runs that no other set uses?"), "Enter: delete  ·  Esc: back", true),
+            Confirm::Adopt(n) => ("Adopt into main", format!("Append the runs of {n} to main? Nothing is rendered."), "Enter: adopt  ·  Esc: back", false),
+            Confirm::ReplaceTargets { text, .. } => ("Replace target list", text.clone(), "Enter: replace  ·  Esc: back", true),
+            Confirm::Assess { name, .. } => ("Assess compute", format!("Assess {name}? It takes a few minutes; {name} takes no work meanwhile."), "Enter: assess  ·  Esc: back", false),
+            Confirm::AbortAssess { name, .. } => ("Abort the assessment", format!("Abort the assessment going on {}? Nothing of it is saved.", if name == &e.me.name { "here".to_string() } else { format!("on {name}") }), "Enter: abort  ·  Esc: back", true),
         };
         lines.push(Line::from(text));
         (title.to_string(), keys, warn)
@@ -991,20 +1305,35 @@ fn draw_dialog(f: &mut Frame, app: &App) {
                     .fg(DIM),
                 );
                 lines.push(Line::from(""));
+                let pick = *sel == 0;
+                let state = match &app.entities {
+                    EntityList::Ready(l) => format!("{} entities", num(l.len())),
+                    EntityList::Loading { started, .. } => format!("reading … {:.0} s", started.elapsed().as_secs_f64()),
+                    EntityList::Failed(_) => "not readable (see log)".into(),
+                    EntityList::None => "search, types".into(),
+                };
+                let label = format!("{} From the DataCore …", if pick { "▸" } else { " " });
+                let w = inner_w.saturating_sub(state.chars().count() + 1);
+                let mut l = Line::from(format!("{label:<w$} {state}"));
+                if pick {
+                    l = l.style(Style::new().bg(SEL_BG));
+                }
+                lines.push(l);
+                lines.push(Line::from("─".repeat(inner_w)).fg(DIM));
                 for (i, c) in choices.iter().enumerate() {
-                    let name = c.path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
                     let info = format!("{} targets · {}", num(c.count), c.at);
                     let name_w = inner_w.saturating_sub(info.chars().count() + 3);
-                    let mut l = Line::from(format!("{} {name:<name_w$.name_w$} {info}", if i == *sel { "▸" } else { " " }));
-                    if i == *sel {
+                    let on = i + 1 == *sel;
+                    let mut l = Line::from(format!("{} {:<name_w$.name_w$} {info}", if on { "▸" } else { " " }, c.rel));
+                    if on {
                         l = l.style(Style::new().bg(SEL_BG));
                     }
                     lines.push(l);
                 }
                 if choices.is_empty() {
-                    lines.push(Line::from("  no target list in the packshot folder (put a targets.json there or use --targets)").fg(DIM));
+                    lines.push(Line::from("  no target list in targets/ (put a targets.json there or use --targets)").fg(DIM));
                 }
-                let other = *sel == choices.len();
+                let other = *sel == choices.len() + 1;
                 let label = format!("{} Other file  ", if other { "▸" } else { " " });
                 let mut l = vec![Span::styled(label.clone(), Style::new().fg(if other { Color::Reset } else { DIM }))];
                 l.extend(field.spans(inner_w.saturating_sub(label.chars().count()), other));
@@ -1012,11 +1341,21 @@ fn draw_dialog(f: &mut Frame, app: &App) {
                 let keys = if current.is_none() { "Enter: take  ·  ↑↓: choose  ·  type: other file  ·  Esc: later" } else { "Enter: take  ·  ↑↓: choose  ·  type: other file  ·  Esc: back" };
                 (format!("Target list for {set}"), keys, false)
             }
+            Some(Input::PickName { targets, field, .. }) => {
+                lines.push(Line::from(format!("{} targets go into targets/. Letters, digits, - _ and .; .json is added.", num(targets.len()))).fg(DIM));
+                lines.push(Line::from(""));
+                let mut l = vec![Span::styled("Name  ", Style::new().fg(DIM))];
+                l.extend(field.spans(inner_w.saturating_sub(6), true));
+                lines.push(Line::from(l));
+                ("Name the target list".to_string(), "Enter: save  ·  Esc: back", false)
+            }
             _ => return,
         }
     };
-    lines.push(Line::from(""));
-    lines.push(Line::from(keys).fg(DIM));
+    if !keys.is_empty() {
+        lines.push(Line::from(""));
+        lines.push(Line::from(keys).fg(DIM));
+    }
     // the text wraps: count the rows it takes
     let rows: u16 = lines.iter().map(|l| (l.width().max(1).div_ceil(inner_w.max(1))) as u16).sum();
     let height = (rows + 2).min(area.height);
@@ -1031,6 +1370,136 @@ fn draw_dialog(f: &mut Frame, app: &App) {
     let inner = block.inner(rect);
     f.render_widget(block, rect);
     f.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), inner);
+}
+
+/// The start tile's lines (ADR 0040): the tools and files found at start, the DataCore tables, the entity list;
+/// None once every step is done. ✓ done · ● running · · waiting · ✗ failed (with what to do) · – needs a failed step
+fn start_lines(app: &App) -> Option<Vec<Line<'static>>> {
+    let e = &app.engine;
+    let mut steps: Vec<(&str, Color, String, String, Option<String>)> = e
+        .start
+        .iter()
+        .map(|c| if c.ok { ("✓", OK, c.name.to_string(), c.text.clone(), None) } else { ("✗", BAD, c.name.to_string(), c.text.clone(), c.hint.clone()) })
+        .collect();
+    if e.me.export {
+        steps.push(match (e.tables_ready, e.tables_loading(), &e.tables_error) {
+            (true, _, _) => ("✓", OK, "DataCore".into(), "pose and light tables ready".into(), None),
+            (_, Some(secs), _) => ("●", ACCENT, "DataCore".into(), format!("{}  {secs:.0} s", e.tables_step), None),
+            (_, _, Some(err)) => ("✗", BAD, "DataCore".into(), err.clone(), Some("This node does not export; start packshot again to retry (--refresh-tables reads them anew).".into())),
+            _ => ("·", DIM, "DataCore".into(), "waiting".into(), None),
+        });
+    }
+    let sb_ok = e.start.iter().any(|c| c.name == "StarBreaker" && c.ok);
+    steps.push(match &app.entities {
+        EntityList::Ready(l) => ("✓", OK, "Entity list".into(), format!("{} entities for the target picker", num(l.len())), None),
+        EntityList::Loading { started, step, .. } => ("●", ACCENT, "Entity list".into(), format!("{step}  {:.0} s", started.elapsed().as_secs_f64()), None),
+        EntityList::Failed(err) => ("✗", BAD, "Entity list".into(), err.clone(), Some("The target picker is off; other target lists still work.".into())),
+        EntityList::None if e.picker_p4k.is_none() || !sb_ok => ("–", DIM, "Entity list".into(), "needs StarBreaker and Data.p4k".into(), None),
+        EntityList::None => ("·", DIM, "Entity list".into(), "waiting".into(), None),
+    });
+    if steps.iter().all(|s| s.0 == "✓") {
+        return None;
+    }
+    let mut lines = Vec::new();
+    for (mark, color, name, text, hint) in steps {
+        lines.push(Line::from(vec![Span::styled(format!("{mark} "), Style::new().fg(color)), Span::styled(format!("{name:<13}"), Style::new().fg(DIM)), Span::raw(text)]));
+        if let Some(h) = hint {
+            lines.push(Line::from(format!("  {:<13}{h}", "")).fg(DIM));
+        }
+    }
+    Some(lines)
+}
+
+/// The target picker: search on top, the type tree left, the result right
+fn draw_pick(f: &mut Frame, app: &App, p: &Pick) {
+    let area = f.area();
+    let width = area.width.saturating_sub(4).min(150);
+    let height = area.height.saturating_sub(2).min(44);
+    let rect = Rect { x: area.x + area.width.saturating_sub(width) / 2, y: area.y + area.height.saturating_sub(height) / 2, width, height };
+    f.render_widget(Clear, rect);
+    let title = if p.version.is_empty() { format!(" Target list for {} · from the DataCore ", p.set) } else { format!(" Target list for {} · from the DataCore {} ", p.set, p.version) };
+    let block = Block::bordered()
+        .border_style(Style::new().fg(ACCENT))
+        .title(Span::styled(title, Style::new().fg(ACCENT).add_modifier(Modifier::BOLD)))
+        .padding(ratatui::widgets::Padding::horizontal(1))
+        .style(Style::new().bg(Color::Rgb(22, 24, 28)));
+    let inner = block.inner(rect);
+    f.render_widget(block, rect);
+    let [search, _, body, _, keys] = Layout::vertical([Constraint::Length(1), Constraint::Length(1), Constraint::Fill(1), Constraint::Length(1), Constraint::Length(1)]).areas(inner);
+    let label = "Search  ";
+    let mut l = vec![Span::styled(label, Style::new().fg(if p.tree { DIM } else { Color::Reset }))];
+    l.extend(p.search.spans((search.width as usize).saturating_sub(label.len()), !p.tree));
+    f.render_widget(Paragraph::new(Line::from(l)), search);
+    let take = format!("Enter: take into {}", p.set);
+    f.render_widget(
+        Paragraph::new(Line::from(format!("Tab: search ↔ types  ·  ↑↓: types  ·  →/←: subtypes  ·  Space: tick  ·  +/-: all/no types  ·  {take}  ·  Esc: cancel")).fg(DIM)),
+        keys,
+    );
+    let list = match &app.entities {
+        EntityList::Ready(l) => l,
+        EntityList::Loading { started, step, .. } => {
+            f.render_widget(Paragraph::new(Line::from(format!("{step}  {:.0} s", started.elapsed().as_secs_f64())).fg(DIM)), body);
+            return;
+        }
+        EntityList::Failed(e) => {
+            f.render_widget(Paragraph::new(Line::from(format!("Entity list not read: {e}")).fg(BAD)).wrap(Wrap { trim: false }), body);
+            return;
+        }
+        EntityList::None => return,
+    };
+    let [tree, result] = Layout::horizontal([Constraint::Percentage(40), Constraint::Percentage(60)]).areas(body);
+    // the type tree: counts follow the search
+    let rows = pick_rows(list, p);
+    let h = tree.height as usize;
+    let row = p.row.min(rows.len().saturating_sub(1));
+    let start = (row + 1).saturating_sub(h);
+    let tw = (tree.width as usize).saturating_sub(2);
+    let lines: Vec<Line> = rows
+        .iter()
+        .enumerate()
+        .skip(start)
+        .take(h)
+        .map(|(i, (kind, sub, n))| {
+            let ticked = match sub {
+                None => p.ticks.types.contains(kind),
+                Some(s) => p.ticks.subs.contains(&(kind.clone(), s.clone())),
+            };
+            let tick = if ticked { "[x]" } else { "[ ]" };
+            let (indent, name) = match sub {
+                None => ("", if kind.is_empty() { "(no type)".to_string() } else { kind.clone() }),
+                Some(s) => ("    ", s.clone()),
+            };
+            let count = num(*n);
+            let name_w = tw.saturating_sub(indent.len() + 4 + count.len() + 1);
+            let mut l = Line::from(format!("{indent}{tick} {name:<name_w$.name_w$} {count}"));
+            if i == row {
+                l = l.style(Style::new().bg(if p.tree { SEL_BG } else { Color::Rgb(32, 36, 42) }));
+            } else if *n == 0 {
+                l = l.fg(DIM);
+            }
+            l
+        })
+        .collect();
+    f.render_widget(Paragraph::new(lines), tree);
+    // the result: what Enter takes
+    let picked = entities::select(list, &p.ticks, &p.search.text);
+    let rblock = Block::new().borders(ratatui::widgets::Borders::LEFT).border_style(Style::new().fg(DIM)).padding(ratatui::widgets::Padding::left(1));
+    let rinner = rblock.inner(result);
+    f.render_widget(rblock, result);
+    let rw = rinner.width as usize;
+    let cw = picked.iter().map(|e| e.entity.chars().count()).max().unwrap_or(0).min(rw / 2);
+    let mut lines = vec![Line::from(format!("{} entities", num(picked.len()))).add_modifier(Modifier::BOLD), Line::from("")];
+    let room = (rinner.height as usize).saturating_sub(3);
+    for e in picked.iter().take(room) {
+        let kind = if e.sub_type.is_empty() || e.sub_type == "UNDEFINED" { e.kind.clone() } else { format!("{}/{}", e.kind, e.sub_type) };
+        let name = e.name.clone().unwrap_or_default();
+        let nw = rw.saturating_sub(cw + 2 + kind.chars().count() + 2);
+        lines.push(Line::from(vec![Span::raw(format!("{:<cw$.cw$}  {name:<nw$.nw$}  ", e.entity)), Span::styled(kind, Style::new().fg(DIM))]));
+    }
+    if picked.len() > room {
+        lines.push(Line::from(format!("… {} more", num(picked.len() - room))).fg(DIM));
+    }
+    f.render_widget(Paragraph::new(lines), rinner);
 }
 
 fn draw_tabs(f: &mut Frame, app: &App, area: Rect) {
@@ -2077,6 +2546,141 @@ mod tests {
         assert_eq!(f.text, "Gröe");
     }
 
+    /// The target picker: the first row of the target-list dialog, search and ticks narrow the list, Enter asks for a
+    /// name, writes targets/<name>.json and takes it as the set's list
+    #[test]
+    fn target_picker() {
+        let root = std::env::temp_dir().join(format!("packshot-pick-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let store = Store::open(&root.join("store")).unwrap();
+        let set = store.load_set(MAIN).unwrap();
+        let x = root.join("x");
+        let cfg = Config { p4k: x.clone(), starbreaker: x.clone(), blender: x.clone(), render_script: x, work: root.join("work"), size: 256, chunk: 50, cache_limit: 0 };
+        let mut engine = Engine::new(cfg, Vec::new(), Tables::default(), store, set, None, Hello { name: "N".into(), ..Default::default() }).unwrap();
+        engine.targets_file = root.join("store").join("targets").join("targets.json");
+        let args = Args { filter: String::new(), scope: Scope::Missing, plain: false, serve: false, dry_run: false, workers: 0, exporters: 0, name: String::new(), line: String::new() };
+        let mut app = App::new(engine, Picker::halfblocks(), args);
+        let q = |rows: &[(&str, &str)]| rows.iter().enumerate().map(|(i, (n, v))| format!("EntityClassDefinition.{n}\tid-{i}\t{v}\n")).collect::<String>();
+        let names = [("behr_rifle_ballistic_01", "x"), ("behr_smg_ballistic_01", "x"), ("COOL_Test", "x")];
+        let types = [("behr_rifle_ballistic_01", "WeaponPersonal"), ("behr_smg_ballistic_01", "WeaponPersonal"), ("COOL_Test", "Cooler")];
+        let subs = [("behr_rifle_ballistic_01", "Medium"), ("behr_smg_ballistic_01", "Small"), ("COOL_Test", "UNDEFINED")];
+        app.entities = EntityList::Ready(entities::build(&q(&names), &q(&types), &q(&subs), "", ""));
+
+        let tdir = root.join("store").join("targets");
+        let key = |app: &mut App, k: KeyCode| app.key(k, KeyModifiers::NONE).unwrap();
+        let typed = |app: &mut App, text: &str| text.chars().for_each(|c| app.key(KeyCode::Char(c), KeyModifiers::NONE).unwrap());
+        let ticked = |app: &App| match &app.input {
+            Some(Input::Pick(p)) => {
+                let mut t: Vec<String> = p.ticks.types.iter().cloned().collect();
+                t.sort();
+                t
+            }
+            _ => panic!("no picker"),
+        };
+
+        // the picker is the first row and preselected, a separator under it, then the files; Esc in the picker cancels
+        // the whole dialog and gives the set nothing (with a targets.json offered)
+        std::fs::create_dir_all(&tdir).unwrap();
+        std::fs::write(tdir.join("targets.json"), serde_json::to_vec(&vec![Target { uuids: vec!["9".into()], names: None, entity: "x".into(), kind: "Cooler".into(), sub_type: "UNDEFINED".into(), worn: false }]).unwrap()).unwrap();
+        app.open_targets(MAIN);
+        let s = screen(&mut app);
+        let a = s.find("▸ From the DataCore …").expect(&s);
+        let (b, c) = (s[a..].find("──────").map(|i| a + i), s[a..].find("  targets.json").map(|i| a + i));
+        assert!(b.is_some() && b < c, "{s}");
+        key(&mut app, KeyCode::Enter);
+        assert!(matches!(app.input, Some(Input::Pick(_))));
+        key(&mut app, KeyCode::Esc);
+        assert!(app.input.is_none(), "Esc leaves the dialog");
+        assert!(app.engine.store.load_set(MAIN).unwrap().targets.is_none(), "cancel took a list");
+        std::fs::remove_file(tdir.join("targets.json")).unwrap();
+        app.open_targets(MAIN);
+        assert!(screen(&mut app).contains("▸ From the DataCore …"), "{}", screen(&mut app));
+        key(&mut app, KeyCode::Enter);
+        assert!(matches!(app.input, Some(Input::Pick(_))), "the only choice without files is the picker");
+        let s = screen(&mut app);
+        assert!(s.contains("3 entities") && s.contains("WeaponPersonal") && s.contains("Cooler") && s.contains("+/-"), "{s}");
+        typed(&mut app, "behr_*");
+        assert!(screen(&mut app).contains("2 entities"));
+        // the tree: + ticks the types it shows (Cooler is not among them), - clears
+        key(&mut app, KeyCode::Tab);
+        typed(&mut app, "+");
+        assert_eq!(ticked(&app), ["WeaponPersonal"]);
+        typed(&mut app, "-");
+        assert!(ticked(&app).is_empty());
+        // open WeaponPersonal, tick its Small subtype
+        key(&mut app, KeyCode::Right);
+        let s = screen(&mut app);
+        assert!(s.contains("[ ] Medium") && s.contains("[ ] Small"), "{s}");
+        key(&mut app, KeyCode::Down);
+        key(&mut app, KeyCode::Down);
+        key(&mut app, KeyCode::Char(' '));
+        let s = screen(&mut app);
+        assert!(s.contains("[x] Small") && s.contains("1 entities"), "{s}");
+        // Enter asks for a name; an invalid one stays and writes nothing
+        key(&mut app, KeyCode::Enter);
+        assert!(matches!(app.input, Some(Input::PickName { .. })));
+        assert!(screen(&mut app).contains("Name the target list") && screen(&mut app).contains("Enter: save  ·  Esc: back"));
+        key(&mut app, KeyCode::Enter);
+        typed(&mut app, "bad/name");
+        key(&mut app, KeyCode::Enter);
+        assert!(matches!(app.input, Some(Input::PickName { .. })), "an invalid name keeps the dialog");
+        assert!(!tdir.exists() || std::fs::read_dir(&tdir).unwrap().next().is_none(), "nothing written");
+        // Esc: back to the picker with its state
+        key(&mut app, KeyCode::Esc);
+        assert!(matches!(app.input, Some(Input::Pick(_))));
+        let s = screen(&mut app);
+        assert!(s.contains("[x] Small") && s.contains("1 entities") && s.contains("behr_*"), "{s}");
+        key(&mut app, KeyCode::Enter);
+        typed(&mut app, "mine.json");
+        key(&mut app, KeyCode::Enter);
+        assert!(app.input.is_none());
+        app.run_deferred();
+        let set = app.engine.store.load_set(MAIN).unwrap();
+        assert_eq!(set.targets.map(|t| t.count), Some(1));
+        let list: Vec<Target> = serde_json::from_slice(&std::fs::read(tdir.join("mine.json")).unwrap()).unwrap();
+        assert_eq!((list[0].entity.as_str(), list[0].sub_type.as_str()), ("behr_smg_ballistic_01", "Small"));
+        assert!(std::fs::read_dir(root.join("store")).unwrap().flatten().all(|e| !e.file_name().to_string_lossy().starts_with("picked-")));
+        // the list is offered again, a list in a subfolder with its path; an existing name is refused
+        std::fs::create_dir_all(tdir.join("samples4check")).unwrap();
+        std::fs::copy(tdir.join("mine.json"), tdir.join("samples4check").join("sample-45.json")).unwrap();
+        app.open_targets(MAIN);
+        let s = screen(&mut app);
+        assert!(s.contains("  mine.json") && s.contains("  samples4check/sample-45.json"), "{s}");
+        key(&mut app, KeyCode::Enter);
+        key(&mut app, KeyCode::Enter);
+        typed(&mut app, "mine");
+        key(&mut app, KeyCode::Enter);
+        assert!(matches!(app.input, Some(Input::PickName { .. })), "an existing file keeps the dialog");
+        key(&mut app, KeyCode::Esc);
+        key(&mut app, KeyCode::Esc);
+        assert!(app.input.is_none());
+
+        // a question ignores every key but Enter, y and Esc; the busy dialog shows while a blocking action waits
+        app.confirm = Some(Confirm::Quit);
+        key(&mut app, KeyCode::Char('z'));
+        assert!(app.confirm.is_some() && !app.quit);
+        assert!(screen(&mut app).contains("Esc: back"));
+        key(&mut app, KeyCode::Esc);
+        assert!(app.confirm.is_none() && !app.quit);
+        app.defer("Creating set foo …".into(), Deferred::NewSet("foo".into()));
+        assert!(screen(&mut app).contains("Creating set foo …"));
+        app.run_deferred();
+        assert!(app.busy.is_none() && app.engine.store.sets().unwrap().contains(&"foo".to_string()));
+
+        // the start tile: a failed check with its hint, the steps that need it skipped; gone when all are done
+        app.engine.start = vec![
+            crate::engine::StartCheck { name: "StarBreaker", ok: true, text: "fef53fd0 starbreaker-ps".into(), hint: None },
+            crate::engine::StartCheck { name: "Data.p4k", ok: false, text: "build_manifest.id missing".into(), hint: Some("Copy it next to Data.p4k".into()) },
+        ];
+        app.entities = EntityList::None;
+        let s = screen(&mut app);
+        assert!(s.contains(" Start ") && s.contains("✗ Data.p4k") && s.contains("Copy it next to Data.p4k") && s.contains("– Entity list"), "{s}");
+        app.engine.start.truncate(1);
+        app.entities = EntityList::Ready(Vec::new());
+        assert!(!screen(&mut app).contains(" Start "));
+        let _ = crate::store::remove_tree(&root);
+    }
+
     /// Every view draws on a node with capabilities, without panics and with its parts: the selection with head node
     /// and set, the nodes with the state tile, the sets, the selection against another head node and another node's
     /// run with its workers
@@ -2133,13 +2737,14 @@ mod tests {
         app.engine.use_targets(saved);
         app.refresh();
         // with target lists in the packshot folder: they are offered, targets.json first
-        std::fs::write(root.join("targets.json"), serde_json::to_vec(&app.engine.targets).unwrap()).unwrap();
-        std::fs::write(root.join("older.json"), serde_json::to_vec(&app.engine.targets).unwrap()).unwrap();
-        std::fs::write(root.join("packshot.json"), "{}").unwrap();
-        app.engine.targets_file = root.join("targets.json");
+        std::fs::create_dir_all(root.join("targets")).unwrap();
+        std::fs::write(root.join("targets").join("targets.json"), serde_json::to_vec(&app.engine.targets).unwrap()).unwrap();
+        std::fs::write(root.join("targets").join("older.json"), serde_json::to_vec(&app.engine.targets).unwrap()).unwrap();
+        std::fs::write(root.join("targets").join("packshot.json"), "{}").unwrap();
+        app.engine.targets_file = root.join("targets").join("targets.json");
         app.open_targets(MAIN);
         let s = screen(&mut app);
-        assert!(s.contains("▸ targets.json") && s.contains("  older.json") && !s.contains("packshot.json"), "{s}");
+        assert!(s.contains("▸ From the DataCore …") && s.contains("  targets.json") && s.contains("  older.json") && !s.contains("packshot.json"), "{s}");
         if std::env::var("PACKSHOT_SHOW").is_ok() {
             println!("{s}");
         }

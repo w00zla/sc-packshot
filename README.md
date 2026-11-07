@@ -29,7 +29,7 @@
 ## Requirements
 
 - Windows 10/11 or Linux, a GPU with Vulkan (rendering).
-- For exporting: the game's `Data.p4k` with its `build_manifest.id` next to it.
+- For exporting and the target picker: the game's `Data.p4k` with its `build_manifest.id` next to it.
 - Internet once for the setup (it fetches Blender), or Blender's official archive put next to the bundle.
 - To build from source: Rust 1.89+ and git.
 
@@ -51,7 +51,11 @@ The check matters most on Linux, where a headless Blender depends on the GPU dri
 ICDs, a server without a display); that is where rendering fails first.
 
 `--render` lets this node run Blender, `--export` StarBreaker (it needs `Data.p4k`); a node with neither only starts,
-stores and watches runs. The first start asks for the target list, a JSON file of the entities to render.
+stores and watches runs. The TUI always opens: until everything is in place, a **Start** tile in the Run view shows
+Blender, StarBreaker, `Data.p4k`, the DataCore tables and the entity list, each with its state; what is missing says
+what to do and turns off only what needs it (no Blender: no rendering; no `Data.p4k`: no exports). The first run start
+asks for the target list: a JSON file, or one built in the target picker from the game's entities
+([Target lists](#target-lists)).
 
 Cluster: copy `packshot.example.json` to `packshot.json` on every node, set the same `token`, open port 47950 (TCP and
 UDP) on the LAN; nodes on another subnet go into `peers`. Process counts default to the node's measured
@@ -88,7 +92,7 @@ details.
 | Key | |
 |---|---|
 | `Enter` | make the selected set the target set |
-| `n` · `t` | new set (branches off `main`) · its target list |
+| `n` · `t` | new set (branches off `main`) · its target list (a file, or the target picker) |
 | `l` | adopt an experiment into `main` |
 | `x` | delete a run or a set |
 | `i` | the run's details: add-on, `render.py`, Blender, StarBreaker, `Data.p4k`, workers |
@@ -132,6 +136,7 @@ Export and materials come from [starbreaker-ps](https://github.com/w00zla/starbr
 | Part | What packshot gets |
 |---|---|
 | `entity export-batch --stdin` | a long-lived exporter: loads `Data.p4k` and the DataCore once, then exports one entity per stdin line; a job that fails or panics is answered as a failure and the process goes on |
+| `dcb query --ids` | the entity list for the target picker: record id, class name, item type and subtype in about a second |
 | Blender add-on | builds Blender's material node trees from the package's sidecars: layer blends, tint palettes, decals, glass, glow |
 
 Both come from the fork's release `deps.toml` pins: the setup and the bundle scripts download its files and check
@@ -159,6 +164,33 @@ Every render slot runs one portable Blender of the version `deps.toml` pins (5.2
 Everything packshot writes lives in one folder, laid out the same on every node: `local/packshot/` in a checkout, the
 bundle's own folder in a bundle (`--store`, `--work`). `packshot --report` evaluates a run's event log: throughput,
 phase timings, slot use per node, slowest entities.
+
+### Target lists
+
+A target list is a JSON array, one object per entity to render; every set keeps its own copy. Other tools can write
+it, packshot reads only these fields. The files live in `targets/` of the packshot folder (subfolders are fine, e.g.
+`targets/samples4check/`); the `t` dialog lists every list there, `targets/targets.json` first:
+
+| Field | |
+|---|---|
+| `uuids` | one or more ids; the first names the image file, further ones become hard links to it |
+| `names` | optional, one display name per id (shown in the TUI and the image file name) |
+| `entity` | the entity's class name in the DataCore (`behr_rifle_ballistic_01`) |
+| `type` · `subType` | the item type and subtype (`WeaponPersonal` · `Medium`); they pick pose and light rig |
+| `worn` | optional, `true` renders armour and clothing worn instead of as their loot crate |
+
+```json
+[{ "uuids": ["02d4cd2e-fa98-4086-aee1-6b2dfce8ea27"], "names": ["P4-AR Rifle"], "entity": "behr_rifle_ballistic_01",
+   "type": "WeaponPersonal", "subType": "Medium", "worn": false }]
+```
+
+The **target picker** (`t` in the Sets view, "From the DataCore …") builds one from the game's entities: a search
+field (class names with `*`, display names, types; terms are or'ed), a tree of item types and subtypes with counts to
+tick, and the result next to them. Ticked types (none ticked: all) narrowed by the search make the list; several exact
+class names pasted into the search make exactly that list, e.g. a fixed sample to compare builds. In the type tree `+`
+ticks every type shown and `-` clears all ticks. `Enter` asks for a name and writes the list as `targets/<name>.json`
+(letters, digits, `-`, `_`, `.`; the dialog offers it again) and takes it as the set's list; `Esc` cancels the picker.
+The entity list behind it is read once per game build (a few seconds) and cached in the work folder.
 
 ### Cluster
 

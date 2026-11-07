@@ -1,9 +1,9 @@
 packshot bundle, Windows
 
 Contents: packshot.exe, starbreaker\ (StarBreaker CLI, our fork), addon\ (its Blender add-on), cli\render.py
-(Blender script), blender.pin (the Blender version and its SHA256), targets.json (the target list, if one was
+(Blender script), blender.pin (the Blender version and its SHA256), targets\ (targets.json, the target list, if one was
 bundled), setup.cmd, check.cmd, run.cmd, packshot.example.json (cluster settings). Blender is not in the bundle: setup.cmd gets
-it. The first run start (Enter) asks for main's target list: Enter takes the targets.json next to it; every set keeps
+it. The first run start (Enter) asks for main's target list: choose targets\targets.json in the dialog; every set keeps
 its own (t in view 2 replaces it after a game update).
 
 1. setup.cmd                    the Blender zip blender.pin names: taken from this folder if it is here, else

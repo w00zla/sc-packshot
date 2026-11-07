@@ -128,7 +128,9 @@ the newest run in its chain. Experiments branch off `main` and are adopted by ap
 ```
 packshot.json      cluster: token, port, peers
 assessment.json    measured process counts
-targets.json       template for target lists
+targets/
+  targets.json     template for target lists
+  <name>.json      lists from the picker or by hand (subfolders are listed too)
 runs/
   2026-11-05_14-30_full/
     <Name> (<class>) <uuid>.png   read-only

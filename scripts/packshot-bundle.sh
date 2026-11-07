@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Packs everything packshot (this repository) needs on another node, one folder per platform, built on Linux:
 #   <out>/windows: packshot.exe (cross-built with mingw), starbreaker/ (starbreaker.exe and COMMIT),
-#                  addon/starbreaker_addon, cli/render.py, blender.pin, targets.json, setup.cmd, check.cmd, run.cmd, README.txt,
+#                  addon/starbreaker_addon, cli/render.py, blender.pin, targets/targets.json, setup.cmd, check.cmd, run.cmd, README.txt,
 #                  packshot.example.json (the Windows texts with CRLF)
 #   <out>/linux:   packshot (static musl binary), starbreaker/ (the Linux binary and COMMIT), addon/starbreaker_addon,
-#                  cli/render.py, blender.pin, targets.json, setup.sh, check.sh, run.sh, README.txt,
+#                  cli/render.py, blender.pin, targets/targets.json, setup.sh, check.sh, run.sh, README.txt,
 #                  packshot.example.json
 # No Blender in the bundles: setup.cmd / setup.sh take the official archive named in blender.pin (next to them, else
 # from blender.org), check its SHA256 and put portable/ with the add-on into it.
@@ -13,15 +13,15 @@
 #
 # Blender and StarBreaker as deps.toml pins them: the StarBreaker binaries only when their <binary>.commit stamp is
 # the pinned commit (a missing one comes from the pinned release: scripts/lib/deps.sh install_starbreaker), the
-# add-on from the pinned release. targets.json (default local/packshot/targets.json) goes into both bundles when it
-# exists, else they carry none.
+# add-on from the pinned release. targets.json (default local/packshot/targets/targets.json) goes into both bundles as
+# targets/targets.json when it exists, else they carry none.
 # Needs: rustup targets x86_64-unknown-linux-musl and x86_64-pc-windows-gnu, mingw64-gcc (the Windows linker), curl,
 # sha256sum, unzip and rsync.
 set -euo pipefail
 
 out=local/packshot-bundle
 platform=all
-targets=local/packshot/targets.json
+targets=local/packshot/targets/targets.json
 while [[ $# -gt 0 ]]; do
   case $1 in
     --out) out=$2; shift 2 ;;
@@ -77,7 +77,8 @@ texts() {
   mkdir -p "$dir/cli"
   cp blender/render.py "$dir/cli/"
   if [[ -n $targets ]]; then
-    cp "$targets" "$dir/targets.json"
+    mkdir -p "$dir/targets"
+    cp "$targets" "$dir/targets/targets.json"
   fi
   if [[ $os == windows ]]; then
     crlf "$tpl/windows/README.txt" "$dir/README.txt"

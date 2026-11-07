@@ -376,7 +376,8 @@ fn scene(cell: (u16, u16)) -> Scene {
     let store = Store::open(&root.join("store")).unwrap();
     let all = targets(6734);
     let main = store.load_set(MAIN).unwrap();
-    let tfile = root.join("targets.json");
+    let tfile = root.join("targets").join("targets.json");
+    std::fs::create_dir_all(tfile.parent().unwrap()).unwrap();
     std::fs::write(&tfile, serde_json::to_vec(&all).unwrap()).unwrap();
     let mut main = main;
     store.set_targets(&mut main, &tfile).unwrap();

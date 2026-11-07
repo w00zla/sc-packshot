@@ -14,6 +14,7 @@ mod cas;
 mod cluster;
 mod config;
 mod engine;
+mod entities;
 mod events;
 mod net;
 mod node;
@@ -129,6 +130,13 @@ fn pinned_blender(root: &Path) -> Option<String> {
     None
 }
 
+/// What the start tile says about a StarBreaker: the first line of the COMMIT stamp next to it (commit, name,
+/// version, how it was built)
+fn starbreaker_label(starbreaker: &Path) -> String {
+    let stamp = starbreaker.parent().map(|d| d.join("COMMIT")).and_then(|f| fs::read_to_string(f).ok());
+    stamp.and_then(|s| s.lines().next().map(|l| l.trim().to_string())).filter(|l| !l.is_empty()).unwrap_or_else(|| "no COMMIT stamp next to it".into())
+}
+
 /// SC_DATA_P4K from .env when the environment has none (like node --env-file-if-exists)
 fn env_p4k(root: &Path) -> Option<String> {
     if let Ok(v) = env::var("SC_DATA_P4K") && !v.is_empty() {
@@ -215,7 +223,7 @@ fn real_main() -> Result<()> {
         return Ok(());
     }
 
-    // The packshot folder, laid out like a bundle (packshot.json, targets.json, runs/, sets/, work/): local/packshot in
+    // The packshot folder, laid out like a bundle (packshot.json, targets/, runs/, sets/, work/): local/packshot in
     // the repo, else the current folder (the bundle, next to the exe)
     let root = env::current_dir()?;
     let repo = root.join("local").is_dir() && root.join("blender/render.py").is_file();
@@ -250,36 +258,67 @@ fn real_main() -> Result<()> {
         bail!("--serve works for the other nodes: it needs a token in {}", store_dir.join("packshot.json").display());
     }
 
+    // The TUI always opens: what is missing shows in its start tile and turns off only what needs it (ADR 0040); the
+    // console modes stop with the message instead
+    let tui = !(flags.contains("plain") || flags.contains("dry-run") || serve || assess);
+    let (mut render, mut export) = (render, export);
+    let mut checks: Vec<engine::StartCheck> = Vec::new();
+    let mut check = |name: &'static str, res: std::result::Result<String, (String, String)>| -> Result<bool> {
+        match res {
+            Ok(text) => {
+                checks.push(engine::StartCheck { name, ok: true, text, hint: None });
+                Ok(true)
+            }
+            Err((text, hint)) if tui => {
+                checks.push(engine::StartCheck { name, ok: false, text, hint: Some(hint) });
+                Ok(false)
+            }
+            Err((text, hint)) => bail!("{text}\n{hint}"),
+        }
+    };
+
     // Blender and StarBreaker: every bundle carries both and every node reports their versions (the head node's
     // state is the one all match); needed to work only with --render and --export
     let blender = path("blender").or_else(|| find_blender(&root)).or_else(|| first_existing(&[root.join("blender").join(exe("blender"))]));
-    if render && blender.is_none() {
-        bail!("--render: Blender not found (local/blender/*/ or --blender)");
+    if render || blender.is_some() {
+        let res = match &blender {
+            Some(b) => Ok(format!("{} · {}", engine::blender_version(b), b.parent().unwrap_or(b).display())),
+            None => Err(("not found".to_string(), "Run the setup (scripts/setup.*, in a bundle setup.cmd/setup.sh) or give --blender; this node does not render.".to_string())),
+        };
+        render &= check("Blender", res)?;
     }
     let starbreaker = path("starbreaker").or_else(|| first_existing(&[root.join("local/starbreaker-ps").join(exe("starbreaker")), root.join("starbreaker").join(exe("starbreaker"))]));
-    if export && starbreaker.is_none() {
-        bail!("--export: StarBreaker not found (local/starbreaker-ps/ or --starbreaker)");
-    }
-    // export: Data.p4k with build_manifest.id next to it
-    let p4k = if export {
-        let p4k = path("p4k")
-            .or_else(|| env_p4k(&root).map(PathBuf::from))
-            .or_else(|| first_existing(&[root.join("Data.p4k")]))
-            .ok_or_else(|| anyhow!("--export: no Data.p4k (--p4k, $SC_DATA_P4K or .env)"))?;
-        if !p4k.exists() {
-            bail!("--export: Data.p4k not found: {}", p4k.display());
-        }
+    // the console modes look only at what they need: StarBreaker and Data.p4k for --export
+    let needed = tui || export;
+    let sb_ok = !needed
+        || check(
+        "StarBreaker",
+        match &starbreaker {
+            Some(s) => Ok(format!("{} · {}", starbreaker_label(s), s.parent().unwrap_or(s).display())),
+            None => Err((
+                "not found".to_string(),
+                format!("Run the setup or give --starbreaker; {}.", if export { "this node does not export and the target picker is off" } else { "the target picker is off" }),
+            )),
+        },
+    )?;
+    // Data.p4k with build_manifest.id next to it: for exports and the target picker's entity list
+    let p4k_found = path("p4k").or_else(|| env_p4k(&root).map(PathBuf::from)).or_else(|| first_existing(&[root.join("Data.p4k")]));
+    let off = if export { "this node does not export and the target picker is off" } else { "the target picker is off" };
+    let p4k_res = match &p4k_found {
+        None => Err(("not found".to_string(), format!("Give --p4k or set SC_DATA_P4K; {off}."))),
+        Some(p) if !p.exists() => Err((format!("not found: {}", p.display()), format!("Check the path; {off}."))),
         // the game version comes from build_manifest.id next to Data.p4k: shown everywhere and part of the state
-        if cluster::p4k_version(&p4k).is_none() {
-            bail!(
-                "--export: build_manifest.id missing or unreadable next to {}\nCopy it from the game folder (.../StarCitizen/LIVE/) next to Data.p4k, or point --p4k into the game folder.",
-                p4k.display()
-            );
-        }
-        p4k
-    } else {
-        PathBuf::new()
+        Some(p) => match cluster::p4k_version(p) {
+            Some(v) => Ok(format!("{v} · {}", p.parent().unwrap_or(p).display())),
+            None => Err((
+                format!("build_manifest.id missing or unreadable next to {}", p.display()),
+                format!("Copy it from the game folder (.../StarCitizen/LIVE/) next to Data.p4k, or point --p4k into the game folder, then start packshot again; {off}."),
+            )),
+        },
     };
+    let p4k_ok = !needed || check("Data.p4k", p4k_res)?;
+    export &= sb_ok && p4k_ok;
+    let p4k = if export { p4k_found.clone().unwrap_or_default() } else { PathBuf::new() };
     let render_script = path("render-script")
         .or_else(|| first_existing(&[root.join("blender/render.py"), root.join("cli/render.py")]))
         .ok_or_else(|| anyhow!("render.py not found (--render-script)"))?;
@@ -290,7 +329,7 @@ fn real_main() -> Result<()> {
         None => Scope::Missing,
     };
     // the DataCore tables: in the TUI they load in the background (it shows the steps), the console modes wait
-    let tables_later = export && !(flags.contains("plain") || flags.contains("dry-run") || serve || assess);
+    let tables_later = export && tui;
     let disk_paths = if work.starts_with(&store_dir) { vec![store_dir.clone()] } else { vec![store_dir.clone(), work.clone()] };
     let caps = Caps { render, export, blender: blender.as_deref(), starbreaker: starbreaker.as_deref(), p4k: export.then_some(p4k.as_path()) };
     let mut me = cluster::own_hello(&net_cfg.name, caps, 0, 0, auto.2, cluster::disk_info(&disk_paths));
@@ -325,7 +364,9 @@ fn real_main() -> Result<()> {
         Ok(_) => None,
         Err(e) => Some((engine::Level::Error, format!("Blender: RDSEED shim off: {e:#}"))),
     };
-    if let Some((_, l)) = &shim_line {
+    if let Some((_, l)) = &shim_line
+        && !tui
+    {
         println!("{l}");
     }
     let set_name = opt.get("set").cloned().unwrap_or_else(|| store::MAIN.to_string());
@@ -334,18 +375,23 @@ fn real_main() -> Result<()> {
     } else if args.dry_run {
         bail!("Set {set_name} does not exist (a run would create it from main)");
     } else {
-        println!("New set {set_name}, branched off main");
+        if !tui {
+            println!("New set {set_name}, branched off main");
+        }
         store.create_set(&set_name, store::MAIN)?
     };
-    println!("Set: {} ({} runs) in {}", set.name, set.chain().count(), store.set_dir(&set.name).display());
+    if !tui {
+        println!("Set: {} ({} runs) in {}", set.name, set.chain().count(), store.set_dir(&set.name).display());
+    }
     // the set's target list: --targets gives it a new one
     if let Some(f) = path("targets") {
         store.set_targets(&mut set, &f)?;
     }
     let targets: Vec<Target> = store.load_targets(&set)?;
     match &set.targets {
-        Some(t) => println!("Target list of {}: {} targets (from {})", set.name, targets.len(), t.source),
-        None => println!("Set {} has no target list: runs start once it has one (key t in view 2, or --targets <file>)", set.name),
+        Some(t) if !tui => println!("Target list of {}: {} targets (from {})", set.name, targets.len(), t.source),
+        None if !tui => println!("Set {} has no target list: runs start once it has one (key t in view 2, or --targets <file>)", set.name),
+        _ => {}
     }
     if (args.plain || args.dry_run) && targets.is_empty() {
         bail!("--plain and --dry-run need a target list in set {} (--targets <file>)", set.name);
@@ -364,18 +410,17 @@ fn real_main() -> Result<()> {
         }
     }
     let hub = (net_cfg.enabled() && !args.dry_run).then(|| Hub::new(net_cfg.clone(), me.clone(), work.join("inbox")));
-    if let Some(h) = hub.as_ref() {
-        // only a port that could not be bound is worth a line
-        if let Some(e) = &h.listen_error {
-            println!("Cluster: {e}");
-        }
-        if let Some(e) = &h.discovery_error {
+    // only a port that could not be bound is worth a line (in the TUI it is in the log)
+    if let Some(h) = hub.as_ref().filter(|_| !tui) {
+        for e in [&h.listen_error, &h.discovery_error].into_iter().flatten() {
             println!("Cluster: {e}");
         }
     }
     let mut engine = Engine::new(cfg, targets, tables, store, set, hub, me)?;
     // the file the TUI offers for a set's target list
-    engine.targets_file = store_dir.join("targets.json");
+    engine.targets_file = store_dir.join("targets").join("targets.json");
+    engine.picker_p4k = p4k_found.filter(|p| p.exists() && cluster::p4k_id(p).is_some());
+    engine.start = checks;
     engine.max_renderers = args.workers;
     engine.max_exporters = args.exporters;
     engine.cores = auto.2;
@@ -387,7 +432,9 @@ fn real_main() -> Result<()> {
         (false, false) => "no --render/--export: this node only starts runs, stores them and watches".to_string(),
         _ => format!("{} export · {} render (Blender on Vulkan) · {} physical cores", args.exporters, args.workers, auto.2),
     };
-    println!("{caps_line}");
+    if !tui {
+        println!("{caps_line}");
+    }
     // what printed before the TUI took the screen: into its log as well
     startup_notes(&mut engine, &caps_line, &store_dir, &work);
     if let Some((level, l)) = shim_line {

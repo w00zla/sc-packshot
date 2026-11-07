@@ -1,23 +1,23 @@
 ﻿# Packs everything the Rust tool packshot needs on another machine, one folder per platform, built on
 # Windows (scripts/packshot-bundle.sh builds the same on Linux):
 #   <Out>/windows: packshot.exe, starbreaker/ (our fork, with COMMIT), addon/starbreaker_addon, cli/render.py,
-#                  blender.pin, targets.json, setup.cmd, check.cmd, run.cmd, README.txt, packshot.example.json (CRLF)
+#                  blender.pin, targets/targets.json, setup.cmd, check.cmd, run.cmd, README.txt, packshot.example.json (CRLF)
 #   <Out>/linux:   packshot (static musl binary), starbreaker/ (the fork's Linux binary, with COMMIT),
-#                  addon/starbreaker_addon, cli/render.py, blender.pin, targets.json, setup.sh, check.sh, run.sh,
+#                  addon/starbreaker_addon, cli/render.py, blender.pin, targets/targets.json, setup.sh, check.sh, run.sh,
 #                  README.txt, packshot.example.json
 # No Blender in the bundles: setup.cmd / setup.sh take the official archive named in blender.pin (next to them, else
 # from blender.org), check its SHA256 and put portable/ with the add-on into it.
 # Run from the repo root (pwsh or Windows PowerShell 5.1):
 #   scripts/packshot-bundle.ps1 [-Out local/packshot-bundle] [-Platform all|windows|linux]
-#                               [-Targets local/packshot/targets.json]
+#                               [-Targets local/packshot/targets/targets.json]
 # Blender and StarBreaker as deps.toml pins them: the StarBreaker binaries only when their <binary>.commit stamp is the
 # pinned commit (a missing one comes from the pinned release, a build of another commit is refused:
 # scripts/lib/deps.ps1 Install-StarBreaker), the add-on from the pinned release. The target list goes into both
-# bundles when it exists, else they carry none.
+# bundles as targets/targets.json when it exists, else they carry none.
 param(
   [string]$Out = 'local/packshot-bundle',
   [ValidateSet('all', 'windows', 'linux')][string]$Platform = 'all',
-  [string]$Targets = 'local/packshot/targets.json'
+  [string]$Targets = 'local/packshot/targets/targets.json'
 )
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
@@ -98,7 +98,10 @@ if ($doWin) {
 
   New-Item -ItemType Directory -Force -Path (Join-Path $win 'cli') | Out-Null
   Copy-Item blender/render.py (Join-Path $win 'cli') -Force
-  if ($targets) { Copy-Item $targets (Join-Path $win 'targets.json') -Force }
+  if ($targets) {
+    New-Item -ItemType Directory -Force -Path (Join-Path $win 'targets') | Out-Null
+    Copy-Item $targets (Join-Path $win 'targets/targets.json') -Force
+  }
 
   foreach ($f in 'setup.cmd', 'check.cmd', 'run.cmd', 'README.txt') { Copy-Template (Join-Path $tpl "windows/$f") (Join-Path $win $f) -Crlf }
   Copy-Template (Join-Path $tpl 'packshot.example.json') (Join-Path $win 'packshot.example.json') -Crlf
@@ -121,7 +124,10 @@ if ($doLin) {
 
   New-Item -ItemType Directory -Force -Path (Join-Path $lin 'cli') | Out-Null
   Copy-Item blender/render.py (Join-Path $lin 'cli') -Force
-  if ($targets) { Copy-Item $targets (Join-Path $lin 'targets.json') -Force }
+  if ($targets) {
+    New-Item -ItemType Directory -Force -Path (Join-Path $lin 'targets') | Out-Null
+    Copy-Item $targets (Join-Path $lin 'targets/targets.json') -Force
+  }
   foreach ($f in 'setup.sh', 'check.sh', 'run.sh', 'README.txt') { Copy-Template (Join-Path $tpl "linux/$f") (Join-Path $lin $f) }
   Copy-Template (Join-Path $tpl 'packshot.example.json') (Join-Path $lin 'packshot.example.json')
   Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $lin 'LIESMICH.txt'), (Join-Path $lin 'run-node.sh')
