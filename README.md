@@ -168,8 +168,8 @@ phase timings, slot use per node, slowest entities.
 ### Target lists
 
 A target list is a JSON array, one object per entity to render; every set keeps its own copy. Other tools can write
-it, packshot reads only these fields. The files live in `targets/` of the packshot folder (subfolders are fine, e.g.
-`targets/samples4check/`); the `t` dialog lists every list there, `targets/targets.json` first:
+it, packshot reads only these fields. The files live in `targets/` of the packshot folder (subfolders are fine); the `t`
+dialog lists every list there, `targets/targets.json` first:
 
 | Field | |
 |---|---|

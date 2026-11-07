@@ -2645,11 +2645,11 @@ mod tests {
         assert_eq!((list[0].entity.as_str(), list[0].sub_type.as_str()), ("behr_smg_ballistic_01", "Small"));
         assert!(std::fs::read_dir(root.join("store")).unwrap().flatten().all(|e| !e.file_name().to_string_lossy().starts_with("picked-")));
         // the list is offered again, a list in a subfolder with its path; an existing name is refused
-        std::fs::create_dir_all(tdir.join("samples4check")).unwrap();
-        std::fs::copy(tdir.join("mine.json"), tdir.join("samples4check").join("sample-45.json")).unwrap();
+        std::fs::create_dir_all(tdir.join("sub")).unwrap();
+        std::fs::copy(tdir.join("mine.json"), tdir.join("sub").join("other.json")).unwrap();
         app.open_targets(MAIN);
         let s = screen(&mut app);
-        assert!(s.contains("  mine.json") && s.contains("  samples4check/sample-45.json"), "{s}");
+        assert!(s.contains("  mine.json") && s.contains("  sub/other.json"), "{s}");
         key(&mut app, KeyCode::Enter);
         key(&mut app, KeyCode::Enter);
         typed(&mut app, "mine");
