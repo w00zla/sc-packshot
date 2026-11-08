@@ -289,15 +289,12 @@ Several PCs can work on one run together. To set it up, on every node:
   the same `token` everywhere;
 - open port 47950 (TCP and UDP) on the LAN; nodes on another subnet go into `peers`.
 
-The nodes then find each other and show up in the Nodes view. Every node starts with what it can do now (`--render`,
-`--export`, both or neither). Any node can start a run, on itself or on another node, which then holds it as the
-**head node** and assigns the chunks; one run at a time in the cluster. The starter decides what a run renders, as on
-one node: it picks the target set on the head node (whose target list comes with the set's state), the selection
-(filter, scope) and the profile; the selected targets and the profile's folder go along to the head node, where the
-target set's size and format hold; it sends `render.py`, `default` and the run's profile with every render chunk.
+The nodes then find each other and show up in the Nodes view. Any node can start a run, on itself or on another node,
+which then holds it as the **head node** and hands out the work; one run at a time per cluster. What a run renders
+(target set, filter, scope, profile) is the starter's choice.
 
-Every node must run the same packshot build, Blender, add-on and StarBreaker, and the exporting nodes the same
-`Data.p4k`; otherwise no run starts and the TUI shows what differs.
+All nodes need the same packshot, Blender, add-on and StarBreaker, the exporting ones the same `Data.p4k`; otherwise
+no run starts and the TUI shows what differs.
 
 ## Develop
 
