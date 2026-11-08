@@ -49,10 +49,8 @@ On Linux run the check first: a headless Blender depends on the GPU driver and i
   stores and watches runs.
 - The TUI always opens: a **Start** tile in the Run view shows what is missing and what to do, and turns off only what
   needs it. In a bundle, `run.cmd` / `run.sh` refuse `--render` until the setup has run.
-- Starting a run asks for its name and **profile**, the look (`default`: the game's inventory tiles;
-  [Profiles](#profiles)), and for a target list while the set has none (a JSON file or the target picker;
-  [Target lists](#target-lists)). `--profile` preselects the profile. Size and format are the target set's: every set
-  renders at one size in one format, chosen when it is created ([Runs and sets](#runs-and-sets)).
+- Starting a run asks for its name, its [profile](#profiles) (the look; `default` mimics the game's inventory tiles)
+  and, while the set has none, a [target list](#target-lists). Size and format belong to the set.
 - Several PCs can work on one run as a **cluster** ([Cluster](#cluster)).
 - Process counts follow the node's measured **assessment** (`--assess` or `b`), else a share of its cores.
 
@@ -83,11 +81,8 @@ render.
 
 <p align="center"><a href="docs/assets/tui-sets.png"><img src="docs/assets/tui-sets.png" alt="The Sets view: sets with their runs, a finished run's tile and images" width="600"></a><br><sub>click for full size</sub></p>
 
-The sets with their runs, newest first: per set its size and format (greyed after its image count), per run its
-profile. On the right the selected set's tile, or the selected run's: node, selection, result, workers, `Data.p4k`; its
-profile (its hash, and where it came from unless it is `default`), add-on (default or the profile's copy), scene;
-its components `render.py` (beside the tool, or from `--render-script`), StarBreaker (version+commit) and Blender; its
-images below.
+The sets with their runs, newest first; per set its size and format, per run its profile. On the right the selected
+set's or run's details and the run's images.
 
 | Key | |
 |---|---|
@@ -101,8 +96,7 @@ images below.
 <p align="center"><a href="docs/assets/tui-nodes.png"><img src="docs/assets/tui-nodes.png" alt="The Nodes view: the nodes with their workers and assessment, one node's details, the next run" width="600"></a><br><sub>click for full size</sub></p>
 
 Every node with its workers and assessed speed, its share of the run, runs to fetch, free disk and whether its state
-matches; below the selected node's details (its components: packshot, StarBreaker, Blender) and where and how the next
-run would start.
+matches; below the selected node's details and where the next run would start.
 
 | Key | |
 |---|---|
@@ -129,10 +123,8 @@ packshot renders nothing itself. It cuts the selected targets into chunks and ha
 | Render | `blender -b --python render.py -- --stdin`, one per render slot | the add-on builds the materials, the profile stages and renders one image per entity |
 | Store | packshot | the image in the run's folder, hard-linked into the target set |
 
-Between the stages every exported item waits in the **pool**, held on the node that exported it; a render chunk may
-take items from any holder and fetches their files from there. Chunks shrink towards the end of a run, so all
-processes finish together. The details (material sidecars, modules, an item's way through a run, scheduler, cluster,
-processes, state check, assessment): [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+Between the stages every exported item waits in the **pool** on the node that exported it; a render chunk fetches
+its files from there. Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ### StarBreaker
 
@@ -147,31 +139,28 @@ Export and materials come from [starbreaker-ps](https://github.com/w00zla/starbr
 | `p4k extract` | the English `global.ini`, for the entities' display names in the picker |
 | Blender add-on | builds Blender's material node trees from the package's sidecars: layer blends, tint palettes, decals, glass, glow |
 
-Both come from the fork's release `deps.toml` pins: the setup and the bundle scripts download its files and check
-their SHA256.
+packshot pins a release of the fork in `deps.toml`.
 
 ### Blender
 
-Every render slot runs one portable Blender of the version `deps.toml` pins (5.2.3; config and add-on in its
-`portable/` folder, nothing in the user profile), downloaded from blender.org and checked against the pinned SHA256.
+Every render slot runs a portable Blender 5.2.3 (nothing in the user profile).
 
 | | |
 |---|---|
-| Renderer | Eevee on the **Vulkan** backend, 16 samples, transparent film, at the target set's size and format (`main`: 256 px PNG) |
-| Staging | pose and light rig from the game's inventory data (per item type; an entry for a tag the entity carries wins, e.g. the sidearms rig for pistols), the item scaled to 0.7 m |
-| Look | (`default`) linear EXR mapped by its own tone curve, a studio world, boosted emission with bloom, a second pass for light behind glass |
+| Renderer | Eevee on **Vulkan**, transparent film, at the set's size and format (`main`: 256 px PNG) |
+| Staging | pose and light rig from the game's inventory data per item type and tag, the item scaled to 0.7 m |
+| Look | (`default`) its own tone curve, a studio world, boosted emission with bloom, light behind glass |
 
 ### Runs and sets
 
 | | |
 |---|---|
-| **Run** | `runs/<date>_<time>_<name>/`: the images as `<Name> (<class>) <uuid>.<png\|jpg\|exr>`, `run.json` (with the profile, its hash, the set's size and format), `events.jsonl`, `run.log`; never changed after its end |
-| **Set** | `sets/<name>/`: per entity a hard link to the newest image in its chain of runs, plus its own `targets.json`; one size and one format (`png`: sRGB with transparency · `jpeg`: the same over the profile's `background` · `exr`: linear with the bloom, no tone curve, for your own grading), chosen when the set is created (preset with its base's) and never changed: other values need a new set |
+| **Run** | `runs/<date>_<time>_<name>/`: the images (`<Name> (<class>) <uuid>.png`), `run.json`, `events.jsonl`, `run.log`; never changed after its end |
+| **Set** | `sets/<name>/`: per entity a hard link to the newest image in its chain of runs, plus its own `targets.json`; one size and one format (PNG, JPEG, or linear EXR without tone curve), fixed when the set is created |
 | **main** | the set consumers read; an experiment set branches off it and is adopted by appending its runs |
 
-Everything packshot writes lives in one folder, laid out the same on every node: `local/packshot/` in a checkout, the
-bundle's own folder in a bundle (`--store`, `--work`). `packshot --report` evaluates a run's event log: throughput,
-phase timings, slot use per node, slowest entities.
+Everything packshot writes lives in one folder: `local/packshot/` in a checkout, the bundle's own folder in a bundle.
+`packshot --report` evaluates a run's event log: throughput, phase timings, slowest entities.
 
 ### Target lists
 
@@ -189,7 +178,7 @@ cached in the work folder.
 | `Tab` | switches between search and type tree |
 | `Space` · `+` · `-` | in the tree: tick a type or subtype · tick every type shown · clear all ticks |
 | `→` · `←` | unfold · fold a type's subtypes |
-| `Enter` | asks for a name, writes the list as `targets/<name>.json` (letters, digits, `-`, `_`, `.`; the list dialog offers it from then on) and takes it as the set's list |
+| `Enter` | saves the list as `targets/<name>.json` and takes it as the set's list |
 | `Esc` | cancels the picker |
 
 The file is a JSON array, one object per entity; other tools can write it, packshot reads only these fields:
@@ -213,8 +202,8 @@ A profile is a folder with two files. Anything it does not set falls back to `de
 
 | File | |
 |---|---|
-| `profile.toml` | `[params]` and `[addon]` (below), and optionally `scene = "<file>.blend"`, a template whose world, cameras and lights the `stage` hook may take |
-| `hooks.py` | up to four functions, each taking one context `ctx` (`job`, `params`, `scene`, paths, `lap()`, `output_path()`, `scene_blend`, `use_scene_blend()`); `post` also takes the EXR paths |
+| `profile.toml` | `[params]` and `[addon]` (below); optionally `scene = "<file>.blend"`, whose world, cameras and lights `stage` may take |
+| `hooks.py` | up to four functions (below), each taking a context `ctx` with the job, the parameters and the scene |
 
 A profile's parameters lie over `default`'s; size and format are not among them, they are the set's:
 
@@ -267,7 +256,7 @@ defines only the ones it needs, the others come from `default`:
 | `before_open(ctx)` | before the item's file opens, after `[addon]`'s knobs | nothing (the place to replace the add-on's methods) |
 | `after_open(ctx)` | after the add-on built the materials | sharper gloss on metal and glass, stronger emission, hides empty UI screens |
 | `stage(ctx)` | then | the game's pose, the camera fit, the game's light rig, a studio world, Eevee settings |
-| `post(ctx, exr_paths)` | after the render, a linear multi-layer EXR | bloom, contrast, tone curve, a second pass for glow behind glass; writes the image, returns the list of files it wrote, the image first |
+| `post(ctx, exr_paths)` | after the render (a linear EXR) | bloom, contrast, tone curve; writes the image and returns its files |
 
 A profile for JPEGs on white needs only a `profile.toml` (rendered into a set made for JPEG):
 
@@ -276,10 +265,8 @@ A profile for JPEGs on white needs only a `profile.toml` (rendered into a set ma
 background = [1.0, 1.0, 1.0]
 ```
 
-Bundled profiles live in `profiles/` next to the tool; your own go into `profiles/` of the packshot folder (in a bundle
-that is the bundle's own `profiles/`) and hide a bundled one of the same name; `default` itself cannot be replaced: the name is
-reserved. Every run records its profile, the profile's content hash and the set's size and format; the Sets view
-shows the profile per run, the run's tile all of it. A `profile.toml` that sets `size` or `format` is refused.
+Your own profiles go into `profiles/` of the packshot folder (in a bundle: the bundle's `profiles/`); `default` is
+reserved. Every run records its profile and the profile's hash.
 
 ## Cluster
 
@@ -301,15 +288,15 @@ no run starts and the TUI shows what differs.
 | Path | What |
 |---|---|
 | `src/` | the orchestrator (Rust): selection, scheduler, cluster, runs and sets, assessment, TUI |
-| `blender/render.py` | runs inside Blender: opens the item, calls the profile's hooks, renders a linear EXR for its `post` hook |
-| `profiles/` | the bundled profiles: `default` (pose, fit, light rig, material tweaks, tone curve; PNG, JPEG or EXR) |
-| `shim/` | RDSEED shim for Blender on Linux (built by `build.rs`, embedded in the binary) |
-| `templates/bundle/` | templates of the per-OS bundles (setup, check, run, README, cluster config) |
-| `deps.toml` | the pins: Blender version and archive SHA256s, the StarBreaker release with its SHA256s and commit |
-| `scripts/` | `setup.{ps1,sh}` (a dev checkout), `starbreaker-build.{ps1,sh}` (the fork), `packshot-bundle.{ps1,sh}` (the bundles) |
-| `docs/` | [`ARCHITECTURE.md`](docs/ARCHITECTURE.md), `releases/` (release notes, used by the release workflow), `assets/` (images and their sources) |
+| `blender/render.py` | runs inside Blender: opens the item, calls the profile's hooks, renders |
+| `profiles/` | the bundled profile `default` |
+| `shim/` | RDSEED shim for Blender on Linux |
+| `templates/bundle/` | templates of the per-OS bundles |
+| `deps.toml` | the pinned Blender and StarBreaker versions |
+| `scripts/` | `setup.*` (a dev checkout), `starbreaker-build.*` (the fork), `packshot-bundle.*` (the bundles) |
+| `docs/` | [`ARCHITECTURE.md`](docs/ARCHITECTURE.md), `releases/` (release notes), `assets/` (images and their sources) |
 
-One script sets up a checkout exactly as `deps.toml` pins it, and the bundles are built from the same pins:
+The setup and the bundles follow the pins in `deps.toml`:
 
 ```powershell
 scripts/setup.ps1                              # Blender, add-on and StarBreaker from the pinned release (Linux: scripts/setup.sh)
@@ -320,14 +307,12 @@ scripts/packshot-bundle.ps1                    # both bundles into local/packsho
 ```
 
 To move to another Blender or StarBreaker: change `deps.toml`, run the setup again, rebuild the bundles. Building the
-fork itself (`-FromSource`, `scripts/starbreaker-build.*`) needs zig and cargo-zigbuild for its Linux binary. Changes
-land on `main` through pull requests.
+fork itself needs zig and cargo-zigbuild for its Linux binary. Changes land on `main` through pull requests.
 
 ## Security
 
-In a cluster every rendering node runs Python it receives: `render.py` and `default` from the head node, the run's
-profile (`hooks.py`, any add-on copy) from the node that starts the run. Anyone with the token can make every node run code, so share a
-cluster only with machines and people you trust.
+In a cluster every rendering node runs Python it receives (`render.py`, profiles). Anyone with the token can make every
+node run code, so share a cluster only with machines and people you trust.
 
 ## Game data and fan content
 
