@@ -11,16 +11,12 @@
 </p>
 
 <p align="center">
-  Renders of Star Citizen entities, in bulk: packshot exports each entity from the game's <code>Data.p4k</code> with
-  <a href="https://github.com/w00zla/starbreaker-ps">starbreaker-ps</a> (a StarBreaker fork) and renders it in Blender,
-  many exports and Blender processes at once, on one PC or a cluster of nodes, driven from a terminal UI. It started as
-  the icon renderer of the Quartermaster org tool and is meant for anyone who wants pictures of the game's items, in
-  their own look.
+  Pictures of Star Citizen items from your own copy of the game: packshot exports each entity from
+  <code>Data.p4k</code> with <a href="https://github.com/w00zla/starbreaker-ps">starbreaker-ps</a> (a StarBreaker fork)
+  and renders it in Blender, driven from a terminal UI. It started as the icon renderer of the Quartermaster org tool.
 </p>
 
-<p align="center"><a href="docs/assets/tui-run.png"><img src="docs/assets/tui-run.png" alt="The Run view: a run on three nodes with its workers, throughput, pool and the latest render" width="600"></a><br><sub>click for full size</sub></p>
-
-- **Bulk:** thousands of entities per run; long-lived exporter and Blender processes, fed one job per line.
+- **Bulk:** thousands of entities per run; many long-lived export and Blender processes at once, fed one job per line.
 - **One PC or a cluster:** nodes find each other on the LAN, any node can start a run, files move by content hash.
 - **The game's own staging:** pose and light rig per item type (and tag) from the game's inventory data.
 - **Your own look:** a profile (parameters plus four Python hooks) decides materials, scene and output: PNG, JPEG, EXR.
@@ -68,9 +64,11 @@ here it asks first: quitting aborts it).
 
 ### Run
 
+<p align="center"><a href="docs/assets/tui-run.png"><img src="docs/assets/tui-run.png" alt="The Run view: a run on three nodes with its workers, throughput, pool and the latest render" width="600"></a><br><sub>click for full size</sub></p>
+
 The selection to render (head node, target set, filter, scope), or the run going on: progress and ETA, every worker on
 every node with the entity it is on, throughput and the pool of exported items waiting for a Blender, the latest
-render. The image above shows a run on three nodes.
+render.
 
 | Key | |
 |---|---|
@@ -231,13 +229,9 @@ A profile's parameters lie over `default`'s; size and format are not among them,
 | `mirror` | `false` | the camera from the other side (a mirrored image) |
 | `az` · `el` | `20.0` · `15.0` | without a game pose: camera azimuth and elevation in degrees |
 
-`[addon]` is about the StarBreaker add-on ([ADR 0049](docs/adr/0049-addon-knobs-in-profile-toml.md)), not inherited
-from `default`, which sets none: `override = "starbreaker_addon"` names the profile's own copy of the add-on (a folder
-in the profile), used instead of the default one (1.0.0's top-level `addon = "..."` still means that). Every other key
-is one of the add-on's look knobs, by its UPPER_CASE name in the add-on's `runtime/constants.py`, set before every
-item's file opens (before `before_open`). Another lowercase key, a name the add-on does not define or a value of
-another type (numbers for numbers, a list of as many numbers for a tuple; for a knob that may be None a number, or
-`false` for None: TOML has no null) is refused before the run starts.
+`[addon]` sets up the StarBreaker add-on: `override` names a copy of the add-on in the profile folder, used instead
+of the default one; every UPPER_CASE key sets one of its look knobs (below). Unknown names and wrong types are refused
+before a run; `false` unsets a knob that may be None.
 
 ```toml
 [addon]
@@ -316,7 +310,7 @@ Every node must run the same packshot build, Blender, add-on and StarBreaker, an
 | `templates/bundle/` | templates of the per-OS bundles (setup, check, run, README, cluster config) |
 | `deps.toml` | the pins: Blender version and archive SHA256s, the StarBreaker release with its SHA256s and commit |
 | `scripts/` | `setup.{ps1,sh}` (a dev checkout), `starbreaker-build.{ps1,sh}` (the fork), `packshot-bundle.{ps1,sh}` (the bundles) |
-| `docs/` | [`ARCHITECTURE.md`](docs/ARCHITECTURE.md), `adr/` (decisions), `releases/` (release notes, used by the release workflow), `assets/` (images and their sources) |
+| `docs/` | [`ARCHITECTURE.md`](docs/ARCHITECTURE.md), `releases/` (release notes, used by the release workflow), `assets/` (images and their sources) |
 
 One script sets up a checkout exactly as `deps.toml` pins it, and the bundles are built from the same pins:
 
